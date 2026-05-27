@@ -1,0 +1,52 @@
+name: Inventory App Checks
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  node-checks:
+    name: Node syntax and API smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check public/app.js
+
+      - name: Start app
+        run: |
+          nohup node server.js > server.log 2> server.err.log &
+          echo $! > server.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000/api/catalog > /tmp/catalog.json; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat server.err.log
+          exit 1
+
+      - name: Smoke test API endpoints
+        run: |
+          curl -fsS http://127.0.0.1:3000/api/inventory > /tmp/inventory.json
+          curl -fsS http://127.0.0.1:3000/api/replenishment > /tmp/replenishment.json
+          node -e "const fs=require('fs'); const catalog=JSON.parse(fs.readFileSync('/tmp/catalog.json','utf8')); const inventory=JSON.parse(fs.readFileSync('/tmp/inventory.json','utf8')); const board=JSON.parse(fs.readFileSync('/tmp/replenishment.json','utf8')); if (!catalog.parts?.length) throw new Error('Catalog did not load'); if (!inventory.columns?.length) throw new Error('Inventory did not load'); if (!Array.isArray(board.cards)) throw new Error('Replenishment board did not load');"
+
+      - name: Stop app
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill "$(cat server.pid)" || true
+          fi

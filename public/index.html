@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lab Hardware Inventory</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="login-gate" id="loginGate" aria-labelledby="loginTitle">
+      <form class="login-card" id="loginForm">
+        <div class="brand-lockup compact">
+          <span class="brand-eye" aria-hidden="true"></span>
+          <strong>NVIDIA</strong>
+        </div>
+        <h1 id="loginTitle">Inventory Sign In</h1>
+        <p>Select your name to auto-fill email. Guests and non-registered users can enter details manually.</p>
+        <label for="memberSelect">Member</label>
+        <select id="memberSelect" name="memberSelect" required>
+          <option value="">Loading members...</option>
+        </select>
+        <label for="loginName" id="guestNameLabel" hidden>Guest name</label>
+        <input id="loginName" name="loginName" autocomplete="name" hidden />
+        <label for="loginEmail">Email</label>
+        <input id="loginEmail" name="loginEmail" autocomplete="email" type="email" required />
+        <fieldset class="role-choice" id="roleChoice" hidden>
+          <legend>Login mode</legend>
+          <label>
+            <input type="radio" name="loginRole" value="user" checked />
+            Regular user
+          </label>
+          <label>
+            <input type="radio" name="loginRole" value="admin" />
+            Admin user
+          </label>
+        </fieldset>
+        <button class="button primary" type="submit">Continue</button>
+        <p class="inline-status" id="loginStatus" role="status"></p>
+      </form>
+    </div>
+
+    <div class="app-frame">
+      <header class="global-header">
+        <div class="brand-lockup">
+          <span class="brand-eye" aria-hidden="true"></span>
+          <strong>NVIDIA</strong>
+          <span class="divider" aria-hidden="true"></span>
+          <span>Lab Hardware Inventory</span>
+        </div>
+        <div class="header-actions">
+          <span class="save-state" id="saveStatus" role="status">
+            <span class="save-dot" aria-hidden="true"></span>
+            Ready
+          </span>
+          <span class="admin-chip" id="userChip">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 21a8 8 0 0 0-16 0" />
+              <path d="M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+            </svg>
+            Not signed in
+          </span>
+          <button class="text-button" id="logoutButton" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <div class="body-grid">
+        <aside class="sidebar" aria-label="Inventory navigation">
+          <nav class="nav-list" aria-label="Primary">
+            <a class="nav-item is-active" href="#scan">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7V5a1 1 0 0 1 1-1h2" />
+                <path d="M17 4h2a1 1 0 0 1 1 1v2" />
+                <path d="M20 17v2a1 1 0 0 1-1 1h-2" />
+                <path d="M7 20H5a1 1 0 0 1-1-1v-2" />
+                <path d="M7 12h10" />
+              </svg>
+              Find Part
+            </a>
+            <a class="nav-item" href="#inventory">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" />
+                <path d="M12 12 4 7.5" />
+                <path d="m12 12 8-4.5" />
+                <path d="M12 12v9" />
+              </svg>
+              Inventory
+            </a>
+            <a class="nav-item" href="#replenishment">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 5h16" />
+                <path d="M4 12h16" />
+                <path d="M4 19h16" />
+                <path d="M8 5v14" />
+                <path d="M16 5v14" />
+              </svg>
+              Replenishment
+            </a>
+            <a class="nav-item" href="#management" data-admin-only>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 19V5" />
+                <path d="M4 19h16" />
+                <path d="M8 15v-4" />
+                <path d="M12 15V8" />
+                <path d="M16 15v-6" />
+              </svg>
+              Management Report
+            </a>
+            <a class="nav-item" href="#admin" data-admin-only>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 4h16v16H4z" />
+                <path d="M8 8h8" />
+                <path d="M8 12h8" />
+                <path d="M8 16h5" />
+              </svg>
+              Admin CSV
+            </a>
+            <a class="nav-item" href="#report">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 9v4" />
+                <path d="M12 17h.01" />
+                <path d="M10.3 4.4 2.7 17.6A2 2 0 0 0 4.4 20h15.2a2 2 0 0 0 1.7-2.4L13.7 4.4a2 2 0 0 0-3.4 0Z" />
+              </svg>
+              Report
+            </a>
+          </nav>
+        </aside>
+
+        <main class="main-content">
+          <section class="overview-header">
+            <div>
+              <h1>Inventory Checkout</h1>
+              <p>Find the part, confirm the SKU and location, update quantity, report low inventory, and sign out.</p>
+            </div>
+            <div class="overview-actions">
+              <button class="button secondary" id="refreshButton" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 12a9 9 0 0 1-15.6 6.1" />
+                  <path d="M3 12a9 9 0 0 1 15.6-6.1" />
+                  <path d="M18 2v4h-4" />
+                  <path d="M6 22v-4h4" />
+                </svg>
+                Refresh
+              </button>
+            </div>
+          </section>
+
+          <section class="panel scan-panel" id="scan" aria-labelledby="scanTitle">
+            <div class="section-heading">
+              <div>
+                <h2 id="scanTitle">Find Part</h2>
+                <p>Type what you need in plain language. The app will group likely matches and ask for only the details that help narrow it down.</p>
+              </div>
+              <span class="sheet-source">Manual lookup flow</span>
+            </div>
+
+            <ol class="steps" aria-label="Checkout steps">
+              <li class="is-active">Search catalog</li>
+              <li>Confirm SKU</li>
+              <li>Review aisle/bin</li>
+              <li>Take or add quantity</li>
+              <li>Report low inventory</li>
+              <li>Finish and sign out</li>
+            </ol>
+
+            <div class="scan-grid">
+              <div class="scan-controls">
+                <label for="categoryHint">Part family</label>
+                <select id="categoryHint"></select>
+                <label for="scanHints" id="scanHintsLabel">What are you looking for?</label>
+                <textarea
+                  id="scanHints"
+                  rows="4"
+                  placeholder="Example: GPU, hard drive, SSD 4TB, SATA drive, H100, MiniSAS cable..."
+                ></textarea>
+                <div class="quick-search-chips" aria-label="Common searches">
+                  <button class="mini-button" type="button" data-search-preset="GPU">GPU</button>
+                  <button class="mini-button" type="button" data-search-preset="hard drive">Hard drive</button>
+                  <button class="mini-button" type="button" data-search-preset="SSD">SSD</button>
+                  <button class="mini-button" type="button" data-search-preset="M.2 NVMe">M.2 NVMe</button>
+                  <button class="mini-button" type="button" data-search-preset="power cable">Power cable</button>
+                </div>
+                <button class="button primary" id="analyzeButton" type="button">Search Catalog</button>
+                <p class="inline-status" id="scanStatus" role="status"></p>
+              </div>
+            </div>
+
+            <div class="result-grid">
+              <section class="subpanel" id="matchPanel" hidden>
+                <h3>Matching Results</h3>
+                <div id="matchResult"></div>
+                <div class="button-row">
+                  <button class="button primary" id="confirmMatchButton" type="button">Confirm This Part</button>
+                  <button class="button secondary" id="rejectMatchButton" type="button">Not Correct - Send to Admin Review</button>
+                </div>
+              </section>
+
+              <section class="subpanel" id="evaluationPanel" hidden>
+                <h3>Administrator Evaluation</h3>
+                <p>Use this when the suggested SKU is wrong or the part is not listed.</p>
+                <label for="evaluationReason">What should admin evaluate?</label>
+                <textarea id="evaluationReason" rows="3" placeholder="Describe visible markings, why the match is wrong, or what category it might be."></textarea>
+                <button class="button primary" id="sendEvaluationButton" type="button">Submit for Evaluation</button>
+              </section>
+
+              <section class="subpanel" id="movementPanel" hidden>
+                <h3>Checkout / Restock</h3>
+                <div id="confirmedPart"></div>
+                <div class="movement-grid">
+                  <label>
+                    Action
+                    <select id="movementAction">
+                      <option value="take">I am taking this part</option>
+                      <option value="add">I am adding inventory</option>
+                    </select>
+                  </label>
+                  <label>
+                    Quantity
+                    <input id="movementQuantity" type="number" min="1" step="1" value="1" />
+                  </label>
+                </div>
+                <label for="movementReason">Reason or ticket</label>
+                <input id="movementReason" placeholder="Example: build request, RMA return, replenishment" />
+                <div class="button-row">
+                  <button class="button primary" id="updateInventoryButton" type="button">Update Inventory</button>
+                  <button class="button secondary" id="finishSignOutButton" type="button">Finish and Sign Out</button>
+                </div>
+              </section>
+
+              <section class="subpanel location-panel" id="locationPanel" hidden>
+                <h3>Part Location</h3>
+                <div id="locationResult"></div>
+              </section>
+            </div>
+          </section>
+
+          <section class="panel" id="replenishment" aria-labelledby="replenishmentTitle">
+            <div class="section-heading">
+              <div>
+                <h2 id="replenishmentTitle">Replenishment Board</h2>
+                <p>Manual low-bin signals move through a Kanban workflow so the team can track what needs restocking.</p>
+              </div>
+              <button class="button secondary" id="replenishmentRefresh" type="button">Refresh Board</button>
+            </div>
+
+            <section class="signal-panel" aria-labelledby="signalTitle">
+              <div>
+                <h3 id="signalTitle">Create Manual Signal</h3>
+                <p>No barcode required. Pick a known SKU or describe the item, then send the signal to the board.</p>
+              </div>
+              <div class="signal-form">
+                <label for="replenishmentSku">
+                  Part
+                  <select id="replenishmentSku">
+                    <option value="">Manual item / not sure</option>
+                  </select>
+                </label>
+                <label for="replenishmentItem">
+                  Item description
+                  <input id="replenishmentItem" placeholder="Example: 4TB M.2 SSD, SATA drive, H100 GPU" />
+                </label>
+                <label for="replenishmentQuantity">
+                  Requested quantity
+                  <input id="replenishmentQuantity" type="number" min="1" step="1" value="1" />
+                </label>
+                <label for="replenishmentPriority">
+                  Priority
+                  <select id="replenishmentPriority">
+                    <option value="Normal">Normal</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
+                  </select>
+                </label>
+              </div>
+              <label for="replenishmentNotes">
+                Notes
+                <textarea id="replenishmentNotes" rows="3" placeholder="Where is the bin, what is low, or what project needs this?"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="button primary" id="replenishmentCreate" type="button">Send Signal</button>
+              </div>
+            </section>
+
+            <div class="replenishment-summary" id="replenishmentSummary"></div>
+            <div class="kanban-board" id="replenishmentBoard" aria-label="Replenishment Kanban board"></div>
+            <p class="inline-status" id="replenishmentStatus" role="status"></p>
+          </section>
+
+          <section class="panel" id="management" aria-labelledby="managementTitle" data-admin-only>
+            <div class="section-heading">
+              <div>
+                <h2 id="managementTitle">Management Report</h2>
+                <p>Understand who used what, when it happened, and which categories are moving.</p>
+              </div>
+              <span class="sheet-source">transactions.csv</span>
+            </div>
+            <div class="report-controls">
+              <label for="managementPeriod">
+                Time period
+                <select id="managementPeriod">
+                  <option value="day">Today</option>
+                  <option value="week" selected>This week</option>
+                  <option value="month">This month</option>
+                  <option value="year">This year</option>
+                  <option value="all">All time</option>
+                </select>
+              </label>
+              <label for="managementAction">
+                Movement
+                <select id="managementAction">
+                  <option value="all">All movements</option>
+                  <option value="take">Checked out</option>
+                  <option value="add">Restocked</option>
+                </select>
+              </label>
+              <button class="button secondary" id="managementRefresh" type="button">Refresh Report</button>
+            </div>
+            <div class="management-summary" id="managementSummary"></div>
+            <div class="management-grid">
+              <section class="subpanel">
+                <h3>Usage by Person</h3>
+                <div class="table-wrap compact">
+                  <table class="report-table" id="managementUserTable" aria-label="Usage by person"></table>
+                </div>
+              </section>
+              <section class="subpanel">
+                <h3>Recent Movements</h3>
+                <div class="table-wrap compact">
+                  <table class="report-table" id="managementRecentTable" aria-label="Recent inventory movements"></table>
+                </div>
+              </section>
+            </div>
+            <p class="inline-status" id="managementStatus" role="status"></p>
+          </section>
+
+          <section class="panel" id="inventory" aria-labelledby="inventoryTitle">
+            <div class="section-heading">
+              <div>
+                <h2 id="inventoryTitle">Category Inventory Sheet</h2>
+                <p>Aggregated spreadsheet view generated from the SKU catalog.</p>
+              </div>
+              <span class="sheet-source" id="inventorySource">data/inventory.csv</span>
+            </div>
+            <div class="table-wrap">
+              <table class="inventory-table">
+                <thead>
+                  <tr id="inventoryHeader">
+                    <th scope="col"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr id="inventoryRow">
+                    <th scope="row">Available Quantity</th>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel" id="admin" aria-labelledby="adminTitle" data-admin-only>
+            <div class="section-heading">
+              <div>
+                <h2 id="adminTitle">Admin CSV Manager</h2>
+                <p>Open a CSV, import updates, review the before/after, then commit only after two admins approve.</p>
+              </div>
+              <a class="button secondary" id="adminCsvDownload" href="/parts.csv">Download Current CSV</a>
+            </div>
+            <div class="csv-manager">
+              <div class="csv-toolbar">
+                <label class="toolbar-field" for="adminCsvFile">
+                  CSV file
+                  <select id="adminCsvFile">
+                    <option value="parts">parts.csv - SKU catalog</option>
+                    <option value="members">members.csv - members</option>
+                    <option value="transactions">transactions.csv - transaction log</option>
+                    <option value="evaluations">evaluation_queue.csv - admin review queue</option>
+                    <option value="replenishment">replenishment.csv - replenishment board</option>
+                  </select>
+                </label>
+                <div class="toolbar-actions" aria-label="CSV editing actions">
+                  <button class="button secondary" id="adminCsvAddRow" type="button">Add Row</button>
+                  <div class="add-column-control">
+                    <label for="adminCsvNewColumn">Add column</label>
+                    <span class="input-button-pair">
+                      <input id="adminCsvNewColumn" placeholder="Column name" />
+                      <button class="button secondary" id="adminCsvAddColumn" type="button">Add Column</button>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <section class="import-panel" aria-labelledby="importTitle">
+                <div>
+                  <h3 id="importTitle">Import Data</h3>
+                  <p>Choose a CSV, confirm who is importing it, then decide how imported columns should line up with this table.</p>
+                </div>
+                <div class="import-controls">
+                  <label for="adminCsvImportFile">
+                    Import CSV
+                    <input id="adminCsvImportFile" type="file" accept=".csv,text/csv" />
+                  </label>
+                  <label for="adminCsvImporter">
+                    Importer / requestor
+                    <input id="adminCsvImporter" placeholder="Name or email" />
+                  </label>
+                  <label for="adminCsvImportMode">
+                    Import action
+                    <select id="adminCsvImportMode">
+                      <option value="append">Add imported rows</option>
+                      <option value="update">Update matching rows and add new rows</option>
+                      <option value="replace">Replace current rows</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="import-prompt" id="adminCsvImportPrompt">
+                  Import a CSV to preview its columns before anything changes.
+                </div>
+                <div class="import-mapping" id="adminCsvImportMapping" hidden></div>
+                <div class="button-row import-actions" id="adminCsvImportActions" hidden>
+                  <button class="button secondary" id="adminCsvImportApply" type="button">Apply Import to Table</button>
+                </div>
+              </section>
+
+              <div class="csv-table-wrap" id="adminCsvTableWrap">
+                <table class="admin-csv-table" id="adminCsvTable" aria-label="CSV table editor"></table>
+              </div>
+
+              <section class="review-panel" id="adminCsvReviewPanel" hidden aria-labelledby="reviewTitle">
+                <div>
+                  <h3 id="reviewTitle">Two-Admin Review</h3>
+                  <p>Compare the before and after snapshots, then choose whether to accept or decline this change.</p>
+                </div>
+                <div class="review-summary" id="adminCsvReviewSummary"></div>
+                <div class="review-snapshots" aria-label="CSV before and after preview">
+                  <div>
+                    <h4>Before</h4>
+                    <pre id="adminCsvBeforePreview"></pre>
+                  </div>
+                  <div>
+                    <h4>After</h4>
+                    <pre id="adminCsvAfterPreview"></pre>
+                  </div>
+                </div>
+                <div class="reviewer-grid" id="adminCsvReviewers">
+                  <label>
+                    First admin reviewer
+                    <select data-reviewer-slot="0">
+                      <option value="">Select reviewer...</option>
+                      <option value="gamehta@nvidia.com">Gaurav Mehta</option>
+                      <option value="monicam@nvidia.com">Monica Martin</option>
+                    </select>
+                    <span class="reviewer-approval">
+                      <input type="checkbox" data-reviewer-approval="0" />
+                      I reviewed the before/after and approve
+                    </span>
+                  </label>
+                  <label>
+                    Second admin reviewer
+                    <select data-reviewer-slot="1">
+                      <option value="">Select reviewer...</option>
+                      <option value="gamehta@nvidia.com">Gaurav Mehta</option>
+                      <option value="monicam@nvidia.com">Monica Martin</option>
+                    </select>
+                    <span class="reviewer-approval">
+                      <input type="checkbox" data-reviewer-approval="1" />
+                      I reviewed the before/after and approve
+                    </span>
+                  </label>
+                </div>
+                <div class="button-row">
+                  <button class="button primary" id="adminCsvCommitReview" type="button" disabled>Accept and Commit</button>
+                  <button class="button secondary" id="adminCsvDeclineReview" type="button">Decline Change</button>
+                </div>
+              </section>
+
+              <div class="button-row">
+                <button class="button secondary" id="adminCsvReload" type="button">Reload CSV</button>
+                <button class="button primary" id="adminCsvSave" type="button">Start 2-Admin Review</button>
+              </div>
+              <p class="inline-status" id="adminCsvStatus" role="status"></p>
+              <p class="admin-note">
+                <strong>Metadata</strong> appears once as a normal table column. Add extra search terms there; required columns stay protected during save.
+              </p>
+            </div>
+          </section>
+
+          <section class="panel report-panel" id="report" aria-labelledby="reportTitle">
+            <form id="reportForm" class="report-form">
+              <div class="report-copy">
+                <div class="report-title-row">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 9v4" />
+                    <path d="M12 17h.01" />
+                    <path d="M10.3 4.4 2.7 17.6A2 2 0 0 0 4.4 20h15.2a2 2 0 0 0 1.7-2.4L13.7 4.4a2 2 0 0 0-3.4 0Z" />
+                  </svg>
+                  <h2 id="reportTitle">Do you want to report on <span>Missing/Low Inventory?</span></h2>
+                </div>
+                <p>Your report will be emailed to <strong id="reportEmail">gamehta@nvidia.com</strong>.</p>
+                <label for="comments">Comments</label>
+                <textarea id="comments" name="comments" rows="6" maxlength="500" placeholder="Add any details about missing or low inventory." required></textarea>
+                <div class="comment-footer">
+                  <span id="characterCount">0 / 500 characters</span>
+                  <button class="button primary submit-button" type="submit" id="submitReport">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="m22 2-7 20-4-9-9-4Z" />
+                      <path d="M22 2 11 13" />
+                    </svg>
+                    Submit
+                  </button>
+                </div>
+                <p id="reportStatus" class="inline-status" role="status"></p>
+              </div>
+            </form>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

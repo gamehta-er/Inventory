@@ -146,104 +146,6 @@ This creates a more reliable operational record than ad hoc spreadsheets, hallwa
 
 ## How This Benefits the Organization
 
-- Match score
-- SKU
-- Part name
-- Category
-- Distinguishing details
-- Available quantity
-- Aisle and bin location
-
-The search flow is intentionally quick. It gives users enough context to choose the correct part without overwhelming them with a full catalog table.
-
-### Checkout and Restock Flow
-
-After selecting a part, users can:
-
-- Check out inventory
-- Add inventory back
-- Enter quantity
-- Add a reason, ticket, or build context
-
-Every transaction updates the inventory and is written to the transaction log.
-
-### Management Report
-
-Admins can review inventory movement by:
-
-- Day
-- Week
-- Month
-- Year
-- All time
-
-The report answers:
-
-- Who used inventory?
-- What did they take or restock?
-- How many movements happened in the selected period?
-- Which SKUs are moving?
-- How many unique users and SKUs were involved?
-
-This helps management understand consumption patterns, recurring demand, team usage, and stock movement.
-
-### Admin CSV Manager
-
-Admins can manage the CSV-backed catalog through the UI:
-
-- Open CSV files as editable tables
-- Add rows
-- Add columns
-- Import CSV data
-- Map imported columns into the current table
-- Preview before and after changes
-- Accept or decline changes
-
-CSV changes require two distinct admin approvals before being committed. This helps protect the source data from accidental or unreviewed changes.
-
-### Replenishment Board
-
-The application includes an in-app Kanban-style replenishment board for manual inventory environments. The board is based on user-entered signals rather than barcode scanning:
-
-- A user notices a bin is low.
-- The user picks a known SKU or describes the item manually.
-- The user creates a low-bin signal with quantity, priority, and notes.
-- The team moves the signal through the replenishment workflow.
-- Inventory is updated when the bin is refilled.
-
-Workflow columns:
-
-- Bin Threshold Reached
-- Signal Sent
-- Reorder in Progress
-- Bin Refilled
-
-This gives the team one place to track replenishment work without requiring barcodes on every item.
-
-## Why Management Can Rely on This Data
-
-Management can rely on the data when the process is consistently followed because the application captures the key audit trail:
-
-- User name and email
-- Action taken
-- SKU and part name
-- Quantity moved
-- Before and after quantity
-- Location
-- Timestamp
-- Reason or ticket
-
-The application also protects catalog quality through admin review:
-
-- Required columns are validated.
-- Imported data is reviewed before commit.
-- Two admins must approve catalog changes.
-- The source files remain downloadable and auditable.
-
-This creates a more reliable operational record than ad hoc spreadsheets, hallway messages, or informal inventory notes.
-
-## How This Benefits the Organization
-
 Better inventory data can help the organization:
 
 - Reduce time wasted searching for parts.
@@ -302,6 +204,33 @@ Then open:
 ```text
 http://localhost:3000
 ```
+
+## Testing From GitHub
+
+For team testing, use GitHub as the starting point instead of running the project directly on a local laptop.
+
+Recommended GitHub workflow:
+
+1. Open the repository in GitHub.
+2. Select **Code**.
+3. Select **Codespaces**.
+4. Create a new Codespace on `main`.
+5. Wait for the app to start.
+6. Open the forwarded port named **Lab Hardware Inventory**.
+
+The Codespace runs:
+
+```bash
+npm start
+```
+
+GitHub Actions also runs automated checks on every push and pull request:
+
+- JavaScript syntax check for `server.js`
+- JavaScript syntax check for `public/app.js`
+- API smoke test for catalog, inventory, and replenishment endpoints
+
+GitHub Pages is not a good fit for this prototype because the app has a Node backend and writes CSV data. For a permanent shared test URL, the next step should be a small Node hosting environment such as Azure App Service, Render, Railway, Fly.io, or an internal platform.
 
 ## Current Project Status
 

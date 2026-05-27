@@ -1,0 +1,5 @@
+artifacts/
+server.log
+server.err.log
+node_modules/
+data/reports.csv
