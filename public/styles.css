@@ -1218,7 +1218,7 @@ thead th {
   background: #fff1f0;
 }
 
-.signal-panel {
+.request-panel {
   display: grid;
   gap: 14px;
   margin-bottom: 16px;
@@ -1228,14 +1228,14 @@ thead th {
   background: #fbfcfb;
 }
 
-.signal-panel p {
+.request-panel p {
   margin-top: 5px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
 }
 
-.signal-form {
+.request-form {
   display: grid;
   grid-template-columns: minmax(240px, 1.2fr) minmax(220px, 1fr) minmax(130px, 0.45fr) minmax(140px, 0.5fr);
   gap: 12px;
@@ -1248,14 +1248,14 @@ thead th {
   margin-bottom: 16px;
 }
 
-.kanban-board {
+.progress-board {
   display: grid;
   grid-template-columns: repeat(4, minmax(230px, 1fr));
   gap: 14px;
   align-items: start;
 }
 
-.kanban-column {
+.progress-column {
   --column: #4c7dbf;
   --column-soft: #eef4ff;
   min-width: 0;
@@ -1268,42 +1268,42 @@ thead th {
   background: #fbfcfb;
 }
 
-.kanban-column:nth-child(2) {
+.progress-column:nth-child(2) {
   --column: #d6a300;
   --column-soft: #fff8df;
 }
 
-.kanban-column:nth-child(3) {
+.progress-column:nth-child(3) {
   --column: #d26f27;
   --column-soft: #fff1e8;
 }
 
-.kanban-column:nth-child(4) {
+.progress-column:nth-child(4) {
   --column: #4f9a43;
   --column-soft: #edf8ea;
 }
 
-.kanban-column-heading,
-.kanban-card-title,
-.kanban-card-footer {
+.progress-column-heading,
+.progress-card-title,
+.progress-card-footer {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
 
-.kanban-column-heading h3 {
+.progress-column-heading h3 {
   font-size: 14px;
 }
 
-.kanban-column-heading p {
+.progress-column-heading p {
   margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
 }
 
-.kanban-column-heading > span {
+.progress-column-heading > span {
   min-width: 28px;
   height: 28px;
   display: grid;
@@ -1315,13 +1315,13 @@ thead th {
   font-weight: 820;
 }
 
-.kanban-card-list {
+.progress-card-list {
   display: grid;
   gap: 10px;
   min-height: 112px;
 }
 
-.kanban-card {
+.progress-card {
   display: grid;
   gap: 10px;
   padding: 12px;
@@ -1331,39 +1331,39 @@ thead th {
   background: #fff;
 }
 
-.kanban-card.priority-high {
+.progress-card.priority-high {
   border-left-color: var(--amber);
 }
 
-.kanban-card.priority-critical {
+.progress-card.priority-critical {
   border-left-color: var(--danger);
   background: #fffafa;
 }
 
-.kanban-card-title {
+.progress-card-title {
   align-items: start;
 }
 
-.kanban-card-title span {
+.progress-card-title span {
   color: var(--muted);
   font-size: 11px;
   font-weight: 820;
 }
 
-.kanban-card-title strong {
+.progress-card-title strong {
   min-width: 0;
   font-size: 14px;
   line-height: 1.3;
   word-break: break-word;
 }
 
-.kanban-card-tags {
+.progress-card-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.kanban-card-tags span {
+.progress-card-tags span {
   min-height: 24px;
   display: inline-flex;
   align-items: center;
@@ -1375,23 +1375,23 @@ thead th {
   font-weight: 760;
 }
 
-.kanban-card-tags .priority-chip {
+.progress-card-tags .priority-chip {
   color: #864c00;
   background: #fff2d8;
 }
 
-.kanban-card.priority-critical .priority-chip {
+.progress-card.priority-critical .priority-chip {
   color: #9a241b;
   background: #ffe5e2;
 }
 
-.kanban-card-meta {
+.progress-card-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.kanban-card-meta div {
+.progress-card-meta div {
   min-width: 0;
   display: grid;
   gap: 3px;
@@ -1401,32 +1401,32 @@ thead th {
   background: #fbfcfb;
 }
 
-.kanban-card-meta span,
-.kanban-card-footer span {
+.progress-card-meta span,
+.progress-card-footer span {
   color: var(--muted);
   font-size: 11px;
   font-weight: 760;
 }
 
-.kanban-card-meta strong {
+.progress-card-meta strong {
   min-width: 0;
   font-size: 12px;
   line-height: 1.25;
   word-break: break-word;
 }
 
-.kanban-card p {
+.progress-card p {
   color: #424b45;
   font-size: 13px;
   line-height: 1.4;
 }
 
-.kanban-card-footer {
+.progress-card-footer {
   align-items: center;
   padding-top: 2px;
 }
 
-.kanban-card-footer .mini-button {
+.progress-card-footer .mini-button {
   max-width: 150px;
   white-space: normal;
   text-align: center;
@@ -1852,9 +1852,9 @@ thead th {
     grid-template-columns: 1fr;
   }
 
-  .signal-form,
+  .request-form,
   .replenishment-summary,
-  .kanban-board {
+  .progress-board {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1957,9 +1957,9 @@ thead th {
   .csv-toolbar,
   .report-controls,
   .guided-search,
-  .signal-form,
+  .request-form,
   .replenishment-summary,
-  .kanban-board,
+  .progress-board,
   .import-controls,
   .mapping-grid,
   .review-summary,

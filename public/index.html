@@ -127,7 +127,7 @@
         </aside>
 
         <main class="main-content">
-          <section class="overview-header">
+          <section class="overview-header" id="overviewHeader">
             <div>
               <h1>Inventory Checkout</h1>
               <p>Find the part, confirm the SKU and location, update quantity, report low inventory, and sign out.</p>
@@ -302,12 +302,12 @@
               <button class="button secondary" id="replenishmentRefresh" type="button">Refresh Progress</button>
             </div>
 
-            <section class="signal-panel" aria-labelledby="signalTitle" data-admin-only>
+            <section class="request-panel" aria-labelledby="requestTitle" data-admin-only>
               <div>
-                <h3 id="signalTitle">Create Replenishment Request</h3>
+                <h3 id="requestTitle">Create Replenishment Request</h3>
                 <p>Admin-only control for creating a tracked restock request from a known SKU or part description.</p>
               </div>
-              <div class="signal-form">
+              <div class="request-form">
                 <label for="replenishmentSku">
                   Part
                   <select id="replenishmentSku">
@@ -341,7 +341,7 @@
             </section>
 
             <div class="replenishment-summary" id="replenishmentSummary"></div>
-            <div class="kanban-board" id="replenishmentBoard" aria-label="Replenishment progress board"></div>
+            <div class="progress-board" id="replenishmentBoard" aria-label="Replenishment progress board"></div>
             <p class="inline-status" id="replenishmentStatus" role="status"></p>
           </section>
 
@@ -434,7 +434,7 @@
                     <option value="partcodes">part_codes.csv - barcode / QR mappings</option>
                     <option value="transactions">transactions.csv - transaction log</option>
                     <option value="evaluations">evaluation_queue.csv - admin review queue</option>
-                    <option value="replenishment">replenishment.csv - replenishment board</option>
+                    <option value="replenishment">replenishment.csv - progress requests</option>
                   </select>
                 </label>
                 <div class="toolbar-actions" aria-label="CSV editing actions">

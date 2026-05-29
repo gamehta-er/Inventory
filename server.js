@@ -168,11 +168,24 @@ const replenishmentHeaders = [
 ];
 
 const replenishmentStatuses = [
-  "Bin Threshold Reached",
-  "Signal Sent",
-  "Reorder in Progress",
-  "Bin Refilled"
+  "New Request",
+  "Submitted",
+  "In Progress",
+  "Completed"
 ];
+
+const replenishmentStatusAliases = {
+  "Bin Threshold Reached": "New Request",
+  "Signal Sent": "Submitted",
+  "Reorder in Progress": "In Progress",
+  "Bin Refilled": "Completed"
+};
+
+function resolveReplenishmentStatus(value) {
+  const status = String(value || "").trim();
+  const normalized = replenishmentStatusAliases[status] || status;
+  return replenishmentStatuses.includes(normalized) ? normalized : "";
+}
 
 function defaultPartCodesFromParts(parts) {
   return parts.map((part) => ({
@@ -627,6 +640,8 @@ async function initializeSqlite() {
       importCsvToSqlite(key, csv);
     }
   }
+
+  migrateReplenishmentRecords();
 }
 
 function toNumber(value, fallback = 0) {
@@ -809,7 +824,7 @@ function normalizeReplenishmentCard(row) {
     minQuantity: row["Min Quantity"] || "",
     requestedQuantity: row["Requested Quantity"] || "",
     priority: row.Priority || "Normal",
-    status: replenishmentStatuses.includes(row.Status) ? row.Status : "Bin Threshold Reached",
+    status: resolveReplenishmentStatus(row.Status) || "New Request",
     owner: row.Owner || "",
     notes: row.Notes || ""
   };
@@ -846,20 +861,41 @@ async function writeReplenishmentCards(cards) {
   await exportSqliteCsv("replenishment");
 }
 
+function migrateReplenishmentRecords() {
+  const rows = readSqliteRows("replenishment", replenishmentHeaders);
+  let changed = false;
+  const cards = rows.map((row) => {
+    const card = normalizeReplenishmentCard(row);
+    const requestId = String(card.id || "").replace(/^KBN-/i, "REQ-");
+    if (requestId !== card.id || card.status !== row.Status) {
+      changed = true;
+    }
+    return {
+      ...card,
+      id: requestId || card.id
+    };
+  });
+
+  if (changed) {
+    replaceSqliteTable("replenishment", replenishmentHeaders, cards.map(denormalizeReplenishmentCard));
+  }
+}
+
 function nextReplenishmentId(cards) {
   const maxId = cards.reduce((max, card) => {
     const value = Number(String(card.id || "").replace(/\D/g, ""));
     return Number.isFinite(value) ? Math.max(max, value) : max;
   }, 1000);
-  return `KBN-${maxId + 1}`;
+  return `REQ-${maxId + 1}`;
 }
 
 function summarizeReplenishment(cards) {
+  const openRequests = cards.filter((card) => card.status !== "Completed").length;
   return {
-    openSignals: cards.filter((card) => card.status !== "Bin Refilled").length,
-    critical: cards.filter((card) => card.priority === "Critical" && card.status !== "Bin Refilled").length,
-    inProgress: cards.filter((card) => card.status === "Reorder in Progress").length,
-    refilled: cards.filter((card) => card.status === "Bin Refilled").length
+    openRequests,
+    critical: cards.filter((card) => card.priority === "Critical" && card.status !== "Completed").length,
+    inProgress: cards.filter((card) => card.status === "In Progress").length,
+    refilled: cards.filter((card) => card.status === "Completed").length
   };
 }
 
@@ -878,7 +914,7 @@ function normalizeReplenishmentPriority(value) {
   return ["Normal", "High", "Critical"].includes(priority) ? priority : "Normal";
 }
 
-async function createReplenishmentSignal(payload) {
+async function createReplenishmentRequest(payload) {
   const user = normalizeUser(payload.user);
   const sku = String(payload.sku || "").trim();
   const item = String(payload.item || payload.partName || "").trim();
@@ -917,7 +953,7 @@ async function createReplenishmentSignal(payload) {
     minQuantity: part ? String(part.minQuantity) : "",
     requestedQuantity: String(requestedQuantity),
     priority,
-    status: "Bin Threshold Reached",
+    status: "New Request",
     owner: "",
     notes
   };
@@ -925,7 +961,7 @@ async function createReplenishmentSignal(payload) {
   await writeReplenishmentCards([...cards, card]);
   return {
     ok: true,
-    message: `${card.id} added to the replenishment board.`,
+    message: `${card.id} replenishment request created.`,
     card,
     board: await replenishmentBoard()
   };
@@ -934,7 +970,7 @@ async function createReplenishmentSignal(payload) {
 async function updateReplenishmentStatus(payload) {
   const user = normalizeUser(payload.user);
   const id = String(payload.id || "").trim();
-  const status = String(payload.status || "").trim();
+  const status = resolveReplenishmentStatus(payload.status);
 
   if (!id) {
     throw new Error("Choose a replenishment card to update.");
@@ -961,7 +997,7 @@ async function updateReplenishmentStatus(payload) {
   await writeReplenishmentCards(cards);
   return {
     ok: true,
-    message: `${updatedCard.id} moved to ${status}.`,
+    message: `${updatedCard.id} status updated.`,
     card: updatedCard,
     board: await replenishmentBoard()
   };
@@ -1907,7 +1943,7 @@ async function handleRequest(request, response) {
     }
 
     if (request.method === "POST" && requestUrl.pathname === "/api/replenishment") {
-      sendJson(response, 200, await createReplenishmentSignal(await readJsonBody(request)));
+      sendJson(response, 200, await createReplenishmentRequest(await readJsonBody(request)));
       return;
     }
 

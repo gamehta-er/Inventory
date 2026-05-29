@@ -2,10 +2,10 @@ const lowThreshold = 5;
 const userStorageKey = "labInventoryUser";
 const adminEmails = new Set(["gamehta@nvidia.com", "monicam@nvidia.com"]);
 const replenishmentColumns = [
-  { key: "Bin Threshold Reached", label: "Needs Review", help: "New restock requests waiting for assignment." },
-  { key: "Signal Sent", label: "Request Submitted", help: "The request has been acknowledged and routed." },
-  { key: "Reorder in Progress", label: "In Progress", help: "Restock, transfer, or replacement work is active." },
-  { key: "Bin Refilled", label: "Completed", help: "Inventory was refilled or the request was closed." }
+  { key: "New Request", label: "New Requests", help: "Restock requests waiting for review or assignment." },
+  { key: "Submitted", label: "Submitted", help: "The request has been acknowledged and routed." },
+  { key: "In Progress", label: "In Progress", help: "Restock, transfer, or replacement work is active." },
+  { key: "Completed", label: "Completed", help: "Inventory was refilled or the request was closed." }
 ];
 
 const state = {
@@ -13,6 +13,7 @@ const state = {
   catalog: null,
   inventory: null,
   replenishment: null,
+  activeRoute: "",
   members: [],
   adminCsv: null,
   importDraft: null,
@@ -36,6 +37,7 @@ const elements = {
   userChip: document.querySelector("#userChip"),
   logoutButton: document.querySelector("#logoutButton"),
   saveStatus: document.querySelector("#saveStatus"),
+  overviewHeader: document.querySelector("#overviewHeader"),
   refreshButton: document.querySelector("#refreshButton"),
   lookupMethodInputs: [...document.querySelectorAll("input[name='lookupMethod']")],
   manualLookupPanel: document.querySelector("#manualLookupPanel"),
@@ -568,7 +570,7 @@ function renderReplenishmentPartOptions() {
   if (!elements.replenishmentSku || !state.catalog?.parts) return;
   const currentValue = elements.replenishmentSku.value;
   elements.replenishmentSku.innerHTML = [
-    '<option value="">Manual item / not sure</option>',
+    '<option value="">Part not listed / pending SKU</option>',
     ...state.catalog.parts.map(
       (part) =>
         `<option value="${escapeHtml(part.sku)}">${escapeHtml(part.sku)} - ${escapeHtml(part.name)}</option>`
@@ -602,8 +604,8 @@ function renderReplenishmentBoard() {
   const summary = state.replenishment.summary || {};
   elements.replenishmentSummary.innerHTML = `
     <div class="report-metric">
-      <span>Open signals</span>
-      <strong>${escapeHtml(summary.openSignals ?? 0)}</strong>
+      <span>Open requests</span>
+      <strong>${escapeHtml(summary.openRequests ?? 0)}</strong>
     </div>
     <div class="report-metric">
       <span>Critical</span>
@@ -614,7 +616,7 @@ function renderReplenishmentBoard() {
       <strong>${escapeHtml(summary.inProgress ?? 0)}</strong>
     </div>
     <div class="report-metric">
-      <span>Refilled</span>
+      <span>Completed</span>
       <strong>${escapeHtml(summary.refilled ?? 0)}</strong>
     </div>
   `;
@@ -622,19 +624,19 @@ function renderReplenishmentBoard() {
     .map((column) => {
       const columnCards = cards.filter((card) => card.status === column.key);
       return `
-        <section class="kanban-column">
-          <div class="kanban-column-heading">
+        <section class="progress-column">
+          <div class="progress-column-heading">
             <div>
               <h3>${escapeHtml(column.label)}</h3>
               <p>${escapeHtml(column.help)}</p>
             </div>
             <span>${columnCards.length}</span>
           </div>
-          <div class="kanban-card-list">
+          <div class="progress-card-list">
             ${
               columnCards.length
                 ? columnCards.map(renderReplenishmentCard).join("")
-                : `<p class="empty-state">No signals in this step.</p>`
+                : `<p class="empty-state">No requests in this status.</p>`
             }
           </div>
         </section>
@@ -648,20 +650,22 @@ function renderReplenishmentCard(card) {
   const priority = String(card.priority || "Normal");
   const priorityClass = ["Normal", "High", "Critical"].includes(priority) ? priority.toLowerCase() : "normal";
   const timeLabel = formatReplenishmentTime(card.updatedAt || card.createdAt);
+  const adminControls = isAdmin();
+  const displayId = replenishmentDisplayId(card.id);
   return `
-    <article class="kanban-card priority-${priorityClass}">
-      <div class="kanban-card-title">
-        <span>${escapeHtml(card.id)}</span>
-        <strong>${escapeHtml(card.partName || card.sku || "Manual item")}</strong>
+    <article class="progress-card priority-${priorityClass}">
+      <div class="progress-card-title">
+        <span>${escapeHtml(displayId)}</span>
+        <strong>${escapeHtml(card.partName || card.sku || "Part pending SKU")}</strong>
       </div>
-      <div class="kanban-card-tags">
+      <div class="progress-card-tags">
         <span class="priority-chip">${escapeHtml(priority)}</span>
         <span>${escapeHtml(card.category || "Uncategorized")}</span>
       </div>
-      <div class="kanban-card-meta">
+      <div class="progress-card-meta">
         <div>
           <span>SKU</span>
-          <strong>${escapeHtml(card.sku || "Manual")}</strong>
+          <strong>${escapeHtml(card.sku || "Pending")}</strong>
         </div>
         <div>
           <span>Location</span>
@@ -677,16 +681,26 @@ function renderReplenishmentCard(card) {
         </div>
       </div>
       ${card.notes ? `<p>${escapeHtml(card.notes)}</p>` : ""}
-      <div class="kanban-card-footer">
-        <span>${escapeHtml(card.createdBy || "Unknown")} - ${escapeHtml(timeLabel)}</span>
+      <div class="progress-card-footer">
+        <span>Updated ${escapeHtml(timeLabel)}</span>
         ${
-          nextStatus
-            ? `<button class="mini-button" type="button" data-replenishment-id="${escapeHtml(card.id)}" data-replenishment-status="${escapeHtml(nextStatus)}">Move to ${escapeHtml(nextStatus)}</button>`
-            : `<button class="mini-button" type="button" data-replenishment-id="${escapeHtml(card.id)}" data-replenishment-status="Bin Threshold Reached">Reopen Signal</button>`
+          adminControls
+            ? nextStatus
+              ? `<button class="mini-button" type="button" data-replenishment-id="${escapeHtml(card.id)}" data-replenishment-status="${escapeHtml(nextStatus)}">Update to ${escapeHtml(replenishmentStatusLabel(nextStatus))}</button>`
+              : `<button class="mini-button" type="button" data-replenishment-id="${escapeHtml(card.id)}" data-replenishment-status="New Request">Reopen Request</button>`
+            : ""
         }
       </div>
     </article>
   `;
+}
+
+function replenishmentDisplayId(id) {
+  return String(id || "") || "REQ";
+}
+
+function replenishmentStatusLabel(status) {
+  return replenishmentColumns.find((column) => column.key === status)?.label || status;
 }
 
 function nextReplenishmentStatus(status) {
@@ -706,7 +720,7 @@ function formatReplenishmentTime(timestamp) {
   }).format(date);
 }
 
-async function createReplenishmentSignal() {
+async function createReplenishmentRequest() {
   try {
     const user = requireUser();
     const part = selectedReplenishmentPart();
@@ -715,7 +729,7 @@ async function createReplenishmentSignal() {
       throw new Error("Choose a part or describe the item that needs replenishment.");
     }
     elements.replenishmentCreate.disabled = true;
-    setInlineStatus(elements.replenishmentStatus, "Sending replenishment signal...", "busy");
+    setInlineStatus(elements.replenishmentStatus, "Creating replenishment request...", "busy");
     const result = await requestJson("/api/replenishment", {
       method: "POST",
       body: JSON.stringify({
@@ -1920,8 +1934,29 @@ function syncActiveNavFromHash() {
   const hash = window.location.hash || "#scan";
   const fallback = document.querySelector(".nav-item[href='#scan']");
   const target = document.querySelector(`.nav-item[href='${hash}']`);
+  const activeItem = target && !target.hidden ? target : fallback;
+  const activeHash = activeItem?.getAttribute("href") || "#scan";
+
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("is-active"));
-  (target && !target.hidden ? target : fallback)?.classList.add("is-active");
+  activeItem?.classList.add("is-active");
+  document.querySelectorAll(".main-content > .panel").forEach((panel) => {
+    const panelHash = `#${panel.id}`;
+    const adminOnly = panel.hasAttribute("data-admin-only");
+    panel.hidden = panelHash !== activeHash || (adminOnly && !isAdmin());
+  });
+
+  if (elements.overviewHeader) {
+    elements.overviewHeader.hidden = activeHash !== "#scan";
+  }
+
+  if (hash !== activeHash) {
+    history.replaceState(null, "", activeHash);
+  }
+
+  if (state.activeRoute !== activeHash) {
+    state.activeRoute = activeHash;
+    window.scrollTo({ top: 0, left: 0 });
+  }
 }
 
 function bindEvents() {
@@ -1972,10 +2007,10 @@ function bindEvents() {
   });
   elements.movementNoNvbug.addEventListener("change", syncNvbugInput);
   elements.replenishmentSku.addEventListener("change", syncReplenishmentItemFromSku);
-  elements.replenishmentCreate.addEventListener("click", createReplenishmentSignal);
+  elements.replenishmentCreate.addEventListener("click", createReplenishmentRequest);
   elements.replenishmentRefresh.addEventListener("click", () => {
     loadReplenishmentBoard()
-      .then(() => setInlineStatus(elements.replenishmentStatus, "Replenishment board refreshed.", "success"))
+      .then(() => setInlineStatus(elements.replenishmentStatus, "Replenishment progress refreshed.", "success"))
       .catch((error) => setInlineStatus(elements.replenishmentStatus, error.message, "error"));
   });
   elements.managementRefresh.addEventListener("click", loadManagementReport);
