@@ -149,13 +149,13 @@
             <div class="section-heading">
               <div>
                 <h2 id="scanTitle">Find Part</h2>
-                <p>Type what you need in plain language. The app will group likely matches and ask for only the details that help narrow it down.</p>
+                <p>Search manually or scan a barcode/QR label, confirm the part, then update inventory with an audit trail.</p>
               </div>
-              <span class="sheet-source">Manual lookup flow</span>
+              <span class="sheet-source">Phase 1 lookup flow</span>
             </div>
 
             <ol class="steps" aria-label="Checkout steps">
-              <li class="is-active">Search catalog</li>
+              <li class="is-active">Choose lookup</li>
               <li>Confirm SKU</li>
               <li>Review aisle/bin</li>
               <li>Take or add quantity</li>
@@ -163,8 +163,26 @@
               <li>Finish and sign out</li>
             </ol>
 
+            <fieldset class="lookup-method" aria-label="Lookup method">
+              <legend>Lookup method</legend>
+              <label>
+                <input type="radio" name="lookupMethod" value="manual" checked />
+                <span>
+                  <strong>Manual Search</strong>
+                  <small>Search by SKU, category, connector, capacity, or common part name.</small>
+                </span>
+              </label>
+              <label>
+                <input type="radio" name="lookupMethod" value="code" />
+                <span>
+                  <strong>Barcode / QR</strong>
+                  <small>Scan a label or enter the code manually. Camera images are not stored.</small>
+                </span>
+              </label>
+            </fieldset>
+
             <div class="scan-grid">
-              <div class="scan-controls">
+              <div class="scan-controls" id="manualLookupPanel">
                 <label for="categoryHint">Part family</label>
                 <select id="categoryHint"></select>
                 <label for="scanHints" id="scanHintsLabel">What are you looking for?</label>
@@ -183,11 +201,32 @@
                 <button class="button primary" id="analyzeButton" type="button">Search Catalog</button>
                 <p class="inline-status" id="scanStatus" role="status"></p>
               </div>
+
+              <div class="scan-controls code-lookup" id="codeLookupPanel" hidden>
+                <div class="camera-permission-note">
+                  <strong>Camera permission</strong>
+                  <span>The browser will ask for camera access only when scanning a barcode or QR code. Use manual entry if camera access is unavailable.</span>
+                </div>
+                <div class="scanner-shell">
+                  <video id="codeScannerVideo" playsinline muted></video>
+                  <div class="scanner-empty" id="scannerEmpty">Scanner preview</div>
+                </div>
+                <div class="button-row scanner-actions">
+                  <button class="button secondary" id="startCodeScanButton" type="button">Start Camera Scan</button>
+                  <button class="button secondary" id="stopCodeScanButton" type="button" disabled>Stop Camera</button>
+                </div>
+                <label for="partCodeInput">Barcode or QR value</label>
+                <span class="input-button-pair">
+                  <input id="partCodeInput" placeholder="Example: QR-M2-SAMSUNG-980PRO-2TB" autocomplete="off" />
+                  <button class="button primary" id="lookupCodeButton" type="button">Lookup Code</button>
+                </span>
+                <p class="inline-status" id="codeLookupStatus" role="status"></p>
+              </div>
             </div>
 
             <div class="result-grid">
               <section class="subpanel" id="matchPanel" hidden>
-                <h3>Matching Results</h3>
+                <h3>Recommended Match</h3>
                 <div id="matchResult"></div>
                 <div class="button-row">
                   <button class="button primary" id="confirmMatchButton" type="button">Confirm This Part</button>
@@ -221,6 +260,14 @@
                 </div>
                 <label for="movementReason">Reason or ticket</label>
                 <input id="movementReason" placeholder="Example: build request, RMA return, replenishment" />
+                <label for="movementNvbug">NVBug#</label>
+                <span class="input-with-option">
+                  <input id="movementNvbug" placeholder="Example: 1234567" />
+                  <label class="check-option">
+                    <input id="movementNoNvbug" type="checkbox" />
+                    No NVBug# available
+                  </label>
+                </span>
                 <div class="button-row">
                   <button class="button primary" id="updateInventoryButton" type="button">Update Inventory</button>
                   <button class="button secondary" id="finishSignOutButton" type="button">Finish and Sign Out</button>
@@ -372,6 +419,7 @@
                   <select id="adminCsvFile">
                     <option value="parts">parts.csv - SKU catalog</option>
                     <option value="members">members.csv - members</option>
+                    <option value="partcodes">part_codes.csv - barcode / QR mappings</option>
                     <option value="transactions">transactions.csv - transaction log</option>
                     <option value="evaluations">evaluation_queue.csv - admin review queue</option>
                     <option value="replenishment">replenishment.csv - replenishment board</option>

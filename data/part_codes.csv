@@ -1,0 +1,17 @@
+Code,Code Type,SKU,Asset ID,Status,Location Override,Created By,Created At,Last Scanned At,Notes
+QR-GPU-A100-80GB-PCIE,QR,GPU-A100-80GB-PCIE,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-GPU-H100-80GB-PCIE,QR,GPU-H100-80GB-PCIE,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-GPU-L40S-48GB,QR,GPU-L40S-48GB,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-HDD-HGST-20TB-SATA,QR,HDD-HGST-20TB-SATA,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-HDD-SEAGATE-18TB-SAS,QR,HDD-SEAGATE-18TB-SAS,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-M2-SAMSUNG-980PRO-2TB,QR,M2-SAMSUNG-980PRO-2TB,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-M2-WD-SN850X-4TB,QR,M2-WD-SN850X-4TB,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-NIC-MCX6-200GBE,QR,NIC-MCX6-200GBE,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-RISER-NV-4U-PCIE,QR,RISER-NV-4U-PCIE,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-TRANS-QTM2,QR,TRANS-QTM2,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-CBL-MINISAS-HD-4X-SATA,QR,CBL-MINISAS-HD-4X-SATA,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-CBL-C13-C14-2M,QR,CBL-C13-C14-2M,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-PDU-APC-32A-3PH,QR,PDU-APC-32A-3PH,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-PSU-DELTA-12V-2400W,QR,PSU-DELTA-12V-2400W,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-SERVER-DELL-R760,QR,SERVER-DELL-R760,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code
+QR-HOSE-WC-1.5M-QD,QR,HOSE-WC-1.5M-QD,,Active,,System Seed,2026-05-28T00:00:00.000Z,,SKU-level pilot QR code

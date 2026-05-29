@@ -19,7 +19,9 @@ const state = {
   pendingReview: null,
   searchResult: null,
   candidate: null,
-  confirmedPart: null
+  confirmedPart: null,
+  lookupContext: { method: "Manual Search", code: "" },
+  scanner: { stream: null, frameId: null, detector: null, active: false }
 };
 
 const elements = {
@@ -35,10 +37,20 @@ const elements = {
   logoutButton: document.querySelector("#logoutButton"),
   saveStatus: document.querySelector("#saveStatus"),
   refreshButton: document.querySelector("#refreshButton"),
+  lookupMethodInputs: [...document.querySelectorAll("input[name='lookupMethod']")],
+  manualLookupPanel: document.querySelector("#manualLookupPanel"),
+  codeLookupPanel: document.querySelector("#codeLookupPanel"),
   categoryHint: document.querySelector("#categoryHint"),
   scanHints: document.querySelector("#scanHints"),
   scanStatus: document.querySelector("#scanStatus"),
   analyzeButton: document.querySelector("#analyzeButton"),
+  partCodeInput: document.querySelector("#partCodeInput"),
+  lookupCodeButton: document.querySelector("#lookupCodeButton"),
+  startCodeScanButton: document.querySelector("#startCodeScanButton"),
+  stopCodeScanButton: document.querySelector("#stopCodeScanButton"),
+  codeScannerVideo: document.querySelector("#codeScannerVideo"),
+  scannerEmpty: document.querySelector("#scannerEmpty"),
+  codeLookupStatus: document.querySelector("#codeLookupStatus"),
   matchPanel: document.querySelector("#matchPanel"),
   matchResult: document.querySelector("#matchResult"),
   confirmMatchButton: document.querySelector("#confirmMatchButton"),
@@ -51,6 +63,8 @@ const elements = {
   movementAction: document.querySelector("#movementAction"),
   movementQuantity: document.querySelector("#movementQuantity"),
   movementReason: document.querySelector("#movementReason"),
+  movementNvbug: document.querySelector("#movementNvbug"),
+  movementNoNvbug: document.querySelector("#movementNoNvbug"),
   updateInventoryButton: document.querySelector("#updateInventoryButton"),
   finishSignOutButton: document.querySelector("#finishSignOutButton"),
   locationPanel: document.querySelector("#locationPanel"),
@@ -123,6 +137,33 @@ function setInlineStatus(element, message, tone = "") {
   if (!element) return;
   element.textContent = message;
   element.className = `inline-status ${tone}`.trim();
+}
+
+function selectedLookupMethod() {
+  return elements.lookupMethodInputs.find((input) => input.checked)?.value || "manual";
+}
+
+function resetPartFlow() {
+  state.searchResult = null;
+  state.candidate = null;
+  state.confirmedPart = null;
+  elements.matchPanel.hidden = true;
+  elements.evaluationPanel.hidden = true;
+  elements.movementPanel.hidden = true;
+  elements.locationPanel.hidden = true;
+  elements.confirmMatchButton.disabled = true;
+}
+
+function setLookupMethod(method) {
+  const useCodeLookup = method === "code";
+  elements.manualLookupPanel.hidden = useCodeLookup;
+  elements.codeLookupPanel.hidden = !useCodeLookup;
+  if (!useCodeLookup) {
+    stopCodeScanner();
+  }
+  setInlineStatus(elements.scanStatus, "", "");
+  setInlineStatus(elements.codeLookupStatus, "", "");
+  resetPartFlow();
 }
 
 function csvEscape(value) {
@@ -730,13 +771,141 @@ function partImageSrc(imagePath) {
   return `/reference-images/${value}`;
 }
 
+function scannerSupported() {
+  return Boolean(window.BarcodeDetector && navigator.mediaDevices?.getUserMedia);
+}
+
+async function createBarcodeDetector() {
+  if (!window.BarcodeDetector) {
+    throw new Error("This browser does not support camera barcode scanning. Enter the code manually instead.");
+  }
+  const preferredFormats = ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e", "data_matrix", "pdf417"];
+  if (typeof window.BarcodeDetector.getSupportedFormats === "function") {
+    const supported = await window.BarcodeDetector.getSupportedFormats();
+    const formats = preferredFormats.filter((format) => supported.includes(format));
+    return formats.length ? new window.BarcodeDetector({ formats }) : new window.BarcodeDetector();
+  }
+  return new window.BarcodeDetector({ formats: preferredFormats });
+}
+
+function syncScannerButtons() {
+  if (!elements.startCodeScanButton) return;
+  elements.startCodeScanButton.disabled = state.scanner.active;
+  elements.stopCodeScanButton.disabled = !state.scanner.active;
+  elements.scannerEmpty.hidden = state.scanner.active;
+}
+
+function stopCodeScanner() {
+  if (state.scanner.frameId) {
+    cancelAnimationFrame(state.scanner.frameId);
+  }
+  if (state.scanner.stream) {
+    state.scanner.stream.getTracks().forEach((track) => track.stop());
+  }
+  state.scanner = {
+    ...state.scanner,
+    stream: null,
+    frameId: null,
+    active: false
+  };
+  if (elements.codeScannerVideo) {
+    elements.codeScannerVideo.srcObject = null;
+  }
+  syncScannerButtons();
+}
+
+async function scanCodeFrame() {
+  if (!state.scanner.active || !state.scanner.detector) return;
+  try {
+    const codes = await state.scanner.detector.detect(elements.codeScannerVideo);
+    const rawValue = codes?.[0]?.rawValue;
+    if (rawValue) {
+      elements.partCodeInput.value = rawValue;
+      setInlineStatus(elements.codeLookupStatus, "Code detected. Looking up the mapped SKU...", "busy");
+      stopCodeScanner();
+      await lookupPartCode("Camera Barcode/QR");
+      return;
+    }
+  } catch (error) {
+    setInlineStatus(elements.codeLookupStatus, error.message, "error");
+  }
+  state.scanner.frameId = requestAnimationFrame(scanCodeFrame);
+}
+
+async function startCodeScanner() {
+  try {
+    requireUser();
+    if (!scannerSupported()) {
+      throw new Error("Camera barcode scanning is not available in this browser. Enter the code manually.");
+    }
+    setInlineStatus(elements.codeLookupStatus, "Requesting camera permission...", "busy");
+    state.scanner.detector = await createBarcodeDetector();
+    state.scanner.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false
+    });
+    elements.codeScannerVideo.srcObject = state.scanner.stream;
+    await elements.codeScannerVideo.play();
+    state.scanner.active = true;
+    syncScannerButtons();
+    setInlineStatus(elements.codeLookupStatus, "Camera is active. Point it at a barcode or QR label.", "busy");
+    state.scanner.frameId = requestAnimationFrame(scanCodeFrame);
+  } catch (error) {
+    stopCodeScanner();
+    setInlineStatus(elements.codeLookupStatus, error.message, "error");
+  }
+}
+
+function renderUnknownCodeResult(result) {
+  elements.matchPanel.hidden = false;
+  elements.confirmMatchButton.disabled = true;
+  elements.matchResult.innerHTML = `
+    <div class="search-summary">
+      <strong>${escapeHtml(result.message || "Code requires administrator review.")}</strong>
+      <span>${escapeHtml(result.code || "")} is not available for inventory movement until an administrator maps or resolves it.</span>
+    </div>
+  `;
+}
+
+async function lookupPartCode(lookupMethod = "Manual Code Entry") {
+  try {
+    requireUser();
+    resetPartFlow();
+    const code = elements.partCodeInput.value.trim();
+    state.lookupContext = { method: lookupMethod, code };
+    setInlineStatus(elements.codeLookupStatus, "Looking up code...", "busy");
+
+    const result = await requestJson("/api/part-code-lookup", {
+      method: "POST",
+      body: JSON.stringify({
+        user: state.user,
+        code,
+        lookupMethod
+      })
+    });
+
+    state.lookupContext = { method: lookupMethod, code: result.code || code };
+    if (!result.found) {
+      renderUnknownCodeResult(result);
+      setInlineStatus(elements.codeLookupStatus, result.message, "error");
+      return;
+    }
+
+    state.searchResult = result;
+    state.candidate = result.match;
+    renderMatch(result);
+    setInlineStatus(elements.codeLookupStatus, result.message, "success");
+    setInlineStatus(elements.scanStatus, result.message, "success");
+  } catch (error) {
+    setInlineStatus(elements.codeLookupStatus, error.message, "error");
+  }
+}
+
 async function analyzePart() {
   try {
     requireUser();
-    elements.matchPanel.hidden = true;
-    elements.evaluationPanel.hidden = true;
-    elements.movementPanel.hidden = true;
-    elements.locationPanel.hidden = true;
+    resetPartFlow();
+    state.lookupContext = { method: "Manual Search", code: "" };
     setInlineStatus(elements.scanStatus, "Searching the catalog...", "busy");
 
     const result = await requestJson("/api/analyze-part", {
@@ -768,21 +937,48 @@ function renderMatch(result) {
     return;
   }
 
-  const bestPart = result.match?.part || candidates[0].part;
-  const groups = result.groups?.length
-    ? result.groups
-    : [
-        {
-          label: "Best matches",
-          candidates
-        }
-      ];
-  elements.confirmMatchButton.disabled = !bestPart;
+  const recommended = result.match || candidates[0];
+  const bestPart = recommended.part;
+  const confidence = Math.round((recommended.confidence || 0) * 100);
+  const alternatives = candidates.filter((candidate) => candidate.part.sku !== bestPart.sku).slice(0, 8);
+  elements.confirmMatchButton.disabled = !recommended;
   elements.matchResult.innerHTML = `
-    <div class="search-summary">
-      <strong>${escapeHtml(result.summary || `Found ${candidates.length} matching option${candidates.length === 1 ? "" : "s"}.`)}</strong>
-      <span>Pick the closest match below. Add type, connector, or capacity to narrow further.</span>
-    </div>
+    <section class="recommended-match">
+      <div class="recommended-match-header">
+        <div>
+          <span class="result-eyebrow">Recommended SKU</span>
+          <h4>${escapeHtml(bestPart.sku)}</h4>
+          <p>${escapeHtml(bestPart.name)} - ${escapeHtml(bestPart.category)}</p>
+        </div>
+        <span class="confidence large">${confidence}% confidence</span>
+      </div>
+      <div class="recommended-metrics" aria-label="Recommended part details">
+        <div>
+          <span>Available</span>
+          <strong>${escapeHtml(bestPart.quantity)}</strong>
+        </div>
+        <div>
+          <span>Aisle</span>
+          <strong>${escapeHtml(bestPart.aisle)}</strong>
+        </div>
+        <div>
+          <span>Bin</span>
+          <strong>${escapeHtml(bestPart.bin)}</strong>
+        </div>
+      </div>
+      <p class="recommended-detail">${escapeHtml(bestPart.distinguishers)}</p>
+      ${
+        recommended.reasons?.length
+          ? `<div class="match-reasons">${recommended.reasons
+              .slice(0, 3)
+              .map((reason) => `<span>${escapeHtml(reason)}</span>`)
+              .join("")}</div>`
+          : ""
+      }
+      <button class="button primary recommended-action" type="button" data-candidate-sku="${escapeHtml(bestPart.sku)}">
+        Use This SKU
+      </button>
+    </section>
     ${
       result.refinements?.length
         ? `<div class="refinement-panel">
@@ -806,55 +1002,35 @@ function renderMatch(result) {
           </div>`
         : ""
     }
-    <div class="match-groups">
-      ${groups
-        .map(
-          (group) => `
-            <section class="match-group">
-              <div class="match-group-heading">
-                <h4>${escapeHtml(group.label)}</h4>
-                <span>${group.candidates.length} option${group.candidates.length === 1 ? "" : "s"}</span>
-              </div>
-              <div class="part-result-list">
-                ${group.candidates
-                  .map((candidate) => {
-                    const part = candidate.part;
-                    const confidence = Math.round(candidate.confidence * 100);
-                    const selected = state.candidate?.part?.sku === part.sku;
-                    return `
-                      <article class="part-result ${selected ? "is-selected" : ""}">
-                        <div class="part-result-main">
-                          <span class="confidence">${confidence}% match</span>
-                          <h4>${escapeHtml(part.name)}</h4>
-                          <p><strong>${escapeHtml(part.sku)}</strong> - ${escapeHtml(part.category)}</p>
-                          <p>${escapeHtml(part.distinguishers)}</p>
-                          <div class="part-result-meta">
-                            <span>Aisle ${escapeHtml(part.aisle)} / Bin ${escapeHtml(part.bin)}</span>
-                            <span>${escapeHtml(part.quantity)} available</span>
-                          </div>
-                        </div>
-                        <div class="part-result-actions">
-                          <button class="mini-button" type="button" data-candidate-sku="${escapeHtml(part.sku)}">Select</button>
-                        </div>
-                      </article>
-                    `;
-                  })
-                  .join("")}
-              </div>
-            </section>
-          `
-        )
-        .join("")}
-    </div>
     ${
-      candidates.length > 1
-        ? `<div class="candidate-strip quick-picks">${candidates
-            .slice(0, 6)
-            .map(
-              (candidate) =>
-                `<button class="mini-button" type="button" data-candidate-sku="${escapeHtml(candidate.part.sku)}">${escapeHtml(candidate.part.sku)}</button>`
-            )
-            .join("")}</div>`
+      alternatives.length
+        ? `<section class="alternate-matches">
+            <div class="match-group-heading">
+              <h4>Other Possible Matches</h4>
+              <span>${alternatives.length} option${alternatives.length === 1 ? "" : "s"}</span>
+            </div>
+            <div class="part-result-list">
+              ${alternatives
+                .map((candidate) => {
+                  const part = candidate.part;
+                  const optionConfidence = Math.round(candidate.confidence * 100);
+                  return `
+                    <article class="part-result alternate">
+                      <div class="part-result-main">
+                        <span class="confidence">${optionConfidence}% match</span>
+                        <h4>${escapeHtml(part.sku)}</h4>
+                        <p><strong>${escapeHtml(part.name)}</strong></p>
+                        <p>${escapeHtml(part.category)} - Aisle ${escapeHtml(part.aisle)} / Bin ${escapeHtml(part.bin)} - ${escapeHtml(part.quantity)} available</p>
+                      </div>
+                      <div class="part-result-actions">
+                        <button class="mini-button" type="button" data-candidate-sku="${escapeHtml(part.sku)}">Review SKU</button>
+                      </div>
+                    </article>
+                  `;
+                })
+                .join("")}
+            </div>
+          </section>`
         : ""
     }
   `;
@@ -896,6 +1072,14 @@ function renderConfirmedPart() {
   `;
 }
 
+function syncNvbugInput() {
+  const noNvbug = elements.movementNoNvbug?.checked;
+  elements.movementNvbug.disabled = noNvbug;
+  if (noNvbug) {
+    elements.movementNvbug.value = "";
+  }
+}
+
 async function submitEvaluation() {
   try {
     requireUser();
@@ -905,7 +1089,9 @@ async function submitEvaluation() {
         user: state.user,
         hints: elements.scanHints.value,
         candidate: state.candidate,
-        reason: elements.evaluationReason.value || "User rejected catalog match"
+        reason: elements.evaluationReason.value || "User rejected catalog match",
+        code: state.lookupContext.code,
+        lookupMethod: state.lookupContext.method
       })
     });
     setInlineStatus(elements.scanStatus, result.message, "success");
@@ -930,7 +1116,10 @@ async function updateInventoryFromSearch() {
         sku: state.confirmedPart.sku,
         action: elements.movementAction.value,
         quantity: elements.movementQuantity.value,
-        reason: elements.movementReason.value
+        reason: elements.movementReason.value,
+        nvbug: elements.movementNoNvbug.checked ? "No NVBug# Available" : elements.movementNvbug.value,
+        lookupMethod: state.lookupContext.method,
+        partCode: state.lookupContext.code
       })
     });
 
@@ -951,6 +1140,14 @@ function normalizeAdminCsvShape(parsed, key) {
   if (key === "parts" && !parsed.headers.includes("Metadata")) {
     parsed.headers.push("Metadata");
     parsed.rows.forEach((row) => row.push(""));
+  }
+  if (key === "partcodes") {
+    ["Code", "Code Type", "SKU", "Status"].forEach((header) => {
+      if (!parsed.headers.includes(header)) {
+        parsed.headers.push(header);
+        parsed.rows.forEach((row) => row.push(""));
+      }
+    });
   }
   parsed.rows = parsed.rows.map((row) => parsed.headers.map((_, index) => row[index] ?? ""));
   return parsed;
@@ -1567,6 +1764,19 @@ function bindEvents() {
   elements.memberSelect.addEventListener("change", syncLoginFields);
   elements.logoutButton.addEventListener("click", signOut);
   elements.refreshButton.addEventListener("click", loadAll);
+  elements.lookupMethodInputs.forEach((input) => {
+    input.addEventListener("change", () => setLookupMethod(selectedLookupMethod()));
+  });
+  elements.lookupCodeButton.addEventListener("click", () => lookupPartCode("Manual Code Entry"));
+  elements.startCodeScanButton.addEventListener("click", startCodeScanner);
+  elements.stopCodeScanButton.addEventListener("click", stopCodeScanner);
+  elements.partCodeInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      lookupPartCode("Manual Code Entry");
+    }
+  });
+  elements.movementNoNvbug.addEventListener("change", syncNvbugInput);
   elements.replenishmentSku.addEventListener("change", syncReplenishmentItemFromSku);
   elements.replenishmentCreate.addEventListener("click", createReplenishmentSignal);
   elements.replenishmentRefresh.addEventListener("click", () => {
@@ -1669,10 +1879,12 @@ function bindEvents() {
 }
 
 function signOut() {
+  stopCodeScanner();
   localStorage.removeItem(userStorageKey);
   state.user = null;
   state.candidate = null;
   state.confirmedPart = null;
+  state.lookupContext = { method: "Manual Search", code: "" };
   elements.matchPanel.hidden = true;
   elements.evaluationPanel.hidden = true;
   elements.movementPanel.hidden = true;
@@ -1698,6 +1910,8 @@ bindEvents();
 loadUser();
 updateCharacterCount();
 syncActiveNavFromHash();
+setLookupMethod(selectedLookupMethod());
+syncNvbugInput();
 loadAll().catch((error) => {
   setSaveStatus(error.message, "error");
 });

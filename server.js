@@ -12,6 +12,7 @@ const membersPath = path.join(dataDir, "members.csv");
 const transactionsPath = path.join(dataDir, "transactions.csv");
 const evaluationPath = path.join(dataDir, "evaluation_queue.csv");
 const replenishmentPath = path.join(dataDir, "replenishment.csv");
+const partCodesPath = path.join(dataDir, "part_codes.csv");
 const referenceImagesDir = path.join(dataDir, "reference_images");
 const reportEmail = "gamehta@nvidia.com";
 const rowLabel = "Available Quantity";
@@ -21,6 +22,7 @@ const adminEmails = new Set(["gamehta@nvidia.com", "monicam@nvidia.com"]);
 const csvFiles = {
   parts: { path: partsPath, fileName: "parts.csv", label: "SKU Catalog" },
   members: { path: membersPath, fileName: "members.csv", label: "Members" },
+  partcodes: { path: partCodesPath, fileName: "part_codes.csv", label: "Barcode / QR Mappings" },
   transactions: { path: transactionsPath, fileName: "transactions.csv", label: "Transactions Log" },
   evaluations: { path: evaluationPath, fileName: "evaluation_queue.csv", label: "Admin Review Queue" },
   replenishment: { path: replenishmentPath, fileName: "replenishment.csv", label: "Replenishment Board" }
@@ -106,7 +108,13 @@ const transactionHeaders = [
   "After Quantity",
   "Aisle",
   "Bin",
-  "Reason"
+  "Reason",
+  "User Role",
+  "Guest",
+  "NVBug#",
+  "Lookup Method",
+  "Part Code",
+  "Admin Override"
 ];
 
 const evaluationHeaders = [
@@ -118,7 +126,22 @@ const evaluationHeaders = [
   "Candidate Name",
   "Confidence",
   "Reason",
-  "Status"
+  "Status",
+  "Code",
+  "Lookup Method"
+];
+
+const partCodeHeaders = [
+  "Code",
+  "Code Type",
+  "SKU",
+  "Asset ID",
+  "Status",
+  "Location Override",
+  "Created By",
+  "Created At",
+  "Last Scanned At",
+  "Notes"
 ];
 
 const replenishmentHeaders = [
@@ -426,6 +449,39 @@ function writeCsv(headers, rows) {
   return `${[headerLine, ...rowLines].join("\n")}\n`;
 }
 
+async function ensureCsvHeaders(filePath, requiredHeaders) {
+  let parsed;
+  try {
+    parsed = parseCsv(await fs.readFile(filePath, "utf8"));
+  } catch {
+    await fs.writeFile(filePath, requiredHeaders.map(csvEscape).join(",") + "\n", "utf8");
+    return requiredHeaders;
+  }
+
+  if (!parsed.headers.length) {
+    await fs.writeFile(filePath, requiredHeaders.map(csvEscape).join(",") + "\n", "utf8");
+    return requiredHeaders;
+  }
+
+  const headers = [...parsed.headers];
+  requiredHeaders.forEach((header) => {
+    if (!headers.includes(header)) {
+      headers.push(header);
+    }
+  });
+
+  if (headers.length !== parsed.headers.length) {
+    await fs.writeFile(filePath, writeCsv(headers, parsed.rows), "utf8");
+  }
+
+  return headers;
+}
+
+async function appendCsvRow(filePath, requiredHeaders, row) {
+  const headers = await ensureCsvHeaders(filePath, requiredHeaders);
+  await fs.appendFile(filePath, writeCsv(headers, [row]).split("\n").slice(1).join("\n"), "utf8");
+}
+
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : fallback;
@@ -543,6 +599,61 @@ async function readMembers() {
       email: String(row.Email || "").trim()
     }))
     .filter((member) => member.name && member.email);
+}
+
+function normalizeCode(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function normalizePartCode(row) {
+  return {
+    code: String(row.Code || "").trim(),
+    normalizedCode: normalizeCode(row.Code),
+    codeType: row["Code Type"] || "QR",
+    sku: String(row.SKU || "").trim(),
+    assetId: row["Asset ID"] || "",
+    status: row.Status || "Active",
+    locationOverride: row["Location Override"] || "",
+    createdBy: row["Created By"] || "",
+    createdAt: row["Created At"] || "",
+    lastScannedAt: row["Last Scanned At"] || "",
+    notes: row.Notes || "",
+    raw: row
+  };
+}
+
+function denormalizePartCode(code, headers = partCodeHeaders) {
+  const row = {
+    ...(code.raw || {}),
+    Code: code.code,
+    "Code Type": code.codeType,
+    SKU: code.sku,
+    "Asset ID": code.assetId,
+    Status: code.status,
+    "Location Override": code.locationOverride,
+    "Created By": code.createdBy,
+    "Created At": code.createdAt,
+    "Last Scanned At": code.lastScannedAt,
+    Notes: code.notes
+  };
+  return Object.fromEntries(headers.map((header) => [header, row[header] ?? ""]));
+}
+
+async function readPartCodes() {
+  await ensureCsvHeaders(partCodesPath, partCodeHeaders);
+  const csv = await fs.readFile(partCodesPath, "utf8");
+  return parseCsv(csv).rows.map(normalizePartCode).filter((row) => row.code);
+}
+
+async function writePartCodes(codes) {
+  const existing = parseCsv(await fs.readFile(partCodesPath, "utf8"));
+  const headers = [...existing.headers];
+  partCodeHeaders.forEach((header) => {
+    if (!headers.includes(header)) {
+      headers.push(header);
+    }
+  });
+  await fs.writeFile(partCodesPath, writeCsv(headers, codes.map((code) => denormalizePartCode(code, headers))), "utf8");
 }
 
 function normalizeReplenishmentCard(row) {
@@ -764,6 +875,27 @@ function validateCsvForSave(key, content) {
     });
   }
 
+  if (key === "partcodes") {
+    ["Code", "Code Type", "SKU", "Status"].forEach((header) => {
+      if (!parsed.headers.includes(header)) {
+        throw new Error(`part_codes.csv must keep the ${header} column.`);
+      }
+    });
+
+    const activeCodes = new Map();
+    parsed.rows.forEach((row, index) => {
+      const normalized = normalizeCode(row.Code);
+      const status = String(row.Status || "Active").trim().toLowerCase();
+      if (!normalized || status !== "active") {
+        return;
+      }
+      if (activeCodes.has(normalized)) {
+        throw new Error(`part_codes.csv has duplicate active code "${row.Code}" on rows ${activeCodes.get(normalized)} and ${index + 2}.`);
+      }
+      activeCodes.set(normalized, index + 2);
+    });
+  }
+
   if (key === "replenishment") {
     ["Id", "Part Name", "Requested Quantity", "Status"].forEach((header) => {
       if (!parsed.headers.includes(header)) {
@@ -843,7 +975,8 @@ function normalizeUser(user) {
   return {
     name,
     email,
-    type: String(user?.type || "member").trim() || "member"
+    type: String(user?.type || "member").trim() || "member",
+    role: String(user?.role || "user").trim() || "user"
   };
 }
 
@@ -1057,11 +1190,148 @@ async function recordEvaluation(payload) {
     "Candidate Name": candidate.name || candidate["Part Name"] || "",
     Confidence: payload.candidate?.confidence ?? payload.confidence ?? "",
     Reason: String(payload.reason || "User rejected catalog match").trim(),
-    Status: "Pending"
+    Status: "Pending",
+    Code: String(payload.code || "").trim(),
+    "Lookup Method": String(payload.lookupMethod || "").trim()
   };
 
-  await fs.appendFile(evaluationPath, writeCsv(evaluationHeaders, [row]).split("\n").slice(1).join("\n"), "utf8");
+  await appendCsvRow(evaluationPath, evaluationHeaders, row);
   return { ok: true, message: "Search result was sent to administrator evaluation.", row };
+}
+
+async function lookupPartCode(payload) {
+  const user = normalizeUser(payload.user);
+  const code = String(payload.code || "").trim();
+  const normalizedCode = normalizeCode(code);
+  const lookupMethod = String(payload.lookupMethod || "Barcode/QR").trim();
+
+  if (!normalizedCode) {
+    throw new Error("Enter or scan a barcode / QR code first.");
+  }
+
+  const [parts, codes] = await Promise.all([readParts(), readPartCodes()]);
+  const activeMatches = codes.filter((item) => item.normalizedCode === normalizedCode && String(item.status || "Active").toLowerCase() === "active");
+
+  if (activeMatches.length > 1) {
+    await recordEvaluation({
+      user,
+      code,
+      lookupMethod,
+      hints: `Duplicate active barcode / QR code: ${code}`,
+      reason: "Duplicate active code mapping requires administrator review."
+    });
+    return {
+      ok: true,
+      found: false,
+      needsAdminEvaluation: true,
+      code,
+      message: "This code has more than one active mapping. It was sent to administrator review."
+    };
+  }
+
+  const disabledMatch = codes.find((item) => item.normalizedCode === normalizedCode);
+  const directSkuPart = parts.find((part) => normalizeCode(part.sku) === normalizedCode);
+  const codeRecord = activeMatches[0] || (directSkuPart
+    ? {
+        code,
+        normalizedCode,
+        codeType: "SKU Direct Entry",
+        sku: directSkuPart.sku,
+        assetId: "",
+        status: "Active",
+        locationOverride: "",
+        createdBy: "",
+        createdAt: "",
+        lastScannedAt: "",
+        notes: "Direct SKU fallback"
+      }
+    : null);
+
+  if (disabledMatch && disabledMatch.status && String(disabledMatch.status).toLowerCase() !== "active" && !activeMatches.length) {
+    await recordEvaluation({
+      user,
+      code,
+      lookupMethod,
+      candidate: { SKU: disabledMatch.sku },
+      hints: `Inactive barcode / QR code: ${code}`,
+      reason: `Code status is ${disabledMatch.status}. Administrator review required.`
+    });
+    return {
+      ok: true,
+      found: false,
+      needsAdminEvaluation: true,
+      code,
+      message: `This code is ${disabledMatch.status}. It was sent to administrator review.`
+    };
+  }
+
+  if (!codeRecord) {
+    await recordEvaluation({
+      user,
+      code,
+      lookupMethod,
+      hints: `Unknown barcode / QR code: ${code}`,
+      reason: "Unknown code submitted for administrator mapping."
+    });
+    return {
+      ok: true,
+      found: false,
+      needsAdminEvaluation: true,
+      code,
+      message: "Code was not found. It was sent to administrator review."
+    };
+  }
+
+  const part = parts.find((candidate) => candidate.sku === codeRecord.sku);
+  if (!part) {
+    await recordEvaluation({
+      user,
+      code,
+      lookupMethod,
+      candidate: { SKU: codeRecord.sku },
+      hints: `Barcode / QR code mapped to missing SKU: ${code}`,
+      reason: "Code mapped to a SKU that does not exist in the catalog."
+    });
+    return {
+      ok: true,
+      found: false,
+      needsAdminEvaluation: true,
+      code,
+      message: "The code exists, but its SKU is missing from the catalog. It was sent to administrator review."
+    };
+  }
+
+  if (activeMatches[0]) {
+    const timestamp = new Date().toISOString();
+    const nextCodes = codes.map((item) =>
+      item.normalizedCode === normalizedCode && String(item.status || "Active").toLowerCase() === "active"
+        ? { ...item, lastScannedAt: timestamp }
+        : item
+    );
+    await writePartCodes(nextCodes);
+    codeRecord.lastScannedAt = timestamp;
+  }
+
+  const match = {
+    part,
+    confidence: 1,
+    score: 100,
+    reasons: [`${codeRecord.codeType || "Code"} matched ${codeRecord.code}`]
+  };
+
+  return {
+    ok: true,
+    found: true,
+    needsAdminEvaluation: false,
+    code,
+    codeRecord,
+    match,
+    candidates: [match],
+    groups: groupCandidates([match]),
+    refinements: [],
+    summary: `${codeRecord.codeType || "Code"} matched one catalog part.`,
+    message: "Code matched a catalog part. Confirm the SKU before updating inventory."
+  };
 }
 
 async function applyTransaction(payload) {
@@ -1070,6 +1340,10 @@ async function applyTransaction(payload) {
   const action = String(payload.action || "").trim();
   const quantity = Math.floor(Number(payload.quantity));
   const reason = String(payload.reason || "").trim();
+  const nvbug = String(payload.nvbug || payload["NVBug#"] || "").trim();
+  const lookupMethod = String(payload.lookupMethod || "").trim();
+  const partCode = String(payload.partCode || payload.code || "").trim();
+  const adminOverride = payload.adminOverride ? "Yes" : "";
 
   if (!["take", "add"].includes(action)) {
     throw new Error("Choose whether the user is taking the part or adding inventory.");
@@ -1113,14 +1387,16 @@ async function applyTransaction(payload) {
     "After Quantity": afterQuantity,
     Aisle: part.aisle,
     Bin: part.bin,
-    Reason: reason
+    Reason: reason,
+    "User Role": user.role,
+    Guest: user.type === "guest" ? "Yes" : "",
+    "NVBug#": nvbug,
+    "Lookup Method": lookupMethod,
+    "Part Code": partCode,
+    "Admin Override": adminOverride
   };
 
-  await fs.appendFile(
-    transactionsPath,
-    writeCsv(transactionHeaders, [transaction]).split("\n").slice(1).join("\n"),
-    "utf8"
-  );
+  await appendCsvRow(transactionsPath, transactionHeaders, transaction);
 
   return {
     ok: true,
@@ -1384,6 +1660,11 @@ async function serveStatic(request, response) {
     return;
   }
 
+  if (requestUrl.pathname === "/part_codes.csv") {
+    await sendCsv(response, partCodesPath, "part_codes.csv");
+    return;
+  }
+
   if (requestUrl.pathname === "/transactions.csv") {
     await sendCsv(response, transactionsPath, "transactions.csv");
     return;
@@ -1478,6 +1759,11 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if (request.method === "POST" && requestUrl.pathname === "/api/part-code-lookup") {
+      sendJson(response, 200, await lookupPartCode(await readJsonBody(request)));
+      return;
+    }
+
     if (request.method === "POST" && requestUrl.pathname === "/api/evaluation") {
       sendJson(response, 200, await recordEvaluation(await readJsonBody(request)));
       return;
@@ -1548,18 +1834,22 @@ async function ensureDataFiles() {
   } catch {
     await fs.writeFile(transactionsPath, transactionHeaders.map(csvEscape).join(",") + "\n", "utf8");
   }
+  await ensureCsvHeaders(transactionsPath, transactionHeaders);
 
   try {
     await fs.access(evaluationPath);
   } catch {
     await fs.writeFile(evaluationPath, evaluationHeaders.map(csvEscape).join(",") + "\n", "utf8");
   }
+  await ensureCsvHeaders(evaluationPath, evaluationHeaders);
 
   try {
     await fs.access(replenishmentPath);
   } catch {
     await fs.writeFile(replenishmentPath, replenishmentHeaders.map(csvEscape).join(",") + "\n", "utf8");
   }
+
+  await ensureCsvHeaders(partCodesPath, partCodeHeaders);
 }
 
 ensureDataFiles()

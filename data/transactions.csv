@@ -1,1 +1,2 @@
-Timestamp,User Name,Email,Action,SKU,Part Name,Category,Quantity,Before Quantity,After Quantity,Aisle,Bin,Reason
+Timestamp,User Name,Email,Action,SKU,Part Name,Category,Quantity,Before Quantity,After Quantity,Aisle,Bin,Reason,User Role,Guest,NVBug#,Lookup Method,Part Code,Admin Override
+2026-05-28T00:07:32.496Z,Gaurav Mehta,gamehta@nvidia.com,take,M2-SAMSUNG-980PRO-2TB,Samsung 980 PRO 2TB M.2,M.2 Drives,1,1,0,A08,02-01-3,Bug,,,,,,
