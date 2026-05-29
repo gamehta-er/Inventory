@@ -94,7 +94,7 @@
                 <path d="M8 5v14" />
                 <path d="M16 5v14" />
               </svg>
-              Replenishment
+              Replenishment Progress
             </a>
             <a class="nav-item" href="#management" data-admin-only>
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -183,13 +183,25 @@
 
             <div class="scan-grid">
               <div class="scan-controls" id="manualLookupPanel">
-                <label for="categoryHint">Part family</label>
-                <select id="categoryHint"></select>
-                <label for="scanHints" id="scanHintsLabel">What are you looking for?</label>
+                <div class="guided-search">
+                  <label for="categoryHint">
+                    Part family
+                    <select id="categoryHint"></select>
+                  </label>
+                  <label for="detailHint">
+                    Narrow by detail
+                    <select id="detailHint"></select>
+                  </label>
+                  <label for="skuHint">
+                    Matching SKU / part
+                    <select id="skuHint"></select>
+                  </label>
+                </div>
+                <label for="scanHints" id="scanHintsLabel">Optional search terms</label>
                 <textarea
                   id="scanHints"
-                  rows="4"
-                  placeholder="Example: GPU, hard drive, SSD 4TB, SATA drive, H100, MiniSAS cable..."
+                  rows="2"
+                  placeholder="Example: 4TB, C13, ConnectX-6, R760, MiniSAS..."
                 ></textarea>
                 <div class="quick-search-chips" aria-label="Common searches">
                   <button class="mini-button" type="button" data-search-preset="GPU">GPU</button>
@@ -226,9 +238,9 @@
 
             <div class="result-grid">
               <section class="subpanel" id="matchPanel" hidden>
-                <h3>Recommended Match</h3>
+                <h3 id="matchPanelTitle">Recommended Match</h3>
                 <div id="matchResult"></div>
-                <div class="button-row">
+                <div class="button-row" id="matchActionRow">
                   <button class="button primary" id="confirmMatchButton" type="button">Confirm This Part</button>
                   <button class="button secondary" id="rejectMatchButton" type="button">Not Correct - Send to Admin Review</button>
                 </div>
@@ -284,22 +296,22 @@
           <section class="panel" id="replenishment" aria-labelledby="replenishmentTitle">
             <div class="section-heading">
               <div>
-                <h2 id="replenishmentTitle">Replenishment Board</h2>
-                <p>Manual low-bin signals move through a Kanban workflow so the team can track what needs restocking.</p>
+                <h2 id="replenishmentTitle">Replenishment Progress</h2>
+                <p>Track open restock requests, current status, owner progress, and completed refills.</p>
               </div>
-              <button class="button secondary" id="replenishmentRefresh" type="button">Refresh Board</button>
+              <button class="button secondary" id="replenishmentRefresh" type="button">Refresh Progress</button>
             </div>
 
-            <section class="signal-panel" aria-labelledby="signalTitle">
+            <section class="signal-panel" aria-labelledby="signalTitle" data-admin-only>
               <div>
-                <h3 id="signalTitle">Create Manual Signal</h3>
-                <p>No barcode required. Pick a known SKU or describe the item, then send the signal to the board.</p>
+                <h3 id="signalTitle">Create Replenishment Request</h3>
+                <p>Admin-only control for creating a tracked restock request from a known SKU or part description.</p>
               </div>
               <div class="signal-form">
                 <label for="replenishmentSku">
                   Part
                   <select id="replenishmentSku">
-                    <option value="">Manual item / not sure</option>
+                    <option value="">Part not listed / pending SKU</option>
                   </select>
                 </label>
                 <label for="replenishmentItem">
@@ -321,15 +333,15 @@
               </div>
               <label for="replenishmentNotes">
                 Notes
-                <textarea id="replenishmentNotes" rows="3" placeholder="Where is the bin, what is low, or what project needs this?"></textarea>
+                <textarea id="replenishmentNotes" rows="3" placeholder="Location, shortage details, requester, owner, or business context."></textarea>
               </label>
               <div class="button-row">
-                <button class="button primary" id="replenishmentCreate" type="button">Send Signal</button>
+                <button class="button primary" id="replenishmentCreate" type="button">Create Request</button>
               </div>
             </section>
 
             <div class="replenishment-summary" id="replenishmentSummary"></div>
-            <div class="kanban-board" id="replenishmentBoard" aria-label="Replenishment Kanban board"></div>
+            <div class="kanban-board" id="replenishmentBoard" aria-label="Replenishment progress board"></div>
             <p class="inline-status" id="replenishmentStatus" role="status"></p>
           </section>
 

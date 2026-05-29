@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs/promises");
 const path = require("path");
+const { DatabaseSync } = require("node:sqlite");
 
 const root = __dirname;
 const publicDir = path.join(root, "public");
@@ -13,11 +14,13 @@ const transactionsPath = path.join(dataDir, "transactions.csv");
 const evaluationPath = path.join(dataDir, "evaluation_queue.csv");
 const replenishmentPath = path.join(dataDir, "replenishment.csv");
 const partCodesPath = path.join(dataDir, "part_codes.csv");
+const dbPath = path.join(dataDir, "inventory.db");
 const referenceImagesDir = path.join(dataDir, "reference_images");
 const reportEmail = "gamehta@nvidia.com";
 const rowLabel = "Available Quantity";
 const port = Number(process.env.PORT || 3000);
 const adminEmails = new Set(["gamehta@nvidia.com", "monicam@nvidia.com"]);
+let db;
 
 const csvFiles = {
   parts: { path: partsPath, fileName: "parts.csv", label: "SKU Catalog" },
@@ -170,6 +173,21 @@ const replenishmentStatuses = [
   "Reorder in Progress",
   "Bin Refilled"
 ];
+
+function defaultPartCodesFromParts(parts) {
+  return parts.map((part) => ({
+    Code: `QR-${part.SKU}`,
+    "Code Type": "QR",
+    SKU: part.SKU,
+    "Asset ID": "",
+    Status: "Active",
+    "Location Override": "",
+    "Created By": "System Seed",
+    "Created At": "2026-05-28T00:00:00.000Z",
+    "Last Scanned At": "",
+    Notes: "SKU-level pilot QR code"
+  }));
+}
 
 const defaultParts = [
   {
@@ -482,6 +500,135 @@ async function appendCsvRow(filePath, requiredHeaders, row) {
   await fs.appendFile(filePath, writeCsv(headers, [row]).split("\n").slice(1).join("\n"), "utf8");
 }
 
+const sqliteTables = {
+  parts: { table: "parts", headers: partsHeaders, seedPath: partsPath },
+  members: { table: "members", headers: memberHeaders, seedPath: membersPath },
+  partcodes: { table: "part_codes", headers: partCodeHeaders, seedPath: partCodesPath },
+  transactions: { table: "transactions", headers: transactionHeaders, seedPath: transactionsPath },
+  evaluations: { table: "evaluations", headers: evaluationHeaders, seedPath: evaluationPath },
+  replenishment: { table: "replenishment", headers: replenishmentHeaders, seedPath: replenishmentPath }
+};
+
+function quoteIdentifier(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function activeDb() {
+  if (!db) {
+    throw new Error("SQLite database is not initialized.");
+  }
+  return db;
+}
+
+function sqliteColumns(table) {
+  return activeDb()
+    .prepare(`PRAGMA table_info(${quoteIdentifier(table)})`)
+    .all()
+    .map((column) => column.name);
+}
+
+function ensureSqliteTable(table, headers) {
+  const columnSql = headers.map((header) => `${quoteIdentifier(header)} TEXT`).join(", ");
+  activeDb().exec(`CREATE TABLE IF NOT EXISTS ${quoteIdentifier(table)} (${columnSql})`);
+  const existing = new Set(sqliteColumns(table));
+  headers.forEach((header) => {
+    if (!existing.has(header)) {
+      activeDb().exec(`ALTER TABLE ${quoteIdentifier(table)} ADD COLUMN ${quoteIdentifier(header)} TEXT`);
+    }
+  });
+}
+
+function insertSqliteRows(table, headers, rows) {
+  if (!rows.length) return;
+  ensureSqliteTable(table, headers);
+  const placeholders = headers.map(() => "?").join(", ");
+  const columns = headers.map(quoteIdentifier).join(", ");
+  const statement = activeDb().prepare(`INSERT INTO ${quoteIdentifier(table)} (${columns}) VALUES (${placeholders})`);
+  activeDb().exec("BEGIN");
+  try {
+    rows.forEach((row) => {
+      statement.run(...headers.map((header) => row[header] ?? ""));
+    });
+    activeDb().exec("COMMIT");
+  } catch (error) {
+    activeDb().exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function replaceSqliteTable(table, headers, rows) {
+  ensureSqliteTable(table, headers);
+  activeDb().exec(`DELETE FROM ${quoteIdentifier(table)}`);
+  insertSqliteRows(table, headers, rows);
+}
+
+function appendSqliteRow(table, headers, row) {
+  insertSqliteRows(table, headers, [row]);
+}
+
+function readSqliteRows(table, preferredHeaders = []) {
+  ensureSqliteTable(table, preferredHeaders);
+  return activeDb().prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all();
+}
+
+function sqliteRowCount(table) {
+  return activeDb().prepare(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)}`).get().count;
+}
+
+function sqliteCsvContent(key) {
+  const config = sqliteTables[key];
+  if (!config) {
+    throw new Error("Choose a valid CSV file.");
+  }
+  const headers = sqliteColumns(config.table);
+  const rows = readSqliteRows(config.table, config.headers);
+  return writeCsv(headers, rows);
+}
+
+function importCsvToSqlite(key, content) {
+  const config = sqliteTables[key];
+  if (!config) {
+    throw new Error("Choose a valid CSV file.");
+  }
+  const parsed = parseCsv(content);
+  const headers = [...parsed.headers];
+  config.headers.forEach((header) => {
+    if (!headers.includes(header)) {
+      headers.push(header);
+    }
+  });
+  replaceSqliteTable(config.table, headers, parsed.rows);
+}
+
+async function exportSqliteCsv(key) {
+  const config = sqliteTables[key];
+  if (!config) return;
+  await fs.writeFile(config.seedPath, sqliteCsvContent(key), "utf8");
+}
+
+async function exportAllSqliteCsv() {
+  await Promise.all(Object.keys(sqliteTables).map(exportSqliteCsv));
+  await syncCategoryInventory(await readParts());
+}
+
+async function initializeSqlite() {
+  db = new DatabaseSync(dbPath);
+  activeDb().exec("PRAGMA journal_mode = WAL");
+  activeDb().exec("PRAGMA foreign_keys = ON");
+
+  Object.values(sqliteTables).forEach((config) => ensureSqliteTable(config.table, config.headers));
+  activeDb().exec(
+    'CREATE TABLE IF NOT EXISTS reports ("Timestamp" TEXT, "Comments" TEXT, "Inventory Snapshot" TEXT)'
+  );
+
+  for (const [key, config] of Object.entries(sqliteTables)) {
+    if (sqliteRowCount(config.table) === 0) {
+      const csv = await fs.readFile(config.seedPath, "utf8");
+      importCsvToSqlite(key, csv);
+    }
+  }
+}
+
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : fallback;
@@ -549,22 +696,21 @@ function quantitiesToCsv(quantities) {
 }
 
 async function readParts() {
-  const csv = await fs.readFile(partsPath, "utf8");
-  return parseCsv(csv).rows.map((row) => ({
+  return readSqliteRows("parts", partsHeaders).map((row) => ({
     ...normalizePart(row),
     raw: row
   }));
 }
 
 async function writeParts(parts) {
-  const existing = parseCsv(await fs.readFile(partsPath, "utf8"));
-  const headers = [...existing.headers];
+  const headers = sqliteColumns("parts");
   partsHeaders.forEach((header) => {
     if (!headers.includes(header)) {
       headers.push(header);
     }
   });
-  await fs.writeFile(partsPath, writeCsv(headers, parts.map((part) => denormalizePart(part, headers))), "utf8");
+  replaceSqliteTable("parts", headers, parts.map((part) => denormalizePart(part, headers)));
+  await exportSqliteCsv("parts");
   await syncCategoryInventory(parts);
 }
 
@@ -573,27 +719,20 @@ async function syncCategoryInventory(parts) {
 }
 
 async function readInventory() {
-  const csv = await fs.readFile(inventoryPath, "utf8");
-  const [headerLine, dataLine] = csv.trim().split(/\r?\n/);
-  const headers = parseCsvLine(headerLine || "");
-  const values = parseCsvLine(dataLine || "");
-  const quantities = {};
-  headers.slice(1).forEach((column) => {
-    quantities[column] = toNumber(values[headers.indexOf(column)]);
-  });
+  const quantities = aggregateByCategory(await readParts());
+  const columns = Object.keys(quantities);
 
   return {
-    columns: headers.slice(1),
-    rowLabel: values[0] || rowLabel,
+    columns,
+    rowLabel,
     quantities,
-    source: "data/inventory.csv",
+    source: "data/inventory.db",
     reportEmail
   };
 }
 
 async function readMembers() {
-  const csv = await fs.readFile(membersPath, "utf8");
-  return parseCsv(csv).rows
+  return readSqliteRows("members", memberHeaders)
     .map((row) => ({
       name: String(row.Member || "").trim(),
       email: String(row.Email || "").trim()
@@ -640,20 +779,18 @@ function denormalizePartCode(code, headers = partCodeHeaders) {
 }
 
 async function readPartCodes() {
-  await ensureCsvHeaders(partCodesPath, partCodeHeaders);
-  const csv = await fs.readFile(partCodesPath, "utf8");
-  return parseCsv(csv).rows.map(normalizePartCode).filter((row) => row.code);
+  return readSqliteRows("part_codes", partCodeHeaders).map(normalizePartCode).filter((row) => row.code);
 }
 
 async function writePartCodes(codes) {
-  const existing = parseCsv(await fs.readFile(partCodesPath, "utf8"));
-  const headers = [...existing.headers];
+  const headers = sqliteColumns("part_codes");
   partCodeHeaders.forEach((header) => {
     if (!headers.includes(header)) {
       headers.push(header);
     }
   });
-  await fs.writeFile(partCodesPath, writeCsv(headers, codes.map((code) => denormalizePartCode(code, headers))), "utf8");
+  replaceSqliteTable("part_codes", headers, codes.map((code) => denormalizePartCode(code, headers)));
+  await exportSqliteCsv("partcodes");
 }
 
 function normalizeReplenishmentCard(row) {
@@ -701,20 +838,12 @@ function denormalizeReplenishmentCard(card) {
 }
 
 async function readReplenishmentCards() {
-  try {
-    const csv = await fs.readFile(replenishmentPath, "utf8");
-    return parseCsv(csv).rows.map(normalizeReplenishmentCard).filter((card) => card.id);
-  } catch {
-    return [];
-  }
+  return readSqliteRows("replenishment", replenishmentHeaders).map(normalizeReplenishmentCard).filter((card) => card.id);
 }
 
 async function writeReplenishmentCards(cards) {
-  await fs.writeFile(
-    replenishmentPath,
-    writeCsv(replenishmentHeaders, cards.map(denormalizeReplenishmentCard)),
-    "utf8"
-  );
+  replaceSqliteTable("replenishment", replenishmentHeaders, cards.map(denormalizeReplenishmentCard));
+  await exportSqliteCsv("replenishment");
 }
 
 function nextReplenishmentId(cards) {
@@ -934,7 +1063,7 @@ async function readAdminCsv(key) {
     key,
     label: file.label,
     fileName: file.fileName,
-    content: await fs.readFile(file.path, "utf8")
+    content: sqliteCsvContent(key)
   };
 }
 
@@ -944,15 +1073,13 @@ async function saveAdminCsv(payload) {
   const content = String(payload.content || "");
   const approvals = validateAdminApprovals(payload);
   validateCsvForSave(key, content);
-  await fs.writeFile(file.path, content.endsWith("\n") ? content : `${content}\n`, "utf8");
-
-  if (key === "parts") {
-    await syncCategoryInventory(await readParts());
-  }
+  importCsvToSqlite(key, content.endsWith("\n") ? content : `${content}\n`);
+  await exportSqliteCsv(key);
+  if (key === "parts") await syncCategoryInventory(await readParts());
 
   return {
     ok: true,
-    message: `${file.fileName} saved after ${approvals.length} admin approvals.`,
+    message: `${file.fileName} saved to SQLite after ${approvals.length} admin approvals.`,
     fileName: file.fileName
   };
 }
@@ -1195,7 +1322,8 @@ async function recordEvaluation(payload) {
     "Lookup Method": String(payload.lookupMethod || "").trim()
   };
 
-  await appendCsvRow(evaluationPath, evaluationHeaders, row);
+  appendSqliteRow("evaluations", evaluationHeaders, row);
+  await exportSqliteCsv("evaluations");
   return { ok: true, message: "Search result was sent to administrator evaluation.", row };
 }
 
@@ -1396,7 +1524,8 @@ async function applyTransaction(payload) {
     "Admin Override": adminOverride
   };
 
-  await appendCsvRow(transactionsPath, transactionHeaders, transaction);
+  appendSqliteRow("transactions", transactionHeaders, transaction);
+  await exportSqliteCsv("transactions");
 
   return {
     ok: true,
@@ -1443,12 +1572,7 @@ function formatReportTime(timestamp) {
 }
 
 async function readTransactions() {
-  try {
-    const csv = await fs.readFile(transactionsPath, "utf8");
-    return parseCsv(csv).rows;
-  } catch {
-    return [];
-  }
+  return readSqliteRows("transactions", transactionHeaders);
 }
 
 async function managementReport(params) {
@@ -1563,6 +1687,9 @@ async function appendReport(payload) {
     .map(csvEscape)
     .join(",");
 
+  activeDb()
+    .prepare('INSERT INTO reports ("Timestamp", "Comments", "Inventory Snapshot") VALUES (?, ?, ?)')
+    .run(timestamp, comment, JSON.stringify(inventory.quantities));
   await fs.appendFile(reportsPath, `${reportRow}\n`, "utf8");
 
   const bodyLines = [
@@ -1619,6 +1746,16 @@ async function sendCsv(response, filePath, fileName) {
   response.end(await fs.readFile(filePath, "utf8"));
 }
 
+function sendSqliteCsv(response, key) {
+  const file = resolveCsvFile(key);
+  response.writeHead(200, {
+    "Content-Type": mimeTypes[".csv"],
+    "Content-Disposition": `attachment; filename="${file.fileName}"`,
+    "Cache-Control": "no-store"
+  });
+  response.end(sqliteCsvContent(key));
+}
+
 async function serveStatic(request, response) {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
@@ -1651,32 +1788,32 @@ async function serveStatic(request, response) {
   }
 
   if (requestUrl.pathname === "/parts.csv") {
-    await sendCsv(response, partsPath, "parts.csv");
+    sendSqliteCsv(response, "parts");
     return;
   }
 
   if (requestUrl.pathname === "/members.csv") {
-    await sendCsv(response, membersPath, "members.csv");
+    sendSqliteCsv(response, "members");
     return;
   }
 
   if (requestUrl.pathname === "/part_codes.csv") {
-    await sendCsv(response, partCodesPath, "part_codes.csv");
+    sendSqliteCsv(response, "partcodes");
     return;
   }
 
   if (requestUrl.pathname === "/transactions.csv") {
-    await sendCsv(response, transactionsPath, "transactions.csv");
+    sendSqliteCsv(response, "transactions");
     return;
   }
 
   if (requestUrl.pathname === "/evaluation_queue.csv") {
-    await sendCsv(response, evaluationPath, "evaluation_queue.csv");
+    sendSqliteCsv(response, "evaluations");
     return;
   }
 
   if (requestUrl.pathname === "/replenishment.csv") {
-    await sendCsv(response, replenishmentPath, "replenishment.csv");
+    sendSqliteCsv(response, "replenishment");
     return;
   }
 
@@ -1719,7 +1856,7 @@ async function handleRequest(request, response) {
     if (request.method === "GET" && requestUrl.pathname === "/api/members") {
       sendJson(response, 200, {
         members: await readMembers(),
-        source: "data/members.csv"
+        source: "data/inventory.db"
       });
       return;
     }
@@ -1819,13 +1956,18 @@ async function ensureDataFiles() {
     await fs.writeFile(membersPath, writeCsv(memberHeaders, defaultMembers), "utf8");
   }
 
-  const parts = await readParts();
-  await syncCategoryInventory(parts);
+  try {
+    await fs.access(partCodesPath);
+  } catch {
+    const seededParts = parseCsv(await fs.readFile(partsPath, "utf8")).rows;
+    await fs.writeFile(partCodesPath, writeCsv(partCodeHeaders, defaultPartCodesFromParts(seededParts)), "utf8");
+  }
 
   try {
     await fs.access(reportsPath);
   } catch {
-    const reportHeaders = ["Timestamp", "Comments", ...Object.keys(aggregateByCategory(parts))];
+    const seededParts = parseCsv(await fs.readFile(partsPath, "utf8")).rows.map(normalizePart);
+    const reportHeaders = ["Timestamp", "Comments", ...Object.keys(aggregateByCategory(seededParts))];
     await fs.writeFile(reportsPath, reportHeaders.map(csvEscape).join(",") + "\n", "utf8");
   }
 
@@ -1849,7 +1991,13 @@ async function ensureDataFiles() {
     await fs.writeFile(replenishmentPath, replenishmentHeaders.map(csvEscape).join(",") + "\n", "utf8");
   }
 
+  await ensureCsvHeaders(partsPath, partsHeaders);
+  await ensureCsvHeaders(membersPath, memberHeaders);
   await ensureCsvHeaders(partCodesPath, partCodeHeaders);
+  await ensureCsvHeaders(replenishmentPath, replenishmentHeaders);
+
+  await initializeSqlite();
+  await exportAllSqliteCsv();
 }
 
 ensureDataFiles()

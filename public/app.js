@@ -2,10 +2,10 @@ const lowThreshold = 5;
 const userStorageKey = "labInventoryUser";
 const adminEmails = new Set(["gamehta@nvidia.com", "monicam@nvidia.com"]);
 const replenishmentColumns = [
-  { key: "Bin Threshold Reached", label: "Bin Threshold Reached", help: "Manual signals waiting to be sent or triaged." },
-  { key: "Signal Sent", label: "Signal Sent", help: "Owner or procurement has been notified." },
-  { key: "Reorder in Progress", label: "Reorder in Progress", help: "Order, transfer, or replacement work is active." },
-  { key: "Bin Refilled", label: "Bin Refilled", help: "Stock was refilled and the signal is ready to close." }
+  { key: "Bin Threshold Reached", label: "Needs Review", help: "New restock requests waiting for assignment." },
+  { key: "Signal Sent", label: "Request Submitted", help: "The request has been acknowledged and routed." },
+  { key: "Reorder in Progress", label: "In Progress", help: "Restock, transfer, or replacement work is active." },
+  { key: "Bin Refilled", label: "Completed", help: "Inventory was refilled or the request was closed." }
 ];
 
 const state = {
@@ -41,6 +41,8 @@ const elements = {
   manualLookupPanel: document.querySelector("#manualLookupPanel"),
   codeLookupPanel: document.querySelector("#codeLookupPanel"),
   categoryHint: document.querySelector("#categoryHint"),
+  detailHint: document.querySelector("#detailHint"),
+  skuHint: document.querySelector("#skuHint"),
   scanHints: document.querySelector("#scanHints"),
   scanStatus: document.querySelector("#scanStatus"),
   analyzeButton: document.querySelector("#analyzeButton"),
@@ -52,7 +54,9 @@ const elements = {
   scannerEmpty: document.querySelector("#scannerEmpty"),
   codeLookupStatus: document.querySelector("#codeLookupStatus"),
   matchPanel: document.querySelector("#matchPanel"),
+  matchPanelTitle: document.querySelector("#matchPanelTitle"),
   matchResult: document.querySelector("#matchResult"),
+  matchActionRow: document.querySelector("#matchActionRow"),
   confirmMatchButton: document.querySelector("#confirmMatchButton"),
   rejectMatchButton: document.querySelector("#rejectMatchButton"),
   evaluationPanel: document.querySelector("#evaluationPanel"),
@@ -152,6 +156,7 @@ function resetPartFlow() {
   elements.movementPanel.hidden = true;
   elements.locationPanel.hidden = true;
   elements.confirmMatchButton.disabled = true;
+  elements.matchActionRow.hidden = false;
 }
 
 function setLookupMethod(method) {
@@ -351,6 +356,7 @@ async function loadAll() {
 
 function renderAll() {
   renderCategoryOptions();
+  renderGuidedSearchOptions();
   renderMemberOptions();
   renderInventorySheet();
   renderReplenishmentPartOptions();
@@ -425,6 +431,101 @@ function renderCategoryOptions() {
 
   if (currentValue && categories.includes(currentValue)) {
     elements.categoryHint.value = currentValue;
+  }
+}
+
+function clientPartSearchText(part) {
+  return [
+    part.sku,
+    part.name,
+    part.category,
+    part.distinguishers,
+    part.aliases,
+    part.metadata,
+    part.location
+  ].join(" ");
+}
+
+function includesTerm(part, term) {
+  return clientPartSearchText(part).toLowerCase().includes(String(term || "").toLowerCase());
+}
+
+function detailOptionsForParts(parts) {
+  const preferred = [
+    "A100",
+    "H100",
+    "L40S",
+    "48GB",
+    "80GB",
+    "2TB",
+    "4TB",
+    "18TB",
+    "20TB",
+    "SATA",
+    "SAS",
+    "NVMe",
+    "M.2",
+    "PCIe",
+    "ConnectX-6",
+    "200GbE",
+    "MiniSAS",
+    "SFF-8643",
+    "C13",
+    "C14",
+    "32A",
+    "3PH",
+    "2400W",
+    "R760",
+    "4U",
+    "QD"
+  ];
+  return preferred.filter((term) => parts.some((part) => includesTerm(part, term)));
+}
+
+function guidedFilteredParts() {
+  const category = elements.categoryHint.value;
+  const detail = elements.detailHint.value;
+  return (state.catalog?.parts || []).filter((part) => {
+    const categoryMatch = !category || part.category === category;
+    const detailMatch = !detail || includesTerm(part, detail);
+    return categoryMatch && detailMatch;
+  });
+}
+
+function renderGuidedSearchOptions(changedField = "") {
+  if (!state.catalog?.parts) return;
+
+  if (changedField === "category") {
+    elements.detailHint.value = "";
+    elements.skuHint.value = "";
+  }
+  if (changedField === "detail") {
+    elements.skuHint.value = "";
+  }
+
+  const category = elements.categoryHint.value;
+  const categoryParts = (state.catalog.parts || []).filter((part) => !category || part.category === category);
+  const currentDetail = elements.detailHint.value;
+  const detailOptions = detailOptionsForParts(categoryParts);
+  elements.detailHint.innerHTML = [
+    `<option value="">${category ? "Any detail" : "Select a part family first"}</option>`,
+    ...detailOptions.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`)
+  ].join("");
+  if (currentDetail && detailOptions.includes(currentDetail)) {
+    elements.detailHint.value = currentDetail;
+  }
+
+  const currentSku = elements.skuHint.value;
+  const filteredParts = guidedFilteredParts();
+  elements.skuHint.innerHTML = [
+    `<option value="">${filteredParts.length ? "Show best match" : "No matching SKU yet"}</option>`,
+    ...filteredParts.map(
+      (part) =>
+        `<option value="${escapeHtml(part.sku)}">${escapeHtml(part.sku)} - ${escapeHtml(part.name)}</option>`
+    )
+  ].join("");
+  if (currentSku && filteredParts.some((part) => part.sku === currentSku)) {
+    elements.skuHint.value = currentSku;
   }
 }
 
@@ -858,11 +959,63 @@ async function startCodeScanner() {
 
 function renderUnknownCodeResult(result) {
   elements.matchPanel.hidden = false;
+  elements.matchPanelTitle.textContent = "Code Review Required";
   elements.confirmMatchButton.disabled = true;
+  elements.matchActionRow.hidden = false;
   elements.matchResult.innerHTML = `
     <div class="search-summary">
       <strong>${escapeHtml(result.message || "Code requires administrator review.")}</strong>
       <span>${escapeHtml(result.code || "")} is not available for inventory movement until an administrator maps or resolves it.</span>
+    </div>
+  `;
+}
+
+function renderCatalogTiles(parts) {
+  const catalogParts = [...(parts || [])].sort((left, right) => {
+    const categoryCompare = String(left.category || "").localeCompare(String(right.category || ""));
+    return categoryCompare || String(left.sku || "").localeCompare(String(right.sku || ""));
+  });
+  elements.matchPanel.hidden = false;
+  elements.matchPanelTitle.textContent = "Catalog Tiles";
+  elements.confirmMatchButton.disabled = true;
+  elements.matchActionRow.hidden = true;
+  state.searchResult = {
+    ok: true,
+    match: null,
+    candidates: catalogParts.map((part) => ({
+      part,
+      confidence: 0.6,
+      score: 10,
+      reasons: ["Selected from catalog tile"]
+    })),
+    refinements: [],
+    summary: "Catalog browse mode",
+    needsAdminEvaluation: false
+  };
+  elements.matchResult.innerHTML = `
+    <div class="catalog-summary">
+      <strong>Browse catalog tiles</strong>
+      <span>Select a part family, detail, or SKU above to narrow results. Choose a tile when you recognize the correct SKU.</span>
+    </div>
+    <div class="catalog-tile-grid">
+      ${catalogParts
+        .map(
+          (part) => `
+            <article class="catalog-tile">
+              <div>
+                <span>${escapeHtml(part.category)}</span>
+                <h4>${escapeHtml(part.sku)}</h4>
+                <p>${escapeHtml(part.name)}</p>
+              </div>
+              <div class="catalog-tile-meta">
+                <strong>${escapeHtml(part.quantity)} available</strong>
+                <span>Aisle ${escapeHtml(part.aisle)} / Bin ${escapeHtml(part.bin)}</span>
+              </div>
+              <button class="mini-button" type="button" data-candidate-sku="${escapeHtml(part.sku)}">Review SKU</button>
+            </article>
+          `
+        )
+        .join("")}
     </div>
   `;
 }
@@ -906,14 +1059,51 @@ async function analyzePart() {
     requireUser();
     resetPartFlow();
     state.lookupContext = { method: "Manual Search", code: "" };
+    const category = elements.categoryHint.value;
+    const detail = elements.detailHint.value;
+    const selectedSku = elements.skuHint.value;
+    const extraTerms = elements.scanHints.value.trim();
+
+    if (!category && !detail && !selectedSku && !extraTerms) {
+      renderCatalogTiles(state.catalog?.parts || []);
+      setInlineStatus(elements.scanStatus, "Showing catalog tiles. Use the dropdowns to narrow the list.", "success");
+      return;
+    }
+
+    if (selectedSku) {
+      const part = state.catalog?.parts?.find((item) => item.sku === selectedSku);
+      if (!part) {
+        throw new Error("Selected SKU is no longer available in the catalog.");
+      }
+      const candidate = {
+        part,
+        confidence: 0.99,
+        score: 100,
+        reasons: ["Selected from guided SKU dropdown"]
+      };
+      state.searchResult = {
+        ok: true,
+        match: candidate,
+        candidates: [candidate],
+        refinements: [],
+        summary: "Guided selection found one SKU.",
+        needsAdminEvaluation: false
+      };
+      state.candidate = candidate;
+      renderMatch(state.searchResult);
+      setInlineStatus(elements.scanStatus, "Guided SKU selection is ready. Confirm the part before updating inventory.", "success");
+      return;
+    }
+
+    const hints = [extraTerms, category, detail].filter(Boolean).join(" ");
     setInlineStatus(elements.scanStatus, "Searching the catalog...", "busy");
 
     const result = await requestJson("/api/analyze-part", {
       method: "POST",
       body: JSON.stringify({
         mode: "manual",
-        hints: elements.scanHints.value,
-        categoryHint: elements.categoryHint.value
+        hints,
+        categoryHint: category
       })
     });
 
@@ -928,6 +1118,8 @@ async function analyzePart() {
 
 function renderMatch(result) {
   elements.matchPanel.hidden = false;
+  elements.matchPanelTitle.textContent = "Recommended Match";
+  elements.matchActionRow.hidden = false;
   const candidates = result.candidates || [];
   if (!candidates.length) {
     elements.matchResult.innerHTML = `
@@ -1767,6 +1959,8 @@ function bindEvents() {
   elements.lookupMethodInputs.forEach((input) => {
     input.addEventListener("change", () => setLookupMethod(selectedLookupMethod()));
   });
+  elements.categoryHint.addEventListener("change", () => renderGuidedSearchOptions("category"));
+  elements.detailHint.addEventListener("change", () => renderGuidedSearchOptions("detail"));
   elements.lookupCodeButton.addEventListener("click", () => lookupPartCode("Manual Code Entry"));
   elements.startCodeScanButton.addEventListener("click", startCodeScanner);
   elements.stopCodeScanButton.addEventListener("click", stopCodeScanner);

@@ -193,6 +193,12 @@ Recommended Phase 1 tables:
 
 SQLite is appropriate for the Phase 1 pilot because it is lightweight, reliable, easy to back up, and sufficient for the expected inventory and transaction volume. The schema should be designed so the system can later migrate to a managed database if multi-site concurrency or broader enterprise deployment requires it.
 
+Current implementation status:
+
+- SQLite database: `data/inventory.db`
+- CSV files: retained as seed, export, and admin import/export snapshots
+- Runtime source of truth: SQLite
+
 ## Parts Catalog Requirements
 
 Every SKU should contain enough structured information to support search, replenishment, reporting, barcode/QR mapping, and future image recognition.
@@ -441,7 +447,7 @@ The Phase 1 MVP is ready for pilot when:
 
 Requirements:
 
-- Node.js 18 or newer
+- Node.js 24 or newer
 
 Start the application:
 
@@ -461,6 +467,6 @@ http://localhost:3000
 2. Add a `part_codes` data source and administrative management view.
 3. Add unknown code handling and review workflow.
 4. Refine customer login, lookup, confirmation, update, and sign-out flow.
-5. Move runtime data from CSV files to SQLite while preserving CSV/Excel import and export.
-6. Add management report exports.
-7. Document backup, restore, and deployment procedures.
+5. Add management report exports.
+6. Document backup, restore, and deployment procedures.
+7. Prepare a future migration path from SQLite to managed database hosting if multi-site concurrency requires it.
