@@ -15,20 +15,30 @@ const evaluationPath = path.join(dataDir, "evaluation_queue.csv");
 const replenishmentPath = path.join(dataDir, "replenishment.csv");
 const partCodesPath = path.join(dataDir, "part_codes.csv");
 const dbPath = path.join(dataDir, "inventory.db");
+const backupDirDefault = "data/backups";
 const referenceImagesDir = path.join(dataDir, "reference_images");
-const reportEmail = "gamehta@nvidia.com";
+const defaultReportEmail = "gamehta@nvidia.com";
 const rowLabel = "Available Quantity";
+const host = process.env.HOST || "127.0.0.1";
 const port = Number(process.env.PORT || 3000);
 const adminEmails = new Set(["gamehta@nvidia.com", "monicam@nvidia.com"]);
 let db;
 
+const defaultSettings = {
+  supportEmail: defaultReportEmail,
+  backupDirectory: backupDirDefault,
+  backupLastRunAt: "",
+  backupLastStatus: "Not run",
+  backupLastPath: ""
+};
+
 const csvFiles = {
-  parts: { path: partsPath, fileName: "parts.csv", label: "SKU Catalog" },
-  members: { path: membersPath, fileName: "members.csv", label: "Members" },
-  partcodes: { path: partCodesPath, fileName: "part_codes.csv", label: "Barcode / QR Mappings" },
-  transactions: { path: transactionsPath, fileName: "transactions.csv", label: "Transactions Log" },
-  evaluations: { path: evaluationPath, fileName: "evaluation_queue.csv", label: "Admin Review Queue" },
-  replenishment: { path: replenishmentPath, fileName: "replenishment.csv", label: "Replenishment Board" }
+  parts: { path: partsPath, fileName: "parts.csv", label: "SKU Catalog", exportPath: "/exports/sku-catalog" },
+  members: { path: membersPath, fileName: "members.csv", label: "Members", exportPath: "/exports/members" },
+  partcodes: { path: partCodesPath, fileName: "part_codes.csv", label: "Barcode / QR Mappings", exportPath: "/exports/code-mappings" },
+  transactions: { path: transactionsPath, fileName: "transactions.csv", label: "Transaction Log", exportPath: "/exports/transaction-log" },
+  evaluations: { path: evaluationPath, fileName: "evaluation_queue.csv", label: "Admin Review Queue", exportPath: "/exports/admin-review-queue" },
+  replenishment: { path: replenishmentPath, fileName: "replenishment.csv", label: "Replenishment Records", exportPath: "/exports/replenishment-records" }
 };
 
 const categoryOrder = [
@@ -76,7 +86,7 @@ const searchProfiles = [
   {
     label: "Power",
     triggers: ["power", "psu", "pdu", "power supply"],
-    categories: ["PSU", "PDU", "Cables"],
+    categories: ["PSU", "PDU"],
     refinements: [
       { label: "Type", options: ["PSU", "PDU", "power cable"] },
       { label: "Rating", options: ["2400W", "32A", "3PH"] }
@@ -173,19 +183,6 @@ const replenishmentStatuses = [
   "In Progress",
   "Completed"
 ];
-
-const replenishmentStatusAliases = {
-  "Bin Threshold Reached": "New Request",
-  "Signal Sent": "Submitted",
-  "Reorder in Progress": "In Progress",
-  "Bin Refilled": "Completed"
-};
-
-function resolveReplenishmentStatus(value) {
-  const status = String(value || "").trim();
-  const normalized = replenishmentStatusAliases[status] || status;
-  return replenishmentStatuses.includes(normalized) ? normalized : "";
-}
 
 function defaultPartCodesFromParts(parts) {
   return parts.map((part) => ({
@@ -588,10 +585,57 @@ function sqliteRowCount(table) {
   return activeDb().prepare(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)}`).get().count;
 }
 
+function ensureSettingsTable() {
+  activeDb().exec('CREATE TABLE IF NOT EXISTS settings ("Key" TEXT PRIMARY KEY, "Value" TEXT)');
+  const insert = activeDb().prepare('INSERT OR IGNORE INTO settings ("Key", "Value") VALUES (?, ?)');
+  Object.entries(defaultSettings).forEach(([key, value]) => insert.run(key, value));
+}
+
+function setSetting(key, value) {
+  ensureSettingsTable();
+  activeDb()
+    .prepare('INSERT INTO settings ("Key", "Value") VALUES (?, ?) ON CONFLICT("Key") DO UPDATE SET "Value" = excluded."Value"')
+    .run(key, String(value ?? ""));
+}
+
+function settingsValues() {
+  ensureSettingsTable();
+  const rows = activeDb().prepare('SELECT "Key" AS key, "Value" AS value FROM settings').all();
+  return {
+    ...defaultSettings,
+    ...Object.fromEntries(rows.map((row) => [row.key, row.value]))
+  };
+}
+
+function displayPath(filePath) {
+  return path.relative(root, filePath).replace(/\\/g, "/");
+}
+
+function resolveConfiguredPath(value) {
+  const configured = String(value || "").trim() || backupDirDefault;
+  return path.isAbsolute(configured) ? path.normalize(configured) : path.resolve(root, configured);
+}
+
+function operationalSettings() {
+  const values = settingsValues();
+  const backupPath = resolveConfiguredPath(values.backupDirectory);
+  return {
+    supportEmail: values.supportEmail || defaultReportEmail,
+    backupDirectory: values.backupDirectory || backupDirDefault,
+    backupResolvedPath: backupPath,
+    backupLastRunAt: values.backupLastRunAt || "",
+    backupLastStatus: values.backupLastStatus || "Not run",
+    backupLastPath: values.backupLastPath || "",
+    databasePath: dbPath,
+    databaseDisplayPath: displayPath(dbPath),
+    databaseResolvedPath: dbPath
+  };
+}
+
 function sqliteCsvContent(key) {
   const config = sqliteTables[key];
   if (!config) {
-    throw new Error("Choose a valid CSV file.");
+    throw new Error("Choose a valid data area.");
   }
   const headers = sqliteColumns(config.table);
   const rows = readSqliteRows(config.table, config.headers);
@@ -601,7 +645,7 @@ function sqliteCsvContent(key) {
 function importCsvToSqlite(key, content) {
   const config = sqliteTables[key];
   if (!config) {
-    throw new Error("Choose a valid CSV file.");
+    throw new Error("Choose a valid data area.");
   }
   const parsed = parseCsv(content);
   const headers = [...parsed.headers];
@@ -613,15 +657,46 @@ function importCsvToSqlite(key, content) {
   replaceSqliteTable(config.table, headers, parsed.rows);
 }
 
-async function exportSqliteCsv(key) {
-  const config = sqliteTables[key];
-  if (!config) return;
-  await fs.writeFile(config.seedPath, sqliteCsvContent(key), "utf8");
-}
+const sqliteMigrations = [
+  {
+    id: "20260529_replenishment_progress_requests",
+    sql: `
+      UPDATE replenishment
+      SET
+        Id = CASE
+          WHEN Id LIKE 'KBN-%' THEN 'REQ-' || substr(Id, 5)
+          ELSE Id
+        END,
+        Status = CASE Status
+          WHEN 'Bin Threshold Reached' THEN 'New Request'
+          WHEN 'Signal Sent' THEN 'Submitted'
+          WHEN 'Reorder in Progress' THEN 'In Progress'
+          WHEN 'Bin Refilled' THEN 'Completed'
+          ELSE Status
+        END
+      WHERE Id LIKE 'KBN-%'
+         OR Status IN ('Bin Threshold Reached', 'Signal Sent', 'Reorder in Progress', 'Bin Refilled');
+    `
+  }
+];
 
-async function exportAllSqliteCsv() {
-  await Promise.all(Object.keys(sqliteTables).map(exportSqliteCsv));
-  await syncCategoryInventory(await readParts());
+function runSqliteMigrations() {
+  activeDb().exec('CREATE TABLE IF NOT EXISTS schema_migrations ("Id" TEXT PRIMARY KEY, "Applied At" TEXT NOT NULL)');
+  const applied = new Set(activeDb().prepare('SELECT "Id" AS id FROM schema_migrations').all().map((row) => row.id));
+  sqliteMigrations.forEach((migration) => {
+    if (applied.has(migration.id)) return;
+    activeDb().exec("BEGIN");
+    try {
+      activeDb().exec(migration.sql);
+      activeDb()
+        .prepare('INSERT INTO schema_migrations ("Id", "Applied At") VALUES (?, ?)')
+        .run(migration.id, new Date().toISOString());
+      activeDb().exec("COMMIT");
+    } catch (error) {
+      activeDb().exec("ROLLBACK");
+      throw error;
+    }
+  });
 }
 
 async function initializeSqlite() {
@@ -633,6 +708,7 @@ async function initializeSqlite() {
   activeDb().exec(
     'CREATE TABLE IF NOT EXISTS reports ("Timestamp" TEXT, "Comments" TEXT, "Inventory Snapshot" TEXT)'
   );
+  ensureSettingsTable();
 
   for (const [key, config] of Object.entries(sqliteTables)) {
     if (sqliteRowCount(config.table) === 0) {
@@ -641,7 +717,7 @@ async function initializeSqlite() {
     }
   }
 
-  migrateReplenishmentRecords();
+  runSqliteMigrations();
 }
 
 function toNumber(value, fallback = 0) {
@@ -725,24 +801,19 @@ async function writeParts(parts) {
     }
   });
   replaceSqliteTable("parts", headers, parts.map((part) => denormalizePart(part, headers)));
-  await exportSqliteCsv("parts");
-  await syncCategoryInventory(parts);
-}
-
-async function syncCategoryInventory(parts) {
-  await fs.writeFile(inventoryPath, quantitiesToCsv(aggregateByCategory(parts)), "utf8");
 }
 
 async function readInventory() {
   const quantities = aggregateByCategory(await readParts());
   const columns = Object.keys(quantities);
+  const settings = operationalSettings();
 
   return {
     columns,
     rowLabel,
     quantities,
     source: "data/inventory.db",
-    reportEmail
+    reportEmail: settings.supportEmail
   };
 }
 
@@ -805,7 +876,6 @@ async function writePartCodes(codes) {
     }
   });
   replaceSqliteTable("part_codes", headers, codes.map((code) => denormalizePartCode(code, headers)));
-  await exportSqliteCsv("partcodes");
 }
 
 function normalizeReplenishmentCard(row) {
@@ -824,7 +894,7 @@ function normalizeReplenishmentCard(row) {
     minQuantity: row["Min Quantity"] || "",
     requestedQuantity: row["Requested Quantity"] || "",
     priority: row.Priority || "Normal",
-    status: resolveReplenishmentStatus(row.Status) || "New Request",
+    status: replenishmentStatuses.includes(row.Status) ? row.Status : "New Request",
     owner: row.Owner || "",
     notes: row.Notes || ""
   };
@@ -858,27 +928,6 @@ async function readReplenishmentCards() {
 
 async function writeReplenishmentCards(cards) {
   replaceSqliteTable("replenishment", replenishmentHeaders, cards.map(denormalizeReplenishmentCard));
-  await exportSqliteCsv("replenishment");
-}
-
-function migrateReplenishmentRecords() {
-  const rows = readSqliteRows("replenishment", replenishmentHeaders);
-  let changed = false;
-  const cards = rows.map((row) => {
-    const card = normalizeReplenishmentCard(row);
-    const requestId = String(card.id || "").replace(/^KBN-/i, "REQ-");
-    if (requestId !== card.id || card.status !== row.Status) {
-      changed = true;
-    }
-    return {
-      ...card,
-      id: requestId || card.id
-    };
-  });
-
-  if (changed) {
-    replaceSqliteTable("replenishment", replenishmentHeaders, cards.map(denormalizeReplenishmentCard));
-  }
 }
 
 function nextReplenishmentId(cards) {
@@ -970,7 +1019,7 @@ async function createReplenishmentRequest(payload) {
 async function updateReplenishmentStatus(payload) {
   const user = normalizeUser(payload.user);
   const id = String(payload.id || "").trim();
-  const status = resolveReplenishmentStatus(payload.status);
+  const status = String(payload.status || "").trim();
 
   if (!id) {
     throw new Error("Choose a replenishment card to update.");
@@ -1006,28 +1055,29 @@ async function updateReplenishmentStatus(payload) {
 function assertAdminRequest(request) {
   const email = String(request.headers["x-admin-email"] || "").trim().toLowerCase();
   if (!adminEmails.has(email)) {
-    throw new Error("Admin CSV access requires Gaurav or Monica signed in as admin.");
+    throw new Error("Administrator access requires Gaurav or Monica signed in as admin.");
   }
 }
 
 function resolveCsvFile(key) {
   const file = csvFiles[String(key || "").trim()];
   if (!file) {
-    throw new Error("Choose a valid CSV file.");
+    throw new Error("Choose a valid data area.");
   }
   return file;
 }
 
 function validateCsvForSave(key, content) {
+  const dataArea = resolveCsvFile(key).label;
   const parsed = parseCsv(content);
   if (!parsed.headers.length) {
-    throw new Error("CSV must include a header row.");
+    throw new Error("Imported content must include a header row.");
   }
 
   if (key === "parts") {
     ["SKU", "Part Name", "Category", "Available Quantity", "Metadata"].forEach((header) => {
       if (!parsed.headers.includes(header)) {
-        throw new Error(`parts.csv must keep the ${header} column.`);
+        throw new Error(`${dataArea} must keep the ${header} field.`);
       }
     });
   }
@@ -1035,7 +1085,7 @@ function validateCsvForSave(key, content) {
   if (key === "members") {
     ["Member", "Email"].forEach((header) => {
       if (!parsed.headers.includes(header)) {
-        throw new Error(`members.csv must keep the ${header} column.`);
+        throw new Error(`${dataArea} must keep the ${header} field.`);
       }
     });
   }
@@ -1043,7 +1093,7 @@ function validateCsvForSave(key, content) {
   if (key === "partcodes") {
     ["Code", "Code Type", "SKU", "Status"].forEach((header) => {
       if (!parsed.headers.includes(header)) {
-        throw new Error(`part_codes.csv must keep the ${header} column.`);
+        throw new Error(`${dataArea} must keep the ${header} field.`);
       }
     });
 
@@ -1055,7 +1105,7 @@ function validateCsvForSave(key, content) {
         return;
       }
       if (activeCodes.has(normalized)) {
-        throw new Error(`part_codes.csv has duplicate active code "${row.Code}" on rows ${activeCodes.get(normalized)} and ${index + 2}.`);
+        throw new Error(`${dataArea} has duplicate active code "${row.Code}" on records ${activeCodes.get(normalized)} and ${index + 2}.`);
       }
       activeCodes.set(normalized, index + 2);
     });
@@ -1064,7 +1114,7 @@ function validateCsvForSave(key, content) {
   if (key === "replenishment") {
     ["Id", "Part Name", "Requested Quantity", "Status"].forEach((header) => {
       if (!parsed.headers.includes(header)) {
-        throw new Error(`replenishment.csv must keep the ${header} column.`);
+        throw new Error(`${dataArea} must keep the ${header} field.`);
       }
     });
   }
@@ -1081,7 +1131,7 @@ function validateAdminApprovals(payload) {
   ];
 
   if (uniqueApprovals.length < 2) {
-    throw new Error("Two different administrators must approve CSV changes before saving.");
+    throw new Error("Two different administrators must approve database changes before saving.");
   }
 
   uniqueApprovals.forEach((email) => {
@@ -1099,6 +1149,7 @@ async function readAdminCsv(key) {
     key,
     label: file.label,
     fileName: file.fileName,
+    exportPath: file.exportPath,
     content: sqliteCsvContent(key)
   };
 }
@@ -1110,23 +1161,98 @@ async function saveAdminCsv(payload) {
   const approvals = validateAdminApprovals(payload);
   validateCsvForSave(key, content);
   importCsvToSqlite(key, content.endsWith("\n") ? content : `${content}\n`);
-  await exportSqliteCsv(key);
-  if (key === "parts") await syncCategoryInventory(await readParts());
 
   return {
     ok: true,
-    message: `${file.fileName} saved to SQLite after ${approvals.length} admin approvals.`,
+    message: `${file.label} saved to the database after ${approvals.length} administrator approvals.`,
+    label: file.label,
     fileName: file.fileName
   };
 }
 
 async function readCatalog() {
-  const parts = await readParts();
+  const [parts, partCodes, evaluations] = await Promise.all([
+    readParts(),
+    readPartCodes(),
+    Promise.resolve(readSqliteRows("evaluations", evaluationHeaders))
+  ]);
+  const settings = operationalSettings();
+  const activePartCodeCount = partCodes.filter((code) => String(code.status || "Active").trim().toLowerCase() === "active").length;
+  const pendingEvaluationCount = evaluations.filter((row) => {
+    const status = String(row.Status || "Pending").trim().toLowerCase();
+    return !["closed", "complete", "completed", "resolved"].includes(status);
+  }).length;
+
   return {
     parts,
     categories: categoryOrder,
-    reportEmail
+    reportEmail: settings.supportEmail,
+    partCodeCount: activePartCodeCount,
+    pendingEvaluationCount
   };
+}
+
+function readAdminSettings() {
+  const settings = operationalSettings();
+  return {
+    ok: true,
+    settings
+  };
+}
+
+function validateEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+function escapeSqlString(value) {
+  return String(value).replace(/'/g, "''");
+}
+
+async function saveAdminSettings(payload) {
+  const supportEmail = String(payload.supportEmail || "").trim();
+  const backupDirectory = String(payload.backupDirectory || "").trim();
+
+  if (!validateEmail(supportEmail)) {
+    throw new Error("Enter a valid report email address.");
+  }
+  if (!backupDirectory) {
+    throw new Error("Enter a backup folder.");
+  }
+
+  setSetting("supportEmail", supportEmail);
+  setSetting("backupDirectory", backupDirectory);
+
+  return {
+    ok: true,
+    message: "Control Center settings saved.",
+    settings: operationalSettings()
+  };
+}
+
+async function runDatabaseBackup() {
+  const settings = operationalSettings();
+  const backupDirectory = resolveConfiguredPath(settings.backupDirectory);
+  const timestamp = new Date().toISOString();
+  const fileStamp = timestamp.replace(/[:.]/g, "-");
+  const targetPath = path.join(backupDirectory, `inventory-backup-${fileStamp}.db`);
+
+  try {
+    await fs.mkdir(backupDirectory, { recursive: true });
+    activeDb().exec(`VACUUM INTO '${escapeSqlString(targetPath)}'`);
+    setSetting("backupLastRunAt", timestamp);
+    setSetting("backupLastStatus", "Completed");
+    setSetting("backupLastPath", targetPath);
+    return {
+      ok: true,
+      message: "Database backup completed.",
+      settings: operationalSettings()
+    };
+  } catch (error) {
+    setSetting("backupLastRunAt", timestamp);
+    setSetting("backupLastStatus", `Failed: ${error.message}`);
+    setSetting("backupLastPath", targetPath);
+    throw new Error(`Backup failed: ${error.message}`);
+  }
 }
 
 function normalizeUser(user) {
@@ -1161,6 +1287,24 @@ function inferSearchProfiles(hintText) {
     profile.triggers.some((trigger) => includesNormalized(normalizedHint, trigger))
   );
 }
+
+const broadSearchTerms = new Set([
+  "adapter",
+  "cable",
+  "card",
+  "disk",
+  "drive",
+  "gpu",
+  "hard disk",
+  "hdd",
+  "network card",
+  "nic",
+  "pdu",
+  "power",
+  "psu",
+  "server",
+  "storage"
+]);
 
 function partSearchText(part) {
   return [
@@ -1204,8 +1348,12 @@ function scorePart(part, hintText, profiles = []) {
 
   [...aliases, ...metadataTerms].forEach((term) => {
     if (term.length >= 4 && includesNormalized(normalizedHint, term)) {
-      score += aliases.includes(term) ? 65 : 32;
-      reasons.push(`${aliases.includes(term) ? "Alias" : "Metadata"} matched: ${term}`);
+      const isAlias = aliases.includes(term);
+      const broadTerm = broadSearchTerms.has(term.toLowerCase());
+      score += broadTerm ? (isAlias ? 12 : 8) : isAlias ? 65 : 32;
+      if (!broadTerm) {
+        reasons.push(`${isAlias ? "Alias" : "Metadata"} matched: ${term}`);
+      }
     }
   });
 
@@ -1228,14 +1376,29 @@ function scorePart(part, hintText, profiles = []) {
   return { score, reasons: [...new Set(reasons)].slice(0, 4) };
 }
 
-function uniqueRefinements(profiles, candidates) {
-  const profileRefinements = profiles.flatMap((profile) => profile.refinements || []);
+function uniqueRefinements(profiles, candidates, hintText = "") {
+  const topScore = candidates[0]?.score || 0;
+  const scopedCandidates = candidates
+    .filter((candidate) => topScore === 0 || candidate.score >= topScore - 20)
+    .slice(0, 4);
+  const scopedText = scopedCandidates.map((candidate) => partSearchText(candidate.part)).join(" ");
+  const normalizedHint = String(hintText || "").toLowerCase();
+  const profileRefinements = profiles.flatMap((profile) =>
+    (profile.refinements || [])
+      .map((group) => ({
+        label: group.label,
+        options: (group.options || []).filter(
+          (option) => includesNormalized(scopedText, option) && !includesNormalized(normalizedHint, option)
+        )
+      }))
+      .filter((group) => group.options.length)
+  );
   const catalogOptions = new Map();
 
-  candidates.forEach((candidate) => {
+  scopedCandidates.forEach((candidate) => {
     const text = partSearchText(candidate.part);
     ["SATA", "SAS", "SSD", "M.2", "NVMe", "1TB", "2TB", "4TB", "10TB", "18TB", "20TB", "48GB", "80GB"].forEach((option) => {
-      if (includesNormalized(text, option)) {
+      if (includesNormalized(text, option) && !includesNormalized(normalizedHint, option)) {
         const label = /tb|gb/i.test(option) ? "Capacity / memory" : "Type";
         catalogOptions.set(`${label}:${option}`, { label, option });
       }
@@ -1331,11 +1494,13 @@ async function analyzePart(payload) {
     match,
     candidates,
     groups,
-    refinements: uniqueRefinements(profiles, candidates),
+    refinements: uniqueRefinements(profiles, candidates, hintText),
     summary,
     needsAdminEvaluation: !match || match.confidence < 0.7,
     message: match
-      ? "Matching results are ready. Select the closest part or add one more detail to narrow results."
+      ? match.confidence >= 0.85
+        ? "Recommended match is ready. Confirm the SKU or send it to admin review."
+        : "Matching results are ready. Select the closest part or add one more detail to narrow results."
       : "No strong catalog match found. Send this search to admin evaluation."
   };
 }
@@ -1359,7 +1524,6 @@ async function recordEvaluation(payload) {
   };
 
   appendSqliteRow("evaluations", evaluationHeaders, row);
-  await exportSqliteCsv("evaluations");
   return { ok: true, message: "Search result was sent to administrator evaluation.", row };
 }
 
@@ -1561,7 +1725,6 @@ async function applyTransaction(payload) {
   };
 
   appendSqliteRow("transactions", transactionHeaders, transaction);
-  await exportSqliteCsv("transactions");
 
   return {
     ok: true,
@@ -1615,23 +1778,83 @@ async function managementReport(params) {
   assertValidPeriod(params.period);
   const period = params.period || "week";
   const action = String(params.action || "all").trim().toLowerCase();
-  const start = periodStart(period);
-  const transactions = (await readTransactions()).filter((row) => {
+  const dateFrom = String(params.dateFrom || "").trim();
+  const dateTo = String(params.dateTo || "").trim();
+  const start = dateFrom ? new Date(`${dateFrom}T00:00:00`) : periodStart(period);
+  const end = dateTo ? new Date(`${dateTo}T23:59:59.999`) : null;
+  const filters = {
+    user: String(params.user || "all").trim().toLowerCase(),
+    category: String(params.category || "all").trim(),
+    sku: String(params.sku || "all").trim(),
+    location: String(params.location || "all").trim().toLowerCase(),
+    role: String(params.role || "all").trim().toLowerCase(),
+    guest: String(params.guest || "all").trim().toLowerCase(),
+    nvbug: String(params.nvbug || "all").trim().toLowerCase(),
+    lookupMethod: String(params.lookupMethod || "all").trim().toLowerCase(),
+    search: String(params.search || "").trim().toLowerCase()
+  };
+  const [allTransactions, parts, replenishmentCards, evaluations] = await Promise.all([
+    readTransactions(),
+    readParts(),
+    readReplenishmentCards(),
+    Promise.resolve(readSqliteRows("evaluations", evaluationHeaders))
+  ]);
+  const partMap = new Map(parts.map((part) => [part.sku, part]));
+  const transactions = allTransactions.filter((row) => {
     const timestamp = new Date(row.Timestamp || "");
     const actionMatches = action === "all" || String(row.Action || "").toLowerCase() === action;
-    const dateMatches = !start || (!Number.isNaN(timestamp.getTime()) && timestamp >= start);
-    return actionMatches && dateMatches;
+    const dateMatches =
+      (!start || (!Number.isNaN(timestamp.getTime()) && timestamp >= start)) &&
+      (!end || (!Number.isNaN(timestamp.getTime()) && timestamp <= end));
+    const userText = `${row["User Name"] || ""} ${row.Email || ""}`.toLowerCase();
+    const locationText = `${row.Aisle || ""} ${row.Bin || ""} ${row.Aisle || ""}/${row.Bin || ""}`.toLowerCase();
+    const nvbug = String(row["NVBug#"] || "").trim();
+    const hasUsableNvbug = Boolean(nvbug) && !/^no nvbug/i.test(nvbug);
+    const searchable = Object.values(row).join(" ").toLowerCase();
+    return (
+      actionMatches &&
+      dateMatches &&
+      (filters.user === "all" || userText.includes(filters.user)) &&
+      (filters.category === "all" || row.Category === filters.category) &&
+      (filters.sku === "all" || row.SKU === filters.sku) &&
+      (filters.location === "all" || locationText.includes(filters.location)) &&
+      (filters.role === "all" || String(row["User Role"] || "").toLowerCase() === filters.role) &&
+      (filters.guest === "all" ||
+        (filters.guest === "yes" ? String(row.Guest || "").toLowerCase() === "yes" : String(row.Guest || "").toLowerCase() !== "yes")) &&
+      (filters.nvbug === "all" || (filters.nvbug === "with" ? hasUsableNvbug : !hasUsableNvbug)) &&
+      (filters.lookupMethod === "all" || String(row["Lookup Method"] || "").toLowerCase() === filters.lookupMethod) &&
+      (!filters.search || searchable.includes(filters.search))
+    );
   });
 
   const byUserMap = new Map();
+  const byCategoryMap = new Map();
+  const bySkuMap = new Map();
+  const byLocationMap = new Map();
   const skuSet = new Set();
   let quantityMoved = 0;
+  let takenQuantity = 0;
+  let restockedQuantity = 0;
+  let guestMovements = 0;
+  let missingNvbug = 0;
+  let adminOverrides = 0;
 
   transactions.forEach((row) => {
     const email = String(row.Email || "").trim().toLowerCase();
     const key = email || row["User Name"] || "Unknown";
     const quantity = toNumber(row.Quantity);
+    const lowerAction = String(row.Action || "").toLowerCase();
+    const category = row.Category || "Uncategorized";
+    const sku = row.SKU || "Unknown SKU";
+    const locationKey = `${row.Aisle || "Unknown"} / ${row.Bin || "Unknown"}`;
+    const nvbug = String(row["NVBug#"] || "").trim();
+    const hasUsableNvbug = Boolean(nvbug) && !/^no nvbug/i.test(nvbug);
     quantityMoved += quantity;
+    if (lowerAction === "take") takenQuantity += quantity;
+    if (lowerAction === "add") restockedQuantity += quantity;
+    if (String(row.Guest || "").toLowerCase() === "yes") guestMovements += 1;
+    if (!hasUsableNvbug) missingNvbug += 1;
+    if (String(row["Admin Override"] || "").toLowerCase() === "yes") adminOverrides += 1;
     if (row.SKU) skuSet.add(row.SKU);
     if (!byUserMap.has(key)) {
       byUserMap.set(key, {
@@ -1640,20 +1863,66 @@ async function managementReport(params) {
         transactions: 0,
         taken: 0,
         restocked: 0,
+        guestMovements: 0,
+        missingNvbug: 0,
+        lastMovement: "",
         skuCounts: new Map()
       });
     }
     const user = byUserMap.get(key);
     user.transactions += 1;
-    if (String(row.Action || "").toLowerCase() === "take") {
+    if (lowerAction === "take") {
       user.taken += quantity;
     }
-    if (String(row.Action || "").toLowerCase() === "add") {
+    if (lowerAction === "add") {
       user.restocked += quantity;
+    }
+    if (String(row.Guest || "").toLowerCase() === "yes") user.guestMovements += 1;
+    if (!hasUsableNvbug) user.missingNvbug += 1;
+    if (!user.lastMovement || new Date(row.Timestamp || 0) > new Date(user.lastMovement || 0)) {
+      user.lastMovement = row.Timestamp || "";
     }
     if (row.SKU) {
       user.skuCounts.set(row.SKU, (user.skuCounts.get(row.SKU) || 0) + quantity);
     }
+
+    if (!byCategoryMap.has(category)) {
+      byCategoryMap.set(category, { category, movements: 0, quantityMoved: 0, taken: 0, restocked: 0, skus: new Set() });
+    }
+    const categoryRow = byCategoryMap.get(category);
+    categoryRow.movements += 1;
+    categoryRow.quantityMoved += quantity;
+    if (lowerAction === "take") categoryRow.taken += quantity;
+    if (lowerAction === "add") categoryRow.restocked += quantity;
+    if (row.SKU) categoryRow.skus.add(row.SKU);
+
+    if (!bySkuMap.has(sku)) {
+      const part = partMap.get(sku) || {};
+      bySkuMap.set(sku, {
+        sku,
+        partName: row["Part Name"] || part.name || "",
+        category,
+        movements: 0,
+        quantityMoved: 0,
+        taken: 0,
+        restocked: 0,
+        currentQuantity: part.quantity ?? "",
+        location: part.location || `${row.Aisle || ""}-${row.Bin || ""}`
+      });
+    }
+    const skuRow = bySkuMap.get(sku);
+    skuRow.movements += 1;
+    skuRow.quantityMoved += quantity;
+    if (lowerAction === "take") skuRow.taken += quantity;
+    if (lowerAction === "add") skuRow.restocked += quantity;
+
+    if (!byLocationMap.has(locationKey)) {
+      byLocationMap.set(locationKey, { location: locationKey, movements: 0, quantityMoved: 0, skus: new Map() });
+    }
+    const locationRow = byLocationMap.get(locationKey);
+    locationRow.movements += 1;
+    locationRow.quantityMoved += quantity;
+    if (row.SKU) locationRow.skus.set(row.SKU, (locationRow.skus.get(row.SKU) || 0) + quantity);
   });
 
   const byUser = [...byUserMap.values()]
@@ -1663,17 +1932,37 @@ async function managementReport(params) {
       transactions: user.transactions,
       taken: user.taken,
       restocked: user.restocked,
+      guestMovements: user.guestMovements,
+      missingNvbug: user.missingNvbug,
+      lastMovement: formatReportTime(user.lastMovement),
       topSku:
         [...user.skuCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || ""
     }))
     .sort((left, right) => right.transactions - left.transactions);
 
-  const recent = transactions
+  const byCategory = [...byCategoryMap.values()]
+    .map((row) => ({ ...row, uniqueSkus: row.skus.size, skus: undefined }))
+    .sort((left, right) => right.quantityMoved - left.quantityMoved);
+
+  const bySku = [...bySkuMap.values()].sort((left, right) => right.quantityMoved - left.quantityMoved);
+
+  const byLocation = [...byLocationMap.values()]
+    .map((row) => ({
+      location: row.location,
+      movements: row.movements,
+      quantityMoved: row.quantityMoved,
+      uniqueSkus: row.skus.size,
+      topSku: [...row.skus.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || ""
+    }))
+    .sort((left, right) => right.quantityMoved - left.quantityMoved);
+
+  const details = transactions
     .slice()
     .sort((left, right) => new Date(right.Timestamp || 0) - new Date(left.Timestamp || 0))
-    .slice(0, 12)
+    .slice(0, 500)
     .map((row) => ({
       when: formatReportTime(row.Timestamp),
+      timestamp: row.Timestamp || "",
       userName: row["User Name"] || "",
       email: row.Email || "",
       action: row.Action || "",
@@ -1682,22 +1971,57 @@ async function managementReport(params) {
       partName: row["Part Name"] || "",
       category: row.Category || "",
       quantity: toNumber(row.Quantity),
-      reason: row.Reason || ""
+      beforeQuantity: row["Before Quantity"] || "",
+      afterQuantity: row["After Quantity"] || "",
+      aisle: row.Aisle || "",
+      bin: row.Bin || "",
+      reason: row.Reason || "",
+      userRole: row["User Role"] || "",
+      guest: row.Guest || "",
+      nvbug: row["NVBug#"] || "",
+      lookupMethod: row["Lookup Method"] || "",
+      partCode: row["Part Code"] || "",
+      adminOverride: row["Admin Override"] || ""
     }));
+
+  const pendingEvaluationCount = evaluations.filter((row) => {
+    const status = String(row.Status || "Pending").trim().toLowerCase();
+    return !["closed", "complete", "completed", "resolved"].includes(status);
+  }).length;
+  const totalOnHand = parts.reduce((total, part) => total + Number(part.quantity || 0), 0);
+  const lowSkuCount = parts.filter((part) => Number(part.quantity) <= Number(part.minQuantity || 0)).length;
+  const missingSkuCount = parts.filter((part) => Number(part.quantity) <= 0).length;
+  const openRestockRequests = replenishmentCards.filter((card) => card.status !== "Completed").length;
 
   return {
     ok: true,
     period,
     action,
+    filters,
     summary: {
       transactionCount: transactions.length,
       quantityMoved,
+      takenQuantity,
+      restockedQuantity,
+      netQuantityChange: restockedQuantity - takenQuantity,
       uniqueUsers: byUser.length,
-      uniqueSkus: skuSet.size
+      uniqueSkus: skuSet.size,
+      guestMovements,
+      missingNvbug,
+      adminOverrides,
+      totalOnHand,
+      totalSkus: parts.length,
+      lowSkus: lowSkuCount,
+      missingSkus: missingSkuCount,
+      openRestockRequests,
+      pendingAdminReviews: pendingEvaluationCount
     },
     byUser,
-    recent,
-    message: `${transactions.length} movement${transactions.length === 1 ? "" : "s"} found.`
+    byCategory,
+    bySku,
+    byLocation,
+    details,
+    message: `${transactions.length} movement${transactions.length === 1 ? "" : "s"} found after filters.`
   };
 }
 
@@ -1736,9 +2060,10 @@ async function appendReport(payload) {
     "Current Available Quantity:",
     ...inventory.columns.map((column) => `- ${column}: ${inventory.quantities[column]}`)
   ];
+  const settings = operationalSettings();
 
   const mailto =
-    `mailto:${reportEmail}` +
+    `mailto:${settings.supportEmail}` +
     `?subject=${encodeURIComponent("Missing/Low Inventory Report")}` +
     `&body=${encodeURIComponent(bodyLines.join("\n"))}`;
 
@@ -1746,7 +2071,7 @@ async function appendReport(payload) {
     ok: true,
     message: "Report saved. Opening a pre-filled email draft.",
     mailto,
-    reportEmail
+    reportEmail: settings.supportEmail
   };
 }
 
@@ -1792,6 +2117,15 @@ function sendSqliteCsv(response, key) {
   response.end(sqliteCsvContent(key));
 }
 
+function sendCsvContent(response, content, fileName) {
+  response.writeHead(200, {
+    "Content-Type": mimeTypes[".csv"],
+    "Content-Disposition": `attachment; filename="${fileName}"`,
+    "Cache-Control": "no-store"
+  });
+  response.end(content);
+}
+
 async function serveStatic(request, response) {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
@@ -1818,8 +2152,19 @@ async function serveStatic(request, response) {
     return;
   }
 
+  if (requestUrl.pathname === "/exports/category-inventory") {
+    sendCsvContent(response, quantitiesToCsv(aggregateByCategory(await readParts())), "inventory.csv");
+    return;
+  }
+
+  const exportRoute = Object.entries(csvFiles).find(([, file]) => file.exportPath === requestUrl.pathname);
+  if (exportRoute) {
+    sendSqliteCsv(response, exportRoute[0]);
+    return;
+  }
+
   if (requestUrl.pathname === "/inventory.csv") {
-    await sendCsv(response, inventoryPath, "inventory.csv");
+    sendCsvContent(response, quantitiesToCsv(aggregateByCategory(await readParts())), "inventory.csv");
     return;
   }
 
@@ -1866,7 +2211,8 @@ async function serveStatic(request, response) {
     const file = await fs.readFile(filePath);
     const ext = path.extname(filePath).toLowerCase();
     response.writeHead(200, {
-      "Content-Type": mimeTypes[ext] || "application/octet-stream"
+      "Content-Type": mimeTypes[ext] || "application/octet-stream",
+      "Cache-Control": "no-store"
     });
     response.end(file);
   } catch (error) {
@@ -1915,15 +2261,44 @@ async function handleRequest(request, response) {
         200,
         await managementReport({
           period: requestUrl.searchParams.get("period"),
-          action: requestUrl.searchParams.get("action")
+          dateFrom: requestUrl.searchParams.get("dateFrom"),
+          dateTo: requestUrl.searchParams.get("dateTo"),
+          action: requestUrl.searchParams.get("action"),
+          user: requestUrl.searchParams.get("user"),
+          category: requestUrl.searchParams.get("category"),
+          sku: requestUrl.searchParams.get("sku"),
+          location: requestUrl.searchParams.get("location"),
+          role: requestUrl.searchParams.get("role"),
+          guest: requestUrl.searchParams.get("guest"),
+          nvbug: requestUrl.searchParams.get("nvbug"),
+          lookupMethod: requestUrl.searchParams.get("lookupMethod"),
+          search: requestUrl.searchParams.get("search")
         })
       );
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/admin/settings") {
+      assertAdminRequest(request);
+      sendJson(response, 200, readAdminSettings());
       return;
     }
 
     if (request.method === "POST" && requestUrl.pathname === "/api/admin/csv") {
       assertAdminRequest(request);
       sendJson(response, 200, await saveAdminCsv(await readJsonBody(request)));
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/admin/settings") {
+      assertAdminRequest(request);
+      sendJson(response, 200, await saveAdminSettings(await readJsonBody(request)));
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/admin/backup") {
+      assertAdminRequest(request);
+      sendJson(response, 200, await runDatabaseBackup());
       return;
     }
 
@@ -2033,13 +2408,12 @@ async function ensureDataFiles() {
   await ensureCsvHeaders(replenishmentPath, replenishmentHeaders);
 
   await initializeSqlite();
-  await exportAllSqliteCsv();
 }
 
 ensureDataFiles()
   .then(() => {
-    http.createServer(handleRequest).listen(port, () => {
-      console.log(`Inventory app running at http://localhost:${port}`);
+    http.createServer(handleRequest).listen(port, host, () => {
+      console.log(`Inventory app running at http://${host}:${port}`);
     });
   })
   .catch((error) => {

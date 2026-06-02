@@ -661,52 +661,6 @@ section[id] {
   max-width: 760px;
 }
 
-.camera-permission-note {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  border: 1px solid #d6e8c7;
-  border-radius: 7px;
-  background: #f7fcf2;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.camera-permission-note strong {
-  color: var(--accent-dark);
-}
-
-.scanner-shell {
-  position: relative;
-  overflow: hidden;
-  min-height: 260px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: #111513;
-}
-
-.scanner-shell video {
-  width: 100%;
-  min-height: 260px;
-  display: block;
-  object-fit: cover;
-}
-
-.scanner-empty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: #dbe5dc;
-  font-size: 13px;
-  font-weight: 760;
-}
-
-.scanner-actions {
-  margin-top: 0;
-}
-
 .input-with-option {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1434,7 +1388,7 @@ thead th {
 
 .report-controls {
   display: grid;
-  grid-template-columns: minmax(180px, 0.4fr) minmax(180px, 0.4fr) auto;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
   gap: 12px;
   align-items: end;
   margin-bottom: 16px;
@@ -1444,11 +1398,86 @@ thead th {
   background: #fbfcfb;
 }
 
+.report-controls button {
+  min-height: 42px;
+}
+
 .management-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.report-empty-state {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.report-empty-state h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.report-empty-state p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.selected-filter-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.selected-filter-strip span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid #d7e8ca;
+  border-radius: 999px;
+  color: var(--accent-dark);
+  background: #f3faee;
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.stock-pill {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.stock-pill.good {
+  color: var(--accent-dark);
+  background: #e7f5db;
+}
+
+.stock-pill.caution {
+  color: #8a4e00;
+  background: #fff1d4;
+}
+
+.stock-pill.danger {
+  color: #b52218;
+  background: #ffe6e3;
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 .report-metric {
@@ -1475,8 +1504,187 @@ thead th {
 
 .management-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: 1fr;
   gap: 16px;
+}
+
+.report-detail-panel {
+  grid-column: 1 / -1;
+}
+
+.control-hero {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.control-hero > div,
+.control-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.control-hero > div {
+  display: grid;
+  gap: 7px;
+  padding: 16px;
+}
+
+.control-hero span,
+.control-list dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.control-hero strong {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.control-hero p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.control-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 16px;
+}
+
+.control-settings-card {
+  grid-column: 1 / -1;
+}
+
+.control-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.control-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.control-form {
+  display: grid;
+  gap: 12px;
+}
+
+.control-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.85fr) minmax(420px, 1.15fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.control-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.control-form input {
+  min-width: 0;
+  width: 100%;
+}
+
+.path-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.path-picker .button {
+  min-height: 42px;
+}
+
+.control-form-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.control-storage-summary {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.control-storage-summary h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.status-pill {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  color: #6f4300;
+  background: #fff2d8;
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.status-pill.good {
+  color: var(--accent-dark);
+  background: #e7f5db;
+}
+
+.status-pill.caution {
+  color: #8a4e00;
+  background: #fff1d4;
+}
+
+.control-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.control-list div {
+  display: grid;
+  gap: 3px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.control-list div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.control-list dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 740;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .table-wrap.compact {
@@ -1848,7 +2056,9 @@ thead th {
   .import-controls,
   .review-summary,
   .management-summary,
-  .management-grid {
+  .management-grid,
+  .control-hero,
+  .control-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1960,6 +2170,9 @@ thead th {
   .request-form,
   .replenishment-summary,
   .progress-board,
+  .control-hero,
+  .control-grid,
+  .control-settings-layout,
   .import-controls,
   .mapping-grid,
   .review-summary,
@@ -1981,6 +2194,7 @@ thead th {
   .movement-grid,
   .lookup-method,
   .input-with-option,
+  .path-picker,
   .recommended-match-header,
   .recommended-metrics,
   .location-panel #locationResult {
@@ -1995,8 +2209,4 @@ thead th {
     width: 100%;
   }
 
-  .scanner-shell,
-  .scanner-shell video {
-    min-height: 210px;
-  }
 }

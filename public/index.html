@@ -106,6 +106,20 @@
               </svg>
               Management Report
             </a>
+            <a class="nav-item" href="#control" data-admin-only>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v3" />
+                <path d="M12 18v3" />
+                <path d="M3 12h3" />
+                <path d="M18 12h3" />
+                <circle cx="12" cy="12" r="4" />
+                <path d="m5 5 2.1 2.1" />
+                <path d="m16.9 16.9 2.1 2.1" />
+                <path d="m19 5-2.1 2.1" />
+                <path d="m7.1 16.9-2.1 2.1" />
+              </svg>
+              Control Center
+            </a>
             <a class="nav-item" href="#admin" data-admin-only>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 4h16v16H4z" />
@@ -113,7 +127,7 @@
                 <path d="M8 12h8" />
                 <path d="M8 16h5" />
               </svg>
-              Admin CSV
+              Data Administration
             </a>
             <a class="nav-item" href="#report">
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -149,7 +163,7 @@
             <div class="section-heading">
               <div>
                 <h2 id="scanTitle">Find Part</h2>
-                <p>Search manually or scan a barcode/QR label, confirm the part, then update inventory with an audit trail.</p>
+                <p>Search manually or use a connected 2D barcode/QR scanner, confirm the part, then update inventory with an audit trail.</p>
               </div>
               <span class="sheet-source">Phase 1 lookup flow</span>
             </div>
@@ -175,8 +189,8 @@
               <label>
                 <input type="radio" name="lookupMethod" value="code" />
                 <span>
-                  <strong>Barcode / QR</strong>
-                  <small>Scan a label or enter the code manually. Camera images are not stored.</small>
+                  <strong>2D Barcode / QR Scanner</strong>
+                  <small>Use a connected scanner or enter the code manually.</small>
                 </span>
               </label>
             </fieldset>
@@ -215,23 +229,12 @@
               </div>
 
               <div class="scan-controls code-lookup" id="codeLookupPanel" hidden>
-                <div class="camera-permission-note">
-                  <strong>Camera permission</strong>
-                  <span>The browser will ask for camera access only when scanning a barcode or QR code. Use manual entry if camera access is unavailable.</span>
-                </div>
-                <div class="scanner-shell">
-                  <video id="codeScannerVideo" playsinline muted></video>
-                  <div class="scanner-empty" id="scannerEmpty">Scanner preview</div>
-                </div>
-                <div class="button-row scanner-actions">
-                  <button class="button secondary" id="startCodeScanButton" type="button">Start Camera Scan</button>
-                  <button class="button secondary" id="stopCodeScanButton" type="button" disabled>Stop Camera</button>
-                </div>
                 <label for="partCodeInput">Barcode or QR value</label>
                 <span class="input-button-pair">
-                  <input id="partCodeInput" placeholder="Example: QR-M2-SAMSUNG-980PRO-2TB" autocomplete="off" />
+                  <input id="partCodeInput" placeholder="Scan with 2D scanner or type code, e.g. QR-M2-SAMSUNG-980PRO-2TB" autocomplete="off" />
                   <button class="button primary" id="lookupCodeButton" type="button">Lookup Code</button>
                 </span>
+                <p class="field-help">Phase 1 uses connected 2D barcode scanners and typed code entry.</p>
                 <p class="inline-status" id="codeLookupStatus" role="status"></p>
               </div>
             </div>
@@ -349,47 +352,174 @@
             <div class="section-heading">
               <div>
                 <h2 id="managementTitle">Management Report</h2>
-                <p>Understand who used what, when it happened, and which categories are moving.</p>
+                <p>Current inventory snapshot with SKU-level detail, stock risk, and storage location.</p>
               </div>
-              <span class="sheet-source">transactions.csv</span>
+              <span class="sheet-source">Current inventory</span>
             </div>
             <div class="report-controls">
-              <label for="managementPeriod">
-                Time period
-                <select id="managementPeriod">
-                  <option value="day">Today</option>
-                  <option value="week" selected>This week</option>
-                  <option value="month">This month</option>
-                  <option value="year">This year</option>
-                  <option value="all">All time</option>
+              <label for="managementCategory">
+                Category
+                <select id="managementCategory"></select>
+              </label>
+              <label for="managementSku">
+                SKU
+                <select id="managementSku"></select>
+              </label>
+              <label for="managementLocation">
+                Location
+                <select id="managementLocation"></select>
+              </label>
+              <label for="managementStockStatus">
+                Availability
+                <select id="managementStockStatus">
+                  <option value="all">All availability</option>
+                  <option value="available">Available</option>
+                  <option value="low">Low stock</option>
+                  <option value="missing">Missing / zero</option>
                 </select>
               </label>
-              <label for="managementAction">
-                Movement
-                <select id="managementAction">
-                  <option value="all">All movements</option>
-                  <option value="take">Checked out</option>
-                  <option value="add">Restocked</option>
-                </select>
+              <label for="managementSearch">
+                Keyword
+                <input id="managementSearch" placeholder="Search SKU, name, alias, bin..." autocomplete="off" />
               </label>
-              <button class="button secondary" id="managementRefresh" type="button">Refresh Report</button>
+              <button class="button primary" id="managementRefresh" type="button">Generate Report</button>
+              <button class="button secondary" id="managementReset" type="button">Reset Filters</button>
+              <button class="button secondary" id="managementExport" type="button" disabled>Export Report</button>
             </div>
-            <div class="management-summary" id="managementSummary"></div>
-            <div class="management-grid">
-              <section class="subpanel">
-                <h3>Usage by Person</h3>
+            <div class="report-empty-state" id="managementEmptyState">
+              <h3>No report generated</h3>
+              <p>Choose a category, SKU, location, availability, or keyword, then click Generate Report.</p>
+            </div>
+            <div class="selected-filter-strip" id="managementFilterSummary" hidden></div>
+            <div class="management-summary" id="managementSummary" hidden></div>
+            <div class="management-grid" id="managementGrid" hidden>
+              <section class="subpanel" data-management-section="category">
+                <h3>Category Overview</h3>
                 <div class="table-wrap compact">
-                  <table class="report-table" id="managementUserTable" aria-label="Usage by person"></table>
+                  <table class="report-table" id="managementCategoryTable" aria-label="Inventory by category"></table>
                 </div>
               </section>
-              <section class="subpanel">
-                <h3>Recent Movements</h3>
+              <section class="subpanel report-detail-panel" data-management-section="details">
+                <h3>SKU Inventory Details</h3>
                 <div class="table-wrap compact">
-                  <table class="report-table" id="managementRecentTable" aria-label="Recent inventory movements"></table>
+                  <table class="report-table" id="managementSkuTable" aria-label="SKU inventory details"></table>
+                </div>
+              </section>
+              <section class="subpanel" data-management-section="location">
+                <h3>Location Breakdown</h3>
+                <div class="table-wrap compact">
+                  <table class="report-table" id="managementLocationTable" aria-label="Inventory by location"></table>
                 </div>
               </section>
             </div>
             <p class="inline-status" id="managementStatus" role="status"></p>
+          </section>
+
+          <section class="panel" id="control" aria-labelledby="controlTitle" data-admin-only>
+            <div class="section-heading">
+              <div>
+                <h2 id="controlTitle">Admin Control Center</h2>
+                <p>Operational settings, health checks, storage paths, and backup controls for administrators.</p>
+              </div>
+              <button class="button secondary" id="controlRefresh" type="button">Refresh Status</button>
+            </div>
+
+            <div class="control-hero" id="controlHero"></div>
+
+            <div class="control-grid">
+              <section class="control-card control-settings-card" aria-labelledby="controlAppTitle">
+                <div class="control-card-header">
+                  <h3 id="controlAppTitle">Settings</h3>
+                  <span class="status-pill good">Editable</span>
+                </div>
+                <div class="control-settings-layout">
+                  <form class="control-form" id="controlSettingsForm">
+                    <label for="controlSupportEmail">
+                      Report email
+                      <input id="controlSupportEmail" type="email" autocomplete="off" />
+                    </label>
+                    <label for="controlBackupDirectory">
+                      Backup folder
+                      <span class="path-picker">
+                        <input id="controlBackupDirectory" autocomplete="off" />
+                        <button class="button secondary" id="controlBrowseBackup" type="button">Browse</button>
+                      </span>
+                    </label>
+                    <input id="controlBackupFolderInput" type="file" webkitdirectory directory multiple hidden />
+                    <div class="control-form-actions">
+                      <button class="button primary" id="controlSaveSettings" type="submit">Save Settings</button>
+                      <button class="button secondary" id="controlUseDefaultBackup" type="button">Use Default</button>
+                    </div>
+                  </form>
+                  <div class="control-storage-summary">
+                    <h4>Storage Overview</h4>
+                    <dl class="control-list" id="controlApplicationList"></dl>
+                  </div>
+                </div>
+              </section>
+
+              <section class="control-card" aria-labelledby="controlPeopleTitle">
+                <div class="control-card-header">
+                  <h3 id="controlPeopleTitle">People & Access</h3>
+                  <span class="status-pill good">Controlled</span>
+                </div>
+                <dl class="control-list" id="controlAccessList"></dl>
+              </section>
+
+              <section class="control-card" aria-labelledby="controlScannerTitle">
+                <div class="control-card-header">
+                  <h3 id="controlScannerTitle">Scanner & Codes</h3>
+                  <span class="status-pill good">Phase 1</span>
+                </div>
+                <dl class="control-list">
+                  <div>
+                    <dt>Lookup mode</dt>
+                    <dd>Connected 2D barcode/QR scanner input</dd>
+                  </div>
+                  <div>
+                    <dt>Manual entry</dt>
+                    <dd>Allowed when a label cannot be scanned</dd>
+                  </div>
+                  <div>
+                    <dt>Unknown code handling</dt>
+                    <dd>Send to admin review</dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section class="control-card" aria-labelledby="controlInventoryTitle">
+                <div class="control-card-header">
+                  <h3 id="controlInventoryTitle">Inventory Controls</h3>
+                  <span class="status-pill good">Active</span>
+                </div>
+                <dl class="control-list" id="controlInventoryList"></dl>
+              </section>
+
+              <section class="control-card" aria-labelledby="controlReviewsTitle">
+                <div class="control-card-header">
+                  <h3 id="controlReviewsTitle">Review Queues</h3>
+                  <span class="status-pill" id="controlReviewStatus">Pending</span>
+                </div>
+                <dl class="control-list" id="controlReviewList"></dl>
+                <div class="button-row">
+                  <a class="button secondary" href="#admin">Open Data Administration</a>
+                </div>
+              </section>
+
+              <section class="control-card" aria-labelledby="controlDataTitle">
+                <div class="control-card-header">
+                  <h3 id="controlDataTitle">Data Safety</h3>
+                  <span class="status-pill good">SQLite</span>
+                </div>
+                <dl class="control-list" id="controlDataList"></dl>
+                <div class="button-row">
+                  <button class="button primary" id="controlRunBackup" type="button">Run Backup Now</button>
+                  <a class="button secondary" href="/exports/sku-catalog">Export Catalog</a>
+                  <a class="button secondary" href="/exports/transaction-log">Export Activity</a>
+                </div>
+              </section>
+            </div>
+            <p class="inline-status" id="controlStatus" role="status"></p>
           </section>
 
           <section class="panel" id="inventory" aria-labelledby="inventoryTitle">
@@ -398,7 +528,7 @@
                 <h2 id="inventoryTitle">Category Inventory Sheet</h2>
                 <p>Aggregated spreadsheet view generated from the SKU catalog.</p>
               </div>
-              <span class="sheet-source" id="inventorySource">data/inventory.csv</span>
+              <span class="sheet-source" id="inventorySource">SQLite database</span>
             </div>
             <div class="table-wrap">
               <table class="inventory-table">
@@ -419,31 +549,31 @@
           <section class="panel" id="admin" aria-labelledby="adminTitle" data-admin-only>
             <div class="section-heading">
               <div>
-                <h2 id="adminTitle">Admin CSV Manager</h2>
-                <p>Open a CSV, import updates, review the before/after, then commit only after two admins approve.</p>
+                <h2 id="adminTitle">Data Administration</h2>
+                <p>Maintain catalog, people, code mappings, transactions, review queues, and replenishment records from one controlled workspace.</p>
               </div>
-              <a class="button secondary" id="adminCsvDownload" href="/parts.csv">Download Current CSV</a>
+              <a class="button secondary" id="adminCsvDownload" href="/exports/sku-catalog">Export Current Data</a>
             </div>
             <div class="csv-manager">
               <div class="csv-toolbar">
                 <label class="toolbar-field" for="adminCsvFile">
-                  CSV file
+                  Data area
                   <select id="adminCsvFile">
-                    <option value="parts">parts.csv - SKU catalog</option>
-                    <option value="members">members.csv - members</option>
-                    <option value="partcodes">part_codes.csv - barcode / QR mappings</option>
-                    <option value="transactions">transactions.csv - transaction log</option>
-                    <option value="evaluations">evaluation_queue.csv - admin review queue</option>
-                    <option value="replenishment">replenishment.csv - progress requests</option>
+                    <option value="parts">SKU Catalog</option>
+                    <option value="members">Members & Access</option>
+                    <option value="partcodes">Barcode / QR Mappings</option>
+                    <option value="transactions">Transaction Log</option>
+                    <option value="evaluations">Admin Review Queue</option>
+                    <option value="replenishment">Replenishment Records</option>
                   </select>
                 </label>
-                <div class="toolbar-actions" aria-label="CSV editing actions">
-                  <button class="button secondary" id="adminCsvAddRow" type="button">Add Row</button>
+                <div class="toolbar-actions" aria-label="Data editing actions">
+                  <button class="button secondary" id="adminCsvAddRow" type="button">Add Record</button>
                   <div class="add-column-control">
-                    <label for="adminCsvNewColumn">Add column</label>
+                    <label for="adminCsvNewColumn">Add field</label>
                     <span class="input-button-pair">
-                      <input id="adminCsvNewColumn" placeholder="Column name" />
-                      <button class="button secondary" id="adminCsvAddColumn" type="button">Add Column</button>
+                      <input id="adminCsvNewColumn" placeholder="Field name" />
+                      <button class="button secondary" id="adminCsvAddColumn" type="button">Add Field</button>
                     </span>
                   </div>
                 </div>
@@ -452,11 +582,11 @@
               <section class="import-panel" aria-labelledby="importTitle">
                 <div>
                   <h3 id="importTitle">Import Data</h3>
-                  <p>Choose a CSV, confirm who is importing it, then decide how imported columns should line up with this table.</p>
+                  <p>Choose an import file, confirm the requester, map incoming fields, and review the proposed database change before commit.</p>
                 </div>
                 <div class="import-controls">
                   <label for="adminCsvImportFile">
-                    Import CSV
+                    Import file
                     <input id="adminCsvImportFile" type="file" accept=".csv,text/csv" />
                   </label>
                   <label for="adminCsvImporter">
@@ -466,38 +596,38 @@
                   <label for="adminCsvImportMode">
                     Import action
                     <select id="adminCsvImportMode">
-                      <option value="append">Add imported rows</option>
-                      <option value="update">Update matching rows and add new rows</option>
-                      <option value="replace">Replace current rows</option>
+                      <option value="append">Add imported records</option>
+                      <option value="update">Update matching records and add new records</option>
+                      <option value="replace">Replace current records</option>
                     </select>
                   </label>
                 </div>
                 <div class="import-prompt" id="adminCsvImportPrompt">
-                  Import a CSV to preview its columns before anything changes.
+                  Import a file to preview its fields before anything changes.
                 </div>
                 <div class="import-mapping" id="adminCsvImportMapping" hidden></div>
                 <div class="button-row import-actions" id="adminCsvImportActions" hidden>
-                  <button class="button secondary" id="adminCsvImportApply" type="button">Apply Import to Table</button>
+                  <button class="button secondary" id="adminCsvImportApply" type="button">Apply Import</button>
                 </div>
               </section>
 
               <div class="csv-table-wrap" id="adminCsvTableWrap">
-                <table class="admin-csv-table" id="adminCsvTable" aria-label="CSV table editor"></table>
+                <table class="admin-csv-table" id="adminCsvTable" aria-label="Administrative data editor"></table>
               </div>
 
               <section class="review-panel" id="adminCsvReviewPanel" hidden aria-labelledby="reviewTitle">
                 <div>
                   <h3 id="reviewTitle">Two-Admin Review</h3>
-                  <p>Compare the before and after snapshots, then choose whether to accept or decline this change.</p>
+                  <p>Compare the current and proposed records, then approve or decline the database change.</p>
                 </div>
                 <div class="review-summary" id="adminCsvReviewSummary"></div>
-                <div class="review-snapshots" aria-label="CSV before and after preview">
+                <div class="review-snapshots" aria-label="Current and proposed data preview">
                   <div>
-                    <h4>Before</h4>
+                    <h4>Current records</h4>
                     <pre id="adminCsvBeforePreview"></pre>
                   </div>
                   <div>
-                    <h4>After</h4>
+                    <h4>Proposed records</h4>
                     <pre id="adminCsvAfterPreview"></pre>
                   </div>
                 </div>
@@ -534,12 +664,12 @@
               </section>
 
               <div class="button-row">
-                <button class="button secondary" id="adminCsvReload" type="button">Reload CSV</button>
-                <button class="button primary" id="adminCsvSave" type="button">Start 2-Admin Review</button>
+                <button class="button secondary" id="adminCsvReload" type="button">Reload Data</button>
+                <button class="button primary" id="adminCsvSave" type="button">Start Two-Admin Review</button>
               </div>
               <p class="inline-status" id="adminCsvStatus" role="status"></p>
               <p class="admin-note">
-                <strong>Metadata</strong> appears once as a normal table column. Add extra search terms there; required columns stay protected during save.
+                <strong>Metadata</strong> is available as a catalog field for search terms, aliases, labels, and distinguishing details. Required fields stay protected during save.
               </p>
             </div>
           </section>

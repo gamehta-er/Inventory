@@ -19,7 +19,7 @@ The primary objective is to reduce time spent locating hardware, improve invento
 | User Group | Primary Responsibilities |
 | --- | --- |
 | Customers | Locate parts, take inventory, return inventory, and report missing or low stock. |
-| Administrators | Maintain members, SKUs, locations, barcode/QR mappings, replenishment workflows, and data imports. |
+| Administrators | Maintain members, SKUs, locations, barcode/QR mappings, replenishment records, and data imports. |
 | Management | Review inventory health, usage trends, exceptions, replenishment status, and audit data. |
 
 ## Phase 1 MVP Scope
@@ -31,7 +31,7 @@ Phase 1 is focused on a reliable internal pilot that can support real inventory 
 The customer experience should be direct, guided, and task-focused.
 
 1. Select a registered user profile or continue as a guest.
-2. Choose a lookup method: Manual Search or Barcode/QR Scan.
+2. Choose a lookup method: Manual Search or 2D Barcode/QR Scanner.
 3. Locate the correct SKU using search, scan, or manual code entry.
 4. Review the matched part, available quantity, and location.
 5. Confirm whether inventory is being taken or added.
@@ -66,16 +66,16 @@ Result cards should present:
 - Key distinguisher
 - Match confidence or match reason
 
-### Barcode and QR Code Lookup
+### 2D Barcode and QR Code Lookup
 
-Barcode and QR code lookup is included in Phase 1.
+2D barcode and QR code lookup is included in Phase 1.
 
-This capability is deterministic code lookup, not image recognition. The camera is used only to read a printed barcode or QR code and convert it into text. No camera images should be stored.
+This capability is deterministic code lookup, not image recognition. Phase 1 uses a connected 2D barcode scanner that enters the scanned value into the barcode/QR field, similar to keyboard input. The browser must not request camera access.
 
 Required capabilities:
 
-- Scan barcode or QR code using the browser camera where supported.
-- Provide manual code entry as a fallback.
+- Accept scanned barcode or QR values from a connected 2D scanner.
+- Provide manual code entry as a fallback for damaged labels or scanner issues.
 - Match scanned codes to a SKU or serialized asset record.
 - Require user confirmation before inventory quantity changes.
 - Route unknown codes to administrative review.
@@ -115,6 +115,7 @@ Administrator screens should be structured, concise, and table-driven. The inter
 
 Administrators should be able to manage:
 
+- Control Center health, configuration, storage path, and backup controls
 - Members
 - Parts catalog
 - Locations
@@ -185,8 +186,9 @@ Recommended Phase 1 tables:
 | part_codes | Barcode, QR code, asset tag, and label mappings. |
 | transactions | Append-only inventory movement history. |
 | reports | Missing inventory and low inventory reports. |
-| replenishment | Replenishment workflow records. |
+| replenishment | Replenishment progress records. |
 | evaluations | Unknown codes, incorrect matches, and user-submitted review items. |
+| settings | Administrator-managed operational settings such as report email and backup destination. |
 | admin_reviews | Import, catalog, and configuration changes pending approval. |
 | imports | Import batches, source files, validation results, and commit history. |
 | part_images | Image references for future SKU recognition workflows. |
@@ -196,8 +198,9 @@ SQLite is appropriate for the Phase 1 pilot because it is lightweight, reliable,
 Current implementation status:
 
 - SQLite database: `data/inventory.db`
-- CSV files: retained as seed, export, and admin import/export snapshots
+- CSV files: retained as seed files and generated import/export formats
 - Runtime source of truth: SQLite
+- Backup destination: configurable from the Admin Control Center, defaulting to `data/backups`
 
 ## Parts Catalog Requirements
 
@@ -329,24 +332,23 @@ Administrative overrides should capture:
 
 Bypass and override activity should appear in management reports so leadership can see where process gaps, missing labels, or incomplete data are affecting inventory quality.
 
-## Replenishment Workflow
+## Replenishment Progress
 
-Replenishment should convert low-stock signals into visible, trackable work.
+Replenishment should convert low-stock and missing-inventory requests into visible, trackable progress.
 
 Trigger conditions:
 
 - Available quantity falls below minimum quantity.
 - User reports low inventory.
 - User reports missing inventory.
-- Administrator creates a manual replenishment request.
+- Administrator creates a replenishment request.
 
-Recommended workflow statuses:
+Recommended status values:
 
-- Bin Threshold Reached
-- Signal Sent
-- Reorder in Progress
-- Bin Refilled
-- Closed
+- New Request
+- Submitted
+- In Progress
+- Completed
 
 Recommended replenishment fields:
 

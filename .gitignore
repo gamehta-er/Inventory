@@ -4,3 +4,6 @@ server.err.log
 node_modules/
 data/reports.csv
 data/inventory.db*
+data/backups/
+inventory-2.0/data/*.db*
+inventory-2.0/data/backups/

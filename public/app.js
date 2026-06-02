@@ -16,13 +16,14 @@ const state = {
   activeRoute: "",
   members: [],
   adminCsv: null,
+  controlSettings: null,
+  managementReport: null,
   importDraft: null,
   pendingReview: null,
   searchResult: null,
   candidate: null,
   confirmedPart: null,
-  lookupContext: { method: "Manual Search", code: "" },
-  scanner: { stream: null, frameId: null, detector: null, active: false }
+  lookupContext: { method: "Manual Search", code: "" }
 };
 
 const elements = {
@@ -50,10 +51,6 @@ const elements = {
   analyzeButton: document.querySelector("#analyzeButton"),
   partCodeInput: document.querySelector("#partCodeInput"),
   lookupCodeButton: document.querySelector("#lookupCodeButton"),
-  startCodeScanButton: document.querySelector("#startCodeScanButton"),
-  stopCodeScanButton: document.querySelector("#stopCodeScanButton"),
-  codeScannerVideo: document.querySelector("#codeScannerVideo"),
-  scannerEmpty: document.querySelector("#scannerEmpty"),
   codeLookupStatus: document.querySelector("#codeLookupStatus"),
   matchPanel: document.querySelector("#matchPanel"),
   matchPanelTitle: document.querySelector("#matchPanelTitle"),
@@ -88,13 +85,40 @@ const elements = {
   replenishmentSummary: document.querySelector("#replenishmentSummary"),
   replenishmentBoard: document.querySelector("#replenishmentBoard"),
   replenishmentStatus: document.querySelector("#replenishmentStatus"),
-  managementPeriod: document.querySelector("#managementPeriod"),
-  managementAction: document.querySelector("#managementAction"),
+  managementCategory: document.querySelector("#managementCategory"),
+  managementSku: document.querySelector("#managementSku"),
+  managementLocation: document.querySelector("#managementLocation"),
+  managementStockStatus: document.querySelector("#managementStockStatus"),
+  managementSearch: document.querySelector("#managementSearch"),
   managementRefresh: document.querySelector("#managementRefresh"),
+  managementReset: document.querySelector("#managementReset"),
+  managementExport: document.querySelector("#managementExport"),
+  managementEmptyState: document.querySelector("#managementEmptyState"),
+  managementFilterSummary: document.querySelector("#managementFilterSummary"),
+  managementGrid: document.querySelector("#managementGrid"),
+  managementSections: [...document.querySelectorAll("[data-management-section]")],
   managementSummary: document.querySelector("#managementSummary"),
-  managementUserTable: document.querySelector("#managementUserTable"),
-  managementRecentTable: document.querySelector("#managementRecentTable"),
+  managementCategoryTable: document.querySelector("#managementCategoryTable"),
+  managementSkuTable: document.querySelector("#managementSkuTable"),
+  managementLocationTable: document.querySelector("#managementLocationTable"),
   managementStatus: document.querySelector("#managementStatus"),
+  controlRefresh: document.querySelector("#controlRefresh"),
+  controlHero: document.querySelector("#controlHero"),
+  controlApplicationList: document.querySelector("#controlApplicationList"),
+  controlAccessList: document.querySelector("#controlAccessList"),
+  controlInventoryList: document.querySelector("#controlInventoryList"),
+  controlReviewList: document.querySelector("#controlReviewList"),
+  controlReviewStatus: document.querySelector("#controlReviewStatus"),
+  controlDataList: document.querySelector("#controlDataList"),
+  controlSettingsForm: document.querySelector("#controlSettingsForm"),
+  controlSupportEmail: document.querySelector("#controlSupportEmail"),
+  controlBackupDirectory: document.querySelector("#controlBackupDirectory"),
+  controlBrowseBackup: document.querySelector("#controlBrowseBackup"),
+  controlBackupFolderInput: document.querySelector("#controlBackupFolderInput"),
+  controlUseDefaultBackup: document.querySelector("#controlUseDefaultBackup"),
+  controlSaveSettings: document.querySelector("#controlSaveSettings"),
+  controlRunBackup: document.querySelector("#controlRunBackup"),
+  controlStatus: document.querySelector("#controlStatus"),
   adminCsvFile: document.querySelector("#adminCsvFile"),
   adminCsvTable: document.querySelector("#adminCsvTable"),
   adminCsvAddRow: document.querySelector("#adminCsvAddRow"),
@@ -165,8 +189,8 @@ function setLookupMethod(method) {
   const useCodeLookup = method === "code";
   elements.manualLookupPanel.hidden = useCodeLookup;
   elements.codeLookupPanel.hidden = !useCodeLookup;
-  if (!useCodeLookup) {
-    stopCodeScanner();
+  if (useCodeLookup) {
+    window.setTimeout(() => elements.partCodeInput?.focus(), 0);
   }
   setInlineStatus(elements.scanStatus, "", "");
   setInlineStatus(elements.codeLookupStatus, "", "");
@@ -334,9 +358,10 @@ function applyRoleAccess() {
     element.hidden = !admin;
   });
 
-  if (!admin && state.user && ["#admin", "#management"].includes(window.location.hash)) {
+  if (!admin && state.user && ["#admin", "#management", "#control"].includes(window.location.hash)) {
     window.location.hash = "#scan";
   }
+  renderControlCenter();
   syncActiveNavFromHash();
 }
 
@@ -360,14 +385,57 @@ function renderAll() {
   renderCategoryOptions();
   renderGuidedSearchOptions();
   renderMemberOptions();
+  renderManagementFilterOptions();
   renderInventorySheet();
   renderReplenishmentPartOptions();
   renderReplenishmentBoard();
+  renderControlCenter();
   applyRoleAccess();
   elements.reportEmail.textContent = state.catalog?.reportEmail || "gamehta@nvidia.com";
   if (isAdmin()) {
-    loadManagementReport().catch((error) => setInlineStatus(elements.managementStatus, error.message, "error"));
+    loadControlSettings().catch((error) => setInlineStatus(elements.controlStatus, error.message, "error"));
   }
+}
+
+function setSelectOptions(select, options, allLabel = "All") {
+  if (!select) return;
+  const currentValue = select.value;
+  select.innerHTML = [
+    `<option value="all">${escapeHtml(allLabel)}</option>`,
+    ...options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
+  ].join("");
+  if ([...select.options].some((option) => option.value === currentValue)) {
+    select.value = currentValue;
+  }
+}
+
+function renderManagementFilterOptions() {
+  const parts = state.catalog?.parts || [];
+  const categoryOptions = [...new Set(parts.map((part) => part.category).filter(Boolean))]
+    .sort()
+    .map((category) => ({ value: category, label: category }));
+  const selectedCategory = elements.managementCategory?.value || "all";
+  const selectedSku = elements.managementSku?.value || "all";
+  const scopedParts = parts.filter((part) => selectedCategory === "all" || part.category === selectedCategory);
+  const locationScope = scopedParts.filter((part) => selectedSku === "all" || part.sku === selectedSku);
+  const skuOptions = scopedParts
+    .slice()
+    .sort((left, right) => String(left.sku).localeCompare(String(right.sku)))
+    .map((part) => ({ value: part.sku, label: `${part.sku} - ${part.name}` }));
+  const locationOptions = [
+    ...new Map(
+      locationScope
+        .filter((part) => part.aisle || part.bin)
+        .map((part) => [
+          `${part.aisle}||${part.bin}`,
+          { value: `${part.aisle}||${part.bin}`, label: `Aisle ${part.aisle} / Bin ${part.bin}` }
+        ])
+    ).values()
+  ].sort((left, right) => left.label.localeCompare(right.label));
+
+  setSelectOptions(elements.managementCategory, categoryOptions, "All categories");
+  setSelectOptions(elements.managementSku, skuOptions, "All SKUs");
+  setSelectOptions(elements.managementLocation, locationOptions, "All locations");
 }
 
 function renderMemberOptions() {
@@ -596,6 +664,7 @@ function syncReplenishmentItemFromSku() {
 async function loadReplenishmentBoard() {
   state.replenishment = await requestJson("/api/replenishment");
   renderReplenishmentBoard();
+  renderControlCenter();
 }
 
 function renderReplenishmentBoard() {
@@ -720,6 +789,18 @@ function formatReplenishmentTime(timestamp) {
   }).format(date);
 }
 
+function formatControlTime(timestamp) {
+  const date = new Date(timestamp || "");
+  if (Number.isNaN(date.getTime())) return "Not run yet";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+}
+
 async function createReplenishmentRequest() {
   try {
     const user = requireUser();
@@ -748,6 +829,7 @@ async function createReplenishmentRequest() {
     elements.replenishmentPriority.value = "Normal";
     elements.replenishmentNotes.value = "";
     renderReplenishmentBoard();
+    renderControlCenter();
     setInlineStatus(elements.replenishmentStatus, result.message, "success");
   } catch (error) {
     setInlineStatus(elements.replenishmentStatus, error.message, "error");
@@ -766,108 +848,624 @@ async function updateReplenishmentStatus(id, status) {
     });
     state.replenishment = result.board;
     renderReplenishmentBoard();
+    renderControlCenter();
     setInlineStatus(elements.replenishmentStatus, result.message, "success");
   } catch (error) {
     setInlineStatus(elements.replenishmentStatus, error.message, "error");
   }
 }
 
+function selectedOptionText(select) {
+  return select?.selectedOptions?.[0]?.textContent?.trim() || "";
+}
+
+function currentManagementFilters() {
+  return {
+    category: elements.managementCategory.value || "all",
+    sku: elements.managementSku.value || "all",
+    location: elements.managementLocation.value || "all",
+    stockStatus: elements.managementStockStatus.value || "all",
+    search: elements.managementSearch.value.trim()
+  };
+}
+
+function managementFilterLabels() {
+  const filters = currentManagementFilters();
+  const labels = [];
+
+  if (filters.category !== "all") labels.push(`Category: ${selectedOptionText(elements.managementCategory)}`);
+  if (filters.sku !== "all") labels.push(`SKU: ${selectedOptionText(elements.managementSku)}`);
+  if (filters.location !== "all") labels.push(`Location: ${selectedOptionText(elements.managementLocation)}`);
+  if (filters.stockStatus !== "all") labels.push(`Availability: ${selectedOptionText(elements.managementStockStatus)}`);
+  if (filters.search) labels.push(`Keyword: ${filters.search}`);
+
+  return labels.length ? labels : ["Scope: All inventory"];
+}
+
+function resetManagementReportView(message = "Choose filters and click Generate Report.") {
+  state.managementReport = null;
+  if (elements.managementEmptyState) elements.managementEmptyState.hidden = false;
+  if (elements.managementSummary) {
+    elements.managementSummary.hidden = true;
+    elements.managementSummary.innerHTML = "";
+  }
+  if (elements.managementFilterSummary) {
+    elements.managementFilterSummary.hidden = true;
+    elements.managementFilterSummary.innerHTML = "";
+  }
+  if (elements.managementGrid) elements.managementGrid.hidden = true;
+  elements.managementSections.forEach((section) => {
+    section.hidden = true;
+  });
+  if (elements.managementExport) elements.managementExport.disabled = true;
+  setInlineStatus(elements.managementStatus, message, "busy");
+}
+
 async function loadManagementReport() {
   if (!isAdmin() || !elements.managementSummary) return;
-  const period = elements.managementPeriod.value || "week";
-  const action = elements.managementAction.value || "all";
-  setInlineStatus(elements.managementStatus, "Loading management report...", "busy");
-  const data = await requestJson(`/api/admin/management-report?period=${encodeURIComponent(period)}&action=${encodeURIComponent(action)}`, {
-    headers: adminHeaders()
-  });
+  setInlineStatus(elements.managementStatus, "Generating current inventory report...", "busy");
+  const data = buildInventoryManagementReport();
+  state.managementReport = data;
   renderManagementReport(data);
-  setInlineStatus(elements.managementStatus, data.message, "success");
+  const count = data.details?.length ?? 0;
+  setInlineStatus(elements.managementStatus, `${count} SKU${count === 1 ? "" : "s"} found for the selected inventory filters.`, "success");
+}
+
+function inventoryStatus(part) {
+  const quantity = Number(part.quantity || 0);
+  const minQuantity = Number(part.minQuantity || 0);
+  if (quantity <= 0) return { key: "missing", label: "Missing", tone: "danger" };
+  if (quantity <= minQuantity) return { key: "low", label: "Low stock", tone: "caution" };
+  return { key: "available", label: "Available", tone: "good" };
+}
+
+function partManagementSearchText(part) {
+  const aliases = Array.isArray(part.aliases) ? part.aliases.join(" ") : part.aliases;
+  return [
+    part.sku,
+    part.name,
+    part.category,
+    part.aisle,
+    part.bin,
+    part.location,
+    aliases,
+    part.distinguishers,
+    part.metadata
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function formatPartAliases(part) {
+  return Array.isArray(part.aliases) ? part.aliases.join("; ") : String(part.aliases || "");
+}
+
+function partMatchesManagementFilters(part, filters) {
+  const status = inventoryStatus(part);
+  const locationValue = `${part.aisle || ""}||${part.bin || ""}`;
+  return (
+    (filters.category === "all" || part.category === filters.category) &&
+    (filters.sku === "all" || part.sku === filters.sku) &&
+    (filters.location === "all" || locationValue === filters.location) &&
+    (filters.stockStatus === "all" || status.key === filters.stockStatus) &&
+    (!filters.search || partManagementSearchText(part).includes(filters.search.toLowerCase()))
+  );
+}
+
+function buildInventoryManagementReport() {
+  const filters = currentManagementFilters();
+  const parts = (state.catalog?.parts || []).filter((part) => partMatchesManagementFilters(part, filters));
+  const statusCounts = parts.reduce(
+    (counts, part) => {
+      counts[inventoryStatus(part).key] += 1;
+      return counts;
+    },
+    { available: 0, low: 0, missing: 0 }
+  );
+  const locations = new Set(parts.map((part) => `${part.aisle || ""} / ${part.bin || ""}`).filter((location) => location.trim() !== "/"));
+  const details = parts
+    .slice()
+    .sort((left, right) => String(left.category).localeCompare(String(right.category)) || String(left.sku).localeCompare(String(right.sku)))
+    .map((part) => {
+      const status = inventoryStatus(part);
+      return {
+        category: part.category || "Uncategorized",
+        sku: part.sku,
+        partName: part.name,
+        quantity: Number(part.quantity || 0),
+        minQuantity: Number(part.minQuantity || 0),
+        status: status.label,
+        statusKey: status.key,
+        statusTone: status.tone,
+        aisle: part.aisle || "",
+        bin: part.bin || "",
+        location: `Aisle ${part.aisle || "-"} / Bin ${part.bin || "-"}`,
+        distinguishers: part.distinguishers || "",
+        aliases: formatPartAliases(part),
+        metadata: part.metadata || ""
+      };
+    });
+
+  const categoryRows = [...details.reduce((map, row) => {
+    if (!map.has(row.category)) {
+      map.set(row.category, {
+        category: row.category,
+        totalQuantity: 0,
+        skuCount: 0,
+        availableSkus: 0,
+        lowSkus: 0,
+        missingSkus: 0,
+        locations: new Set()
+      });
+    }
+    const category = map.get(row.category);
+    category.totalQuantity += row.quantity;
+    category.skuCount += 1;
+    if (row.statusKey === "available") category.availableSkus += 1;
+    if (row.statusKey === "low") category.lowSkus += 1;
+    if (row.statusKey === "missing") category.missingSkus += 1;
+    category.locations.add(row.location);
+    return map;
+  }, new Map()).values()]
+    .map((row) => ({ ...row, locations: row.locations.size }))
+    .sort((left, right) => right.totalQuantity - left.totalQuantity || left.category.localeCompare(right.category));
+
+  const locationRows = [...details.reduce((map, row) => {
+    if (!map.has(row.location)) {
+      map.set(row.location, {
+        location: row.location,
+        totalQuantity: 0,
+        skuCount: 0,
+        lowSkus: 0,
+        missingSkus: 0,
+        categories: new Set()
+      });
+    }
+    const location = map.get(row.location);
+    location.totalQuantity += row.quantity;
+    location.skuCount += 1;
+    if (row.statusKey === "low") location.lowSkus += 1;
+    if (row.statusKey === "missing") location.missingSkus += 1;
+    location.categories.add(row.category);
+    return map;
+  }, new Map()).values()]
+    .map((row) => ({ ...row, categories: [...row.categories].sort().join(", ") }))
+    .sort((left, right) => left.location.localeCompare(right.location));
+
+  return {
+    filters,
+    summary: {
+      totalQuantity: details.reduce((total, row) => total + row.quantity, 0),
+      totalSkus: details.length,
+      availableSkus: statusCounts.available,
+      lowSkus: statusCounts.low,
+      missingSkus: statusCounts.missing,
+      locations: locations.size
+    },
+    byCategory: categoryRows,
+    byLocation: locationRows,
+    details
+  };
+}
+
+function reportMetric(label, value) {
+  return `
+    <div class="report-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value ?? 0)}</strong>
+    </div>
+  `;
+}
+
+function renderTableBody(rows, columns, emptyMessage) {
+  if (!rows.length) {
+    return `<tr><td class="empty-state" colspan="${columns.length}">${escapeHtml(emptyMessage)}</td></tr>`;
+  }
+  return rows
+    .map(
+      (row) => `
+        <tr>
+          ${columns.map((column) => `<td>${column.render(row)}</td>`).join("")}
+        </tr>
+      `
+    )
+    .join("");
+}
+
+function renderReportTable(table, columns, rows, emptyMessage) {
+  table.innerHTML = `
+    <thead>
+      <tr>
+        ${columns.map((column) => `<th scope="col">${escapeHtml(column.label)}</th>`).join("")}
+      </tr>
+    </thead>
+    <tbody>
+      ${renderTableBody(rows, columns, emptyMessage)}
+    </tbody>
+  `;
 }
 
 function renderManagementReport(data) {
   const summary = data.summary || {};
+
+  elements.managementEmptyState.hidden = true;
+  elements.managementSummary.hidden = false;
+  elements.managementGrid.hidden = false;
+  elements.managementExport.disabled = false;
+  elements.managementFilterSummary.hidden = false;
+  elements.managementFilterSummary.innerHTML = managementFilterLabels()
+    .map((label) => `<span>${escapeHtml(label)}</span>`)
+    .join("");
+  elements.managementSections.forEach((section) => {
+    section.hidden = false;
+  });
+
   elements.managementSummary.innerHTML = `
-    <div class="report-metric">
-      <span>Movements</span>
-      <strong>${escapeHtml(summary.transactionCount ?? 0)}</strong>
+    ${reportMetric("Total available", summary.totalQuantity)}
+    ${reportMetric("Matching SKUs", summary.totalSkus)}
+    ${reportMetric("Available SKUs", summary.availableSkus)}
+    ${reportMetric("Low-stock SKUs", summary.lowSkus)}
+    ${reportMetric("Missing SKUs", summary.missingSkus)}
+    ${reportMetric("Locations", summary.locations)}
+  `;
+
+  renderReportTable(
+    elements.managementCategoryTable,
+    [
+      { label: "Category", render: (row) => `<strong>${escapeHtml(row.category)}</strong>` },
+      { label: "Total available", render: (row) => escapeHtml(row.totalQuantity) },
+      { label: "SKUs", render: (row) => escapeHtml(row.skuCount) },
+      { label: "Available", render: (row) => escapeHtml(row.availableSkus) },
+      { label: "Low", render: (row) => escapeHtml(row.lowSkus) },
+      { label: "Missing", render: (row) => escapeHtml(row.missingSkus) },
+      { label: "Locations", render: (row) => escapeHtml(row.locations) }
+    ],
+    data.byCategory || [],
+    "No inventory found for these filters."
+  );
+
+  renderReportTable(
+    elements.managementSkuTable,
+    [
+      { label: "SKU", render: (row) => `<strong>${escapeHtml(row.sku)}</strong><br /><span>${escapeHtml(row.partName)}</span>` },
+      { label: "Category", render: (row) => escapeHtml(row.category) },
+      { label: "Available", render: (row) => `<strong>${escapeHtml(row.quantity)}</strong>` },
+      { label: "Minimum", render: (row) => escapeHtml(row.minQuantity) },
+      { label: "Status", render: (row) => `<span class="stock-pill ${escapeHtml(row.statusTone)}">${escapeHtml(row.status)}</span>` },
+      { label: "Location", render: (row) => `<span class="nowrap">${escapeHtml(row.location)}</span>` },
+      { label: "Details", render: (row) => escapeHtml(row.distinguishers || row.aliases || row.metadata || "-") }
+    ],
+    data.details || [],
+    "No SKU inventory found for these filters."
+  );
+
+  renderReportTable(
+    elements.managementLocationTable,
+    [
+      { label: "Location", render: (row) => `<strong class="nowrap">${escapeHtml(row.location)}</strong>` },
+      { label: "Total available", render: (row) => escapeHtml(row.totalQuantity) },
+      { label: "SKUs", render: (row) => escapeHtml(row.skuCount) },
+      { label: "Low", render: (row) => escapeHtml(row.lowSkus) },
+      { label: "Missing", render: (row) => escapeHtml(row.missingSkus) },
+      { label: "Categories", render: (row) => escapeHtml(row.categories || "-") }
+    ],
+    data.byLocation || [],
+    "No location inventory found for these filters."
+  );
+}
+
+function resetManagementFilters() {
+  elements.managementCategory.value = "all";
+  elements.managementSku.value = "all";
+  elements.managementLocation.value = "all";
+  elements.managementStockStatus.value = "all";
+  elements.managementSearch.value = "";
+  renderManagementFilterOptions();
+  resetManagementReportView("Filters reset. Click Generate Report when ready.");
+}
+
+function exportManagementReport() {
+  const details = state.managementReport?.details || [];
+  if (!state.managementReport) {
+    setInlineStatus(elements.managementStatus, "Generate a report before exporting.", "error");
+    return;
+  }
+  const summary = state.managementReport.summary || {};
+  const headers = [
+    "Category",
+    "SKU",
+    "Part Name",
+    "Available Quantity",
+    "Minimum Quantity",
+    "Status",
+    "Aisle",
+    "Bin",
+    "Distinguishers",
+    "Aliases",
+    "Metadata"
+  ];
+  const rows = details.map((row) => [
+    row.category,
+    row.sku,
+    row.partName,
+    row.quantity,
+    row.minQuantity,
+    row.status,
+    row.aisle,
+    row.bin,
+    row.distinguishers,
+    row.aliases,
+    row.metadata
+  ]);
+  const contextRows = [
+    ["Report generated", new Date().toLocaleString()],
+    ["Selected filters", managementFilterLabels().join(" | ")],
+    ["Total available", summary.totalQuantity ?? 0],
+    ["Matching SKUs", summary.totalSkus ?? 0],
+    ["Low-stock SKUs", summary.lowSkus ?? 0],
+    ["Missing SKUs", summary.missingSkus ?? 0],
+    []
+  ];
+  const csv = [
+    ...contextRows.map((row) => row.map(csvEscape).join(",")),
+    headers.map(csvEscape).join(","),
+    ...rows.map((row) => row.map(csvEscape).join(","))
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  link.href = URL.createObjectURL(blob);
+  link.download = `management-report-${stamp}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+  setInlineStatus(elements.managementStatus, `Report exported with ${details.length} SKU${details.length === 1 ? "" : "s"}.`, "success");
+}
+
+function renderDefinitionList(element, rows) {
+  if (!element) return;
+  element.innerHTML = rows
+    .map(
+      ([label, value]) => `
+        <div>
+          <dt>${escapeHtml(label)}</dt>
+          <dd>${escapeHtml(value)}</dd>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function currentControlSettings() {
+  return {
+    supportEmail: state.catalog?.reportEmail || "gamehta@nvidia.com",
+    backupDirectory: "data/backups",
+    backupResolvedPath: "data/backups",
+    backupLastRunAt: "",
+    backupLastStatus: "Not run",
+    backupLastPath: "",
+    databaseDisplayPath: state.inventory?.source || "data/inventory.db",
+    databaseResolvedPath: state.inventory?.source || "data/inventory.db",
+    ...(state.controlSettings || {})
+  };
+}
+
+function syncControlInputs(settings) {
+  if (elements.controlSupportEmail && document.activeElement !== elements.controlSupportEmail) {
+    elements.controlSupportEmail.value = settings.supportEmail || "";
+  }
+  if (elements.controlBackupDirectory && document.activeElement !== elements.controlBackupDirectory) {
+    elements.controlBackupDirectory.value = settings.backupDirectory || "";
+  }
+}
+
+function renderControlCenter() {
+  if (!isAdmin() || !elements.controlHero) return;
+  const parts = state.catalog?.parts || [];
+  const lowParts = parts.filter((part) => Number(part.quantity) <= Number(part.minQuantity || lowThreshold));
+  const missingParts = parts.filter((part) => Number(part.quantity) <= 0);
+  const openRequests = state.replenishment?.summary?.openRequests ?? 0;
+  const pendingEvaluations = Number(state.catalog?.pendingEvaluationCount ?? state.catalog?.evaluations?.length ?? 0);
+  const codeCount = Number(state.catalog?.partCodeCount ?? state.catalog?.partCodes?.length ?? 0);
+  const adminNames = state.members
+    .filter((member) => isAdminCapable(member.email))
+    .map((member) => member.name)
+    .join(", ");
+  const settings = currentControlSettings();
+  syncControlInputs(settings);
+
+  elements.controlHero.innerHTML = `
+    <div>
+      <span>Inventory health</span>
+      <strong>${escapeHtml(lowParts.length)}</strong>
+      <p>SKU${lowParts.length === 1 ? "" : "s"} at or below minimum quantity</p>
     </div>
-    <div class="report-metric">
-      <span>Quantity moved</span>
-      <strong>${escapeHtml(summary.quantityMoved ?? 0)}</strong>
+    <div>
+      <span>Open restock requests</span>
+      <strong>${escapeHtml(openRequests)}</strong>
+      <p>Visible on Replenishment Progress</p>
     </div>
-    <div class="report-metric">
-      <span>People</span>
-      <strong>${escapeHtml(summary.uniqueUsers ?? 0)}</strong>
-    </div>
-    <div class="report-metric">
-      <span>SKUs</span>
-      <strong>${escapeHtml(summary.uniqueSkus ?? 0)}</strong>
+    <div>
+      <span>Admin reviews</span>
+      <strong>${escapeHtml(pendingEvaluations)}</strong>
+      <p>Unknown codes or rejected matches</p>
     </div>
   `;
 
-  const users = data.byUser || [];
-  elements.managementUserTable.innerHTML = `
-    <thead>
-      <tr>
-        <th scope="col">Person</th>
-        <th scope="col">Movements</th>
-        <th scope="col">Taken</th>
-        <th scope="col">Restocked</th>
-        <th scope="col">Top SKU</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${
-        users.length
-          ? users
-              .map(
-                (user) => `
-                  <tr>
-                    <td><strong>${escapeHtml(user.name)}</strong><br /><span>${escapeHtml(user.email)}</span></td>
-                    <td>${escapeHtml(user.transactions)}</td>
-                    <td>${escapeHtml(user.taken)}</td>
-                    <td>${escapeHtml(user.restocked)}</td>
-                    <td>${escapeHtml(user.topSku || "-")}</td>
-                  </tr>
-                `
-              )
-              .join("")
-          : `<tr><td class="empty-state" colspan="5">No transactions found for this period.</td></tr>`
-      }
-    </tbody>
-  `;
+  renderDefinitionList(elements.controlApplicationList, [
+    ["Application", "Lab Hardware Inventory"],
+    ["Phase", "Phase 1 pilot"],
+    ["Database file", settings.databaseDisplayPath || "data/inventory.db"],
+    ["Full DB path", settings.databaseResolvedPath || settings.databaseDisplayPath || "data/inventory.db"]
+  ]);
 
-  const recent = data.recent || [];
-  elements.managementRecentTable.innerHTML = `
-    <thead>
-      <tr>
-        <th scope="col">When</th>
-        <th scope="col">Person</th>
-        <th scope="col">Action</th>
-        <th scope="col">Part</th>
-        <th scope="col">Qty</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${
-        recent.length
-          ? recent
-              .map(
-                (row) => `
-                  <tr>
-                    <td>${escapeHtml(row.when)}</td>
-                    <td>${escapeHtml(row.userName)}</td>
-                    <td>${escapeHtml(row.actionLabel)}</td>
-                    <td><strong>${escapeHtml(row.sku)}</strong><br /><span>${escapeHtml(row.partName)}</span></td>
-                    <td>${escapeHtml(row.quantity)}</td>
-                  </tr>
-                `
-              )
-              .join("")
-          : `<tr><td class="empty-state" colspan="5">No recent movement to show.</td></tr>`
-      }
-    </tbody>
-  `;
+  renderDefinitionList(elements.controlAccessList, [
+    ["Administrators", adminNames || "Gaurav Mehta, Monica Martin"],
+    ["Guest access", "Allowed with name and email"],
+    ["Admin screens", "Hidden from regular users"],
+    ["Change approval", "Two administrators required for database commits"]
+  ]);
+
+  renderDefinitionList(elements.controlInventoryList, [
+    ["Tracked SKUs", String(parts.length)],
+    ["Low-stock SKUs", String(lowParts.length)],
+    ["Missing SKUs", String(missingParts.length)],
+    ["Transaction reason", "Required for add/take updates"],
+    ["NVBug tracking", "Required when available; bypass is logged"]
+  ]);
+
+  renderDefinitionList(elements.controlReviewList, [
+    ["Pending admin reviews", String(pendingEvaluations)],
+    ["Open restock requests", String(openRequests)],
+    ["Barcode/QR mappings", String(codeCount)],
+    ["Unknown codes", "Routed to evaluation queue"]
+  ]);
+
+  const reviewTone = pendingEvaluations || openRequests ? "caution" : "good";
+  elements.controlReviewStatus.className = `status-pill ${reviewTone}`.trim();
+  elements.controlReviewStatus.textContent = pendingEvaluations || openRequests ? "Needs review" : "Clear";
+
+  renderDefinitionList(elements.controlDataList, [
+    ["Runtime source", "SQLite database"],
+    ["Backup folder", settings.backupResolvedPath || settings.backupDirectory || "data/backups"],
+    ["Last backup", formatControlTime(settings.backupLastRunAt)],
+    ["Backup status", settings.backupLastStatus || "Not run"],
+    ["Last backup file", settings.backupLastPath || "No backup created yet"]
+  ]);
+}
+
+async function loadControlSettings(showStatus = false) {
+  if (!isAdmin()) return;
+  const data = await requestJson("/api/admin/settings", {
+    headers: adminHeaders()
+  });
+  state.controlSettings = data.settings;
+  renderControlCenter();
+  if (showStatus) {
+    setInlineStatus(elements.controlStatus, "Control Center status refreshed.", "success");
+  }
+}
+
+async function refreshControlCenter() {
+  try {
+    setInlineStatus(elements.controlStatus, "Refreshing Control Center...", "busy");
+    await Promise.all([loadControlSettings(), loadReplenishmentBoard()]);
+    renderControlCenter();
+    setInlineStatus(elements.controlStatus, "Control Center status refreshed.", "success");
+  } catch (error) {
+    setInlineStatus(elements.controlStatus, error.message, "error");
+  }
+}
+
+async function saveControlSettings(event) {
+  event?.preventDefault();
+  try {
+    requireUser();
+    if (!isAdmin()) {
+      throw new Error("Only administrators can change Control Center settings.");
+    }
+    elements.controlSaveSettings.disabled = true;
+    setInlineStatus(elements.controlStatus, "Saving Control Center settings...", "busy");
+    const result = await requestJson("/api/admin/settings", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        supportEmail: elements.controlSupportEmail.value,
+        backupDirectory: elements.controlBackupDirectory.value
+      })
+    });
+    state.controlSettings = result.settings;
+    if (state.catalog) {
+      state.catalog.reportEmail = result.settings.supportEmail;
+    }
+    elements.reportEmail.textContent = result.settings.supportEmail;
+    renderControlCenter();
+    setInlineStatus(elements.controlStatus, result.message, "success");
+  } catch (error) {
+    setInlineStatus(elements.controlStatus, error.message, "error");
+  } finally {
+    elements.controlSaveSettings.disabled = false;
+  }
+}
+
+function useDefaultBackupFolder() {
+  if (!elements.controlBackupDirectory) return;
+  elements.controlBackupDirectory.value = "data/backups";
+  elements.controlBackupDirectory.focus();
+  setInlineStatus(elements.controlStatus, "Default backup folder selected. Save settings to apply it.", "busy");
+}
+
+function updateBackupFolderFromFileSelection(files) {
+  const firstFile = files?.[0];
+  if (!firstFile) return;
+  const relativePath = firstFile.webkitRelativePath || "";
+  const rootFolder = relativePath.split("/")[0] || "";
+
+  if (firstFile.path && relativePath) {
+    const normalizedFilePath = firstFile.path.replaceAll("\\", "/");
+    const normalizedRelativePath = relativePath.replaceAll("\\", "/");
+    const folderPath = normalizedFilePath.slice(0, normalizedFilePath.length - normalizedRelativePath.length).replaceAll("/", "\\").replace(/[\\/]$/, "");
+    if (folderPath) {
+      elements.controlBackupDirectory.value = folderPath;
+      setInlineStatus(elements.controlStatus, "Backup folder selected. Save settings to apply it.", "busy");
+      return;
+    }
+  }
+
+  setInlineStatus(
+    elements.controlStatus,
+    rootFolder
+      ? `Selected ${rootFolder}, but this browser hides the full Windows path. Paste the full backup folder path, then save settings.`
+      : "This browser hides the full folder path. Paste the backup folder path, then save settings.",
+    "busy"
+  );
+}
+
+async function browseBackupFolder() {
+  try {
+    if (window.showDirectoryPicker) {
+      const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+      setInlineStatus(
+        elements.controlStatus,
+        `Selected ${directoryHandle.name}, but the browser does not expose the full server path. Paste the full backup folder path, then save settings.`,
+        "busy"
+      );
+      return;
+    }
+
+    if (elements.controlBackupFolderInput) {
+      elements.controlBackupFolderInput.click();
+      return;
+    }
+
+    throw new Error("Folder browsing is not available in this browser. Paste the backup folder path, then save settings.");
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    setInlineStatus(elements.controlStatus, error.message, "error");
+  }
+}
+
+async function runControlBackup() {
+  try {
+    requireUser();
+    if (!isAdmin()) {
+      throw new Error("Only administrators can run database backups.");
+    }
+    elements.controlRunBackup.disabled = true;
+    setInlineStatus(elements.controlStatus, "Running database backup...", "busy");
+    const result = await requestJson("/api/admin/backup", {
+      method: "POST",
+      headers: adminHeaders()
+    });
+    state.controlSettings = result.settings;
+    renderControlCenter();
+    setInlineStatus(elements.controlStatus, result.message, "success");
+  } catch (error) {
+    await loadControlSettings().catch(() => {});
+    setInlineStatus(elements.controlStatus, error.message, "error");
+  } finally {
+    elements.controlRunBackup.disabled = false;
+  }
 }
 
 function partImageSrc(imagePath) {
@@ -884,91 +1482,6 @@ function partImageSrc(imagePath) {
     return `/${value}`;
   }
   return `/reference-images/${value}`;
-}
-
-function scannerSupported() {
-  return Boolean(window.BarcodeDetector && navigator.mediaDevices?.getUserMedia);
-}
-
-async function createBarcodeDetector() {
-  if (!window.BarcodeDetector) {
-    throw new Error("This browser does not support camera barcode scanning. Enter the code manually instead.");
-  }
-  const preferredFormats = ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e", "data_matrix", "pdf417"];
-  if (typeof window.BarcodeDetector.getSupportedFormats === "function") {
-    const supported = await window.BarcodeDetector.getSupportedFormats();
-    const formats = preferredFormats.filter((format) => supported.includes(format));
-    return formats.length ? new window.BarcodeDetector({ formats }) : new window.BarcodeDetector();
-  }
-  return new window.BarcodeDetector({ formats: preferredFormats });
-}
-
-function syncScannerButtons() {
-  if (!elements.startCodeScanButton) return;
-  elements.startCodeScanButton.disabled = state.scanner.active;
-  elements.stopCodeScanButton.disabled = !state.scanner.active;
-  elements.scannerEmpty.hidden = state.scanner.active;
-}
-
-function stopCodeScanner() {
-  if (state.scanner.frameId) {
-    cancelAnimationFrame(state.scanner.frameId);
-  }
-  if (state.scanner.stream) {
-    state.scanner.stream.getTracks().forEach((track) => track.stop());
-  }
-  state.scanner = {
-    ...state.scanner,
-    stream: null,
-    frameId: null,
-    active: false
-  };
-  if (elements.codeScannerVideo) {
-    elements.codeScannerVideo.srcObject = null;
-  }
-  syncScannerButtons();
-}
-
-async function scanCodeFrame() {
-  if (!state.scanner.active || !state.scanner.detector) return;
-  try {
-    const codes = await state.scanner.detector.detect(elements.codeScannerVideo);
-    const rawValue = codes?.[0]?.rawValue;
-    if (rawValue) {
-      elements.partCodeInput.value = rawValue;
-      setInlineStatus(elements.codeLookupStatus, "Code detected. Looking up the mapped SKU...", "busy");
-      stopCodeScanner();
-      await lookupPartCode("Camera Barcode/QR");
-      return;
-    }
-  } catch (error) {
-    setInlineStatus(elements.codeLookupStatus, error.message, "error");
-  }
-  state.scanner.frameId = requestAnimationFrame(scanCodeFrame);
-}
-
-async function startCodeScanner() {
-  try {
-    requireUser();
-    if (!scannerSupported()) {
-      throw new Error("Camera barcode scanning is not available in this browser. Enter the code manually.");
-    }
-    setInlineStatus(elements.codeLookupStatus, "Requesting camera permission...", "busy");
-    state.scanner.detector = await createBarcodeDetector();
-    state.scanner.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } },
-      audio: false
-    });
-    elements.codeScannerVideo.srcObject = state.scanner.stream;
-    await elements.codeScannerVideo.play();
-    state.scanner.active = true;
-    syncScannerButtons();
-    setInlineStatus(elements.codeLookupStatus, "Camera is active. Point it at a barcode or QR label.", "busy");
-    state.scanner.frameId = requestAnimationFrame(scanCodeFrame);
-  } catch (error) {
-    stopCodeScanner();
-    setInlineStatus(elements.codeLookupStatus, error.message, "error");
-  }
 }
 
 function renderUnknownCodeResult(result) {
@@ -1146,7 +1659,9 @@ function renderMatch(result) {
   const recommended = result.match || candidates[0];
   const bestPart = recommended.part;
   const confidence = Math.round((recommended.confidence || 0) * 100);
-  const alternatives = candidates.filter((candidate) => candidate.part.sku !== bestPart.sku).slice(0, 8);
+  const alternatives =
+    recommended.confidence < 0.85 ? candidates.filter((candidate) => candidate.part.sku !== bestPart.sku).slice(0, 8) : [];
+  const refinementGroups = recommended.confidence < 0.85 ? result.refinements || [] : [];
   elements.confirmMatchButton.disabled = !recommended;
   elements.matchResult.innerHTML = `
     <section class="recommended-match">
@@ -1186,9 +1701,9 @@ function renderMatch(result) {
       </button>
     </section>
     ${
-      result.refinements?.length
+      refinementGroups.length
         ? `<div class="refinement-panel">
-            ${result.refinements
+            ${refinementGroups
               .map(
                 (group) => `
                   <div>
@@ -1370,7 +1885,7 @@ function renderAdminCsvTable() {
           .map(
             (header, index) => `
               <th scope="col">
-                <input class="csv-header-input" value="${escapeHtml(header)}" data-header-index="${index}" aria-label="Column ${index + 1}" />
+                <input class="csv-header-input" value="${escapeHtml(header)}" data-header-index="${index}" aria-label="Field ${index + 1}" />
               </th>
             `
           )
@@ -1390,7 +1905,7 @@ function renderAdminCsvTable() {
                       .map(
                         (_, columnIndex) => `
                           <td>
-                            <textarea class="csv-cell" data-row-index="${rowIndex}" data-column-index="${columnIndex}" aria-label="Row ${rowIndex + 1}, ${escapeHtml(headers[columnIndex])}">${escapeHtml(row[columnIndex] ?? "")}</textarea>
+                            <textarea class="csv-cell" data-row-index="${rowIndex}" data-column-index="${columnIndex}" aria-label="Record ${rowIndex + 1}, ${escapeHtml(headers[columnIndex])}">${escapeHtml(row[columnIndex] ?? "")}</textarea>
                           </td>
                         `
                       )
@@ -1402,7 +1917,7 @@ function renderAdminCsvTable() {
                 `
               )
               .join("")
-          : `<tr><td class="empty-state" colspan="${headers.length + 2}">No rows yet.</td></tr>`
+          : `<tr><td class="empty-state" colspan="${headers.length + 2}">No records yet.</td></tr>`
       }
     </tbody>
   `;
@@ -1414,7 +1929,7 @@ function serializeAdminCsv() {
   return stringifyCsv(headers, state.adminCsv.rows);
 }
 
-function setAdminCsvDirty(message = "Unsaved table changes.") {
+function setAdminCsvDirty(message = "Unsaved data changes.") {
   if (!state.adminCsv) return;
   state.adminCsv.dirty = true;
   state.pendingReview = null;
@@ -1426,37 +1941,39 @@ function setAdminCsvDirty(message = "Unsaved table changes.") {
 async function loadAdminCsv() {
   if (!isAdmin()) return;
   const file = elements.adminCsvFile.value || "parts";
-  setInlineStatus(elements.adminCsvStatus, "Loading CSV...", "busy");
+  setInlineStatus(elements.adminCsvStatus, "Loading data area...", "busy");
   const data = await requestJson(`/api/admin/csv?file=${encodeURIComponent(file)}`, {
     headers: adminHeaders()
   });
   const parsed = normalizeAdminCsvShape(parseCsvText(data.content), data.key);
+  const label = data.label || data.fileName || "Selected data area";
   state.adminCsv = {
     ...parsed,
     key: data.key,
+    label,
     fileName: data.fileName,
     dirty: false,
     originalContent: stringifyCsv(parsed.headers, parsed.rows),
     originalHeaders: [...parsed.headers],
     originalRows: cloneRows(parsed.rows)
   };
-  clearAdminImport("Import a CSV to preview its columns before anything changes.");
+  clearAdminImport("Import a file to preview its fields before anything changes.");
   clearAdminReview();
   syncAdminImporter();
-  elements.adminCsvDownload.href = `/${data.fileName}`;
-  elements.adminCsvDownload.textContent = `Download ${data.fileName}`;
+  elements.adminCsvDownload.href = data.exportPath || `/${data.fileName}`;
+  elements.adminCsvDownload.textContent = `Export ${label}`;
   renderAdminCsvTable();
-  setInlineStatus(elements.adminCsvStatus, `${data.fileName} loaded as table.`, "success");
+  setInlineStatus(elements.adminCsvStatus, `${label} loaded from the database.`, "success");
 }
 
 function startAdminCsvReview() {
   try {
     requireUser();
     if (!isAdmin()) {
-      throw new Error("Only Gaurav or Monica can save admin CSV files.");
+      throw new Error("Only Gaurav or Monica can save administrative data changes.");
     }
     if (!state.adminCsv) {
-      throw new Error("Load a CSV before starting review.");
+      throw new Error("Load a data area before starting review.");
     }
 
     const importer = elements.adminCsvImporter.value.trim();
@@ -1477,7 +1994,7 @@ function startAdminCsvReview() {
     };
     renderAdminCsvReview();
     elements.adminCsvReviewPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    setInlineStatus(elements.adminCsvStatus, "Review is ready. Two distinct admin approvals are required before commit.", "busy");
+    setInlineStatus(elements.adminCsvStatus, "Review is ready. Two distinct administrator approvals are required before commit.", "busy");
   } catch (error) {
     setInlineStatus(elements.adminCsvStatus, error.message, "error");
   }
@@ -1487,7 +2004,7 @@ async function commitAdminCsvReview() {
   try {
     requireUser();
     if (!isAdmin()) {
-      throw new Error("Only Gaurav or Monica can commit admin CSV files.");
+      throw new Error("Only Gaurav or Monica can commit administrative data changes.");
     }
     if (!state.pendingReview) {
       throw new Error("Start a review before committing.");
@@ -1495,7 +2012,7 @@ async function commitAdminCsvReview() {
 
     const approvals = collectAdminReviewApprovals();
     elements.adminCsvCommitReview.disabled = true;
-    setInlineStatus(elements.adminCsvStatus, "Committing approved CSV change...", "busy");
+    setInlineStatus(elements.adminCsvStatus, "Committing approved database change...", "busy");
     const result = await requestJson("/api/admin/csv", {
       method: "POST",
       headers: adminHeaders(),
@@ -1521,25 +2038,25 @@ function addAdminCsvRow() {
   if (!state.adminCsv) return;
   state.adminCsv.rows.push(state.adminCsv.headers.map(() => ""));
   renderAdminCsvTable();
-  setAdminCsvDirty("Added a new row.");
+  setAdminCsvDirty("Added a new record.");
 }
 
 function addAdminCsvColumn() {
   if (!state.adminCsv) return;
   const columnName = elements.adminCsvNewColumn.value.trim();
   if (!columnName) {
-    setInlineStatus(elements.adminCsvStatus, "Enter a column name first.", "error");
+    setInlineStatus(elements.adminCsvStatus, "Enter a field name first.", "error");
     return;
   }
   if (state.adminCsv.headers.some((header) => header.toLowerCase() === columnName.toLowerCase())) {
-    setInlineStatus(elements.adminCsvStatus, "That column already exists.", "error");
+    setInlineStatus(elements.adminCsvStatus, "That field already exists.", "error");
     return;
   }
   state.adminCsv.headers.push(columnName);
   state.adminCsv.rows.forEach((row) => row.push(""));
   elements.adminCsvNewColumn.value = "";
   renderAdminCsvTable();
-  setAdminCsvDirty(`Added ${columnName}.`);
+  setAdminCsvDirty(`Added field ${columnName}.`);
 }
 
 function syncAdminImporter() {
@@ -1578,16 +2095,16 @@ function clearAdminReview() {
 async function handleAdminCsvImport() {
   try {
     if (!state.adminCsv) {
-      throw new Error("Load a CSV before importing data.");
+      throw new Error("Load a data area before importing records.");
     }
     const file = elements.adminCsvImportFile.files?.[0];
     if (!file) return;
     const parsed = parseCsvText(await file.text());
     if (!parsed.headers.length) {
-      throw new Error("Imported CSV must include a header row.");
+      throw new Error("Imported file must include a header row.");
     }
     if (!parsed.rows.length) {
-      throw new Error("Imported CSV has no data rows to apply.");
+      throw new Error("Imported file has no records to apply.");
     }
     state.importDraft = {
       fileName: file.name,
@@ -1595,7 +2112,7 @@ async function handleAdminCsvImport() {
       rows: padRowsToHeaders(parsed.rows, parsed.headers)
     };
     renderAdminImportPrompt();
-    setInlineStatus(elements.adminCsvStatus, `Imported ${file.name}. Review column choices before applying.`, "busy");
+    setInlineStatus(elements.adminCsvStatus, `Imported ${file.name}. Review field mapping before applying.`, "busy");
   } catch (error) {
     state.importDraft = null;
     renderAdminImportPrompt();
@@ -1606,7 +2123,7 @@ async function handleAdminCsvImport() {
 function renderAdminImportPrompt() {
   const draft = state.importDraft;
   if (!draft || !state.adminCsv) {
-    elements.adminCsvImportPrompt.textContent = "Import a CSV to preview its columns before anything changes.";
+    elements.adminCsvImportPrompt.textContent = "Import a file to preview its fields before anything changes.";
     elements.adminCsvImportMapping.hidden = true;
     elements.adminCsvImportActions.hidden = true;
     elements.adminCsvImportMapping.innerHTML = "";
@@ -1623,7 +2140,7 @@ function renderAdminImportPrompt() {
         <label>
           ${escapeHtml(header)}
           <select data-import-map-target="${targetIndex}">
-            <option value="">Do not import into this column</option>
+            <option value="">Do not import into this field</option>
             ${draft.headers
               .map(
                 (importHeader, importIndex) =>
@@ -1641,8 +2158,8 @@ function renderAdminImportPrompt() {
   const extraColumnMarkup = extraHeaders.length
     ? `
       <fieldset class="extra-column-choice">
-        <legend>New imported columns</legend>
-        <p>Keep checked to add these as new table columns.</p>
+        <legend>New imported fields</legend>
+        <p>Keep checked to add these as new database fields.</p>
         ${extraHeaders
           .map(
             ({ header, index }) => `
@@ -1655,7 +2172,7 @@ function renderAdminImportPrompt() {
           .join("")}
       </fieldset>
     `
-    : `<p class="admin-note">No new columns were found in this import.</p>`;
+    : `<p class="admin-note">No new fields were found in this import.</p>`;
   const defaultMatchIndex =
     findHeaderIndex(state.adminCsv.headers, "SKU") !== -1
       ? findHeaderIndex(state.adminCsv.headers, "SKU")
@@ -1664,16 +2181,16 @@ function renderAdminImportPrompt() {
         : 0;
 
   elements.adminCsvImportPrompt.innerHTML = `
-    <strong>${escapeHtml(draft.fileName)}</strong> has ${draft.rows.length} rows and ${draft.headers.length} columns.
-    Confirm the mappings below, then apply the import to the editable table.
+    <strong>${escapeHtml(draft.fileName)}</strong> has ${draft.rows.length} records and ${draft.headers.length} fields.
+    Confirm the mappings below, then apply the import to the editable data area.
   `;
   elements.adminCsvImportMapping.hidden = false;
   elements.adminCsvImportActions.hidden = false;
   elements.adminCsvImportMapping.innerHTML = `
     <div class="mapping-section">
       <div>
-        <h4>Map imported columns</h4>
-        <p>Use only the columns you want. Unmapped fields stay blank.</p>
+        <h4>Map imported fields</h4>
+        <p>Use only the fields you want. Unmapped values stay blank.</p>
       </div>
       <div class="mapping-grid">${existingMappings}</div>
     </div>
@@ -1681,7 +2198,7 @@ function renderAdminImportPrompt() {
       ${extraColumnMarkup}
     </div>
     <label class="match-column-control">
-      Match existing rows by
+      Match existing records by
       <select data-import-match-column>
         ${state.adminCsv.headers
           .map(
@@ -1722,7 +2239,7 @@ function collectAdminImportPlan() {
   }));
   const allMappings = [...mappings, ...extraMappings];
   if (!allMappings.length) {
-    throw new Error("Choose at least one imported column before applying the import.");
+    throw new Error("Choose at least one imported field before applying the import.");
   }
 
   return {
@@ -1745,7 +2262,7 @@ function buildImportedRow(importedRow, plan) {
 function applyAdminCsvImport() {
   try {
     if (!state.importDraft || !state.adminCsv) {
-      throw new Error("Import a CSV before applying data.");
+      throw new Error("Import a file before applying data.");
     }
     const importer = elements.adminCsvImporter.value.trim();
     if (!importer) {
@@ -1838,11 +2355,11 @@ function renderAdminCsvReview() {
       <strong>${escapeHtml(review.importer)}</strong>
     </div>
     <div class="summary-card">
-      <span>Rows</span>
+      <span>Records</span>
       <strong>${summary.beforeRows} -> ${summary.afterRows}</strong>
     </div>
     <div class="summary-card">
-      <span>Columns</span>
+      <span>Fields</span>
       <strong>${summary.beforeColumns} -> ${summary.afterColumns}</strong>
     </div>
     <div class="summary-card">
@@ -1850,10 +2367,10 @@ function renderAdminCsvReview() {
       <strong>${summary.changedCells}</strong>
     </div>
     <div class="summary-card wide">
-      <span>Column changes</span>
+      <span>Field changes</span>
       <strong>
-        ${summary.addedColumns.length ? `Added: ${escapeHtml(summary.addedColumns.join(", "))}` : "No added columns"}
-        ${summary.removedColumns.length ? ` Removed: ${escapeHtml(summary.removedColumns.join(", "))}` : ""}
+        ${summary.addedColumns.length ? `Added: ${escapeHtml(summary.addedColumns.join(", "))}` : "No added fields"}
+        ${summary.removedColumns.length ? ` Removed fields: ${escapeHtml(summary.removedColumns.join(", "))}` : ""}
       </strong>
     </div>
   `;
@@ -1903,7 +2420,7 @@ function declineAdminCsvReview() {
   state.adminCsv.dirty = false;
   renderAdminCsvTable();
   clearAdminReview();
-  setInlineStatus(elements.adminCsvStatus, "Change declined. The table was reset to the last saved CSV.", "success");
+  setInlineStatus(elements.adminCsvStatus, "Change declined. The data area was reset to the last saved version.", "success");
 }
 
 async function submitReport(event) {
@@ -1997,8 +2514,6 @@ function bindEvents() {
   elements.categoryHint.addEventListener("change", () => renderGuidedSearchOptions("category"));
   elements.detailHint.addEventListener("change", () => renderGuidedSearchOptions("detail"));
   elements.lookupCodeButton.addEventListener("click", () => lookupPartCode("Manual Code Entry"));
-  elements.startCodeScanButton.addEventListener("click", startCodeScanner);
-  elements.stopCodeScanButton.addEventListener("click", stopCodeScanner);
   elements.partCodeInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -2013,9 +2528,32 @@ function bindEvents() {
       .then(() => setInlineStatus(elements.replenishmentStatus, "Replenishment progress refreshed.", "success"))
       .catch((error) => setInlineStatus(elements.replenishmentStatus, error.message, "error"));
   });
+  elements.controlRefresh.addEventListener("click", refreshControlCenter);
+  elements.controlSettingsForm.addEventListener("submit", saveControlSettings);
+  elements.controlBrowseBackup.addEventListener("click", browseBackupFolder);
+  elements.controlUseDefaultBackup.addEventListener("click", useDefaultBackupFolder);
+  elements.controlBackupFolderInput.addEventListener("change", () => {
+    updateBackupFolderFromFileSelection(elements.controlBackupFolderInput.files);
+    elements.controlBackupFolderInput.value = "";
+  });
+  elements.controlRunBackup.addEventListener("click", runControlBackup);
   elements.managementRefresh.addEventListener("click", loadManagementReport);
-  elements.managementPeriod.addEventListener("change", loadManagementReport);
-  elements.managementAction.addEventListener("change", loadManagementReport);
+  elements.managementReset.addEventListener("click", resetManagementFilters);
+  elements.managementExport.addEventListener("click", exportManagementReport);
+  [elements.managementCategory, elements.managementSku, elements.managementLocation, elements.managementStockStatus].forEach((control) =>
+    control.addEventListener("change", () => {
+      renderManagementFilterOptions();
+      resetManagementReportView("Filters changed. Click Generate Report to refresh results.");
+    })
+  );
+  elements.managementSearch.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      loadManagementReport();
+      return;
+    }
+  });
+  elements.managementSearch.addEventListener("input", () => resetManagementReportView("Filters changed. Click Generate Report to refresh results."));
   elements.analyzeButton.addEventListener("click", analyzePart);
   elements.confirmMatchButton.addEventListener("click", () => confirmCandidate());
   elements.rejectMatchButton.addEventListener("click", rejectCandidate);
@@ -2078,7 +2616,7 @@ function bindEvents() {
     if (deleteRow !== undefined && state.adminCsv) {
       state.adminCsv.rows.splice(Number(deleteRow), 1);
       renderAdminCsvTable();
-      setAdminCsvDirty("Deleted row.");
+      setAdminCsvDirty("Deleted record.");
       return;
     }
 
@@ -2108,7 +2646,6 @@ function bindEvents() {
 }
 
 function signOut() {
-  stopCodeScanner();
   localStorage.removeItem(userStorageKey);
   state.user = null;
   state.candidate = null;
@@ -2119,17 +2656,18 @@ function signOut() {
   elements.movementPanel.hidden = true;
   elements.locationPanel.hidden = true;
   state.adminCsv = null;
+  state.controlSettings = null;
   state.importDraft = null;
   state.pendingReview = null;
   elements.adminCsvTable.innerHTML = "";
   elements.adminCsvImportMapping.innerHTML = "";
   elements.adminCsvImportMapping.hidden = true;
   elements.adminCsvImportActions.hidden = true;
-  elements.adminCsvImportPrompt.textContent = "Import a CSV to preview its columns before anything changes.";
+  elements.adminCsvImportPrompt.textContent = "Import a file to preview its fields before anything changes.";
   elements.adminCsvReviewPanel.hidden = true;
   setInlineStatus(elements.scanStatus, "", "");
   setInlineStatus(elements.adminCsvStatus, "", "");
-  if (window.location.hash === "#admin") {
+  if (["#admin", "#management", "#control"].includes(window.location.hash)) {
     window.location.hash = "#scan";
   }
   renderUser();
