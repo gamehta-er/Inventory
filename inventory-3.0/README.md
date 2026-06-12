@@ -4,14 +4,35 @@ Clean-sheet local inventory pilot for #imargulis-staff.
 
 ## Run
 
+From this directory:
+
 ```powershell
-& "C:\Users\gamehta\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe" server.js
+node server.js
 ```
+
+Or double-click `start-local.cmd` (uses `node` from PATH, with a Codex runtime fallback).
 
 Default URL:
 
 ```text
 http://localhost:3003
+```
+
+## Environment
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HOST` | `127.0.0.1` | HTTP bind address |
+| `PORT` | `3003` | HTTP port |
+| `DATA_DIR` | `./data` | Uploads, backups, and default SQLite directory |
+| `DB_PATH` | `{DATA_DIR}/inventory-3.db` | SQLite database file path |
+| `NODE_ENV` | *(unset)* | Standard Node environment label (e.g. `production`) |
+
+Example — store data outside the repo:
+
+```powershell
+$env:DATA_DIR = "D:\inventory-pilot\data"
+node server.js
 ```
 
 ## Notes
