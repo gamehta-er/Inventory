@@ -1,0 +1,207 @@
+﻿:root {
+  --bg: #f7f8f6;
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-solid: #ffffff;
+  --ink: #111418;
+  --muted: #65707c;
+  --line: #dfe5eb;
+  --line-strong: #c8d1dc;
+  --green: #2f8a05;
+  --green-2: #68b900;
+  --green-soft: #eef9e8;
+  --blue-soft: #eaf3ff;
+  --red: #cc2d2d;
+  --red-soft: #fff0f0;
+  --amber: #9a6500;
+  --amber-soft: #fff5df;
+  --shadow: 0 22px 70px rgba(25, 33, 44, 0.12);
+  --radius: 16px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  width: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 82% 16%, rgba(104, 185, 0, 0.12), transparent 36rem),
+    linear-gradient(180deg, #fbfcfb 0%, var(--bg) 100%);
+  color: var(--ink);
+  font-family: var(--font);
+  letter-spacing: 0;
+  overflow-x: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(280px, max-content);
+  align-items: center;
+  gap: 18px;
+  height: 76px;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(196, 205, 215, 0.75);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(18px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 760;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 24px;
+  border: 3px solid var(--green-2);
+  border-radius: 50%;
+  color: var(--green);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.brand small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
+}
+
+.nav button,
+.ghost-button,
+.secondary-button,
+.primary-button,
+.icon-button,
+.chip-button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-solid);
+  color: var(--ink);
+  font-weight: 720;
+}
+
+.nav button {
+  border-color: transparent;
+  background: transparent;
+  padding: 0 18px;
+}
+
+.nav button.active {
+  color: var(--green);
+  border-bottom: 2px solid var(--green);
+  border-radius: 0;
+}
+
+.userbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.revision-pill,
+.role-pill,
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.user-chip > div {
+  max-width: 148px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-chip strong,
+.user-chip small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f0f3f6;
+  font-weight: 820;
+}
+
+.main {
+  max-width: min(1540px, 100%);
+  margin: 0 auto;
+  padding: 36px 32px 64px;
+  overflow-x: clip;
+}
+
