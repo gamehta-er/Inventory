@@ -9,73 +9,71 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="Inventory 2.0 navigation">
+      <header class="app-topnav" aria-label="Inventory 2.0 navigation">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"></span>
           <div>
             <strong>NVIDIA</strong>
-            <span>Lab Hardware Inventory</span>
+            <span>Inventory <em>2.0</em></span>
           </div>
         </div>
 
         <nav class="nav-list" id="navList">
           <button class="nav-item active" type="button" data-view="command">
             <span class="nav-icon home" aria-hidden="true"></span>
-            Command Center
+            Search
           </button>
-          <button class="nav-item" type="button" data-view="explorer">
-            <span class="nav-icon cube" aria-hidden="true"></span>
-            Inventory Explorer
-          </button>
-          <button class="nav-item" type="button" data-view="operations">
-            <span class="nav-icon flow" aria-hidden="true"></span>
-            Stock Operations
+          <button class="nav-item" type="button" data-view="import">
+            <span class="nav-icon upload" aria-hidden="true"></span>
+            Import
           </button>
           <button class="nav-item" type="button" data-view="replenishment">
             <span class="nav-icon cart" aria-hidden="true"></span>
-            Replenishment
+            Requests
           </button>
-          <button class="nav-item" type="button" data-view="audit">
-            <span class="nav-icon ledger" aria-hidden="true"></span>
-            Transaction Audit
-          </button>
-          <button class="nav-item" type="button" data-view="governance">
-            <span class="nav-icon tag" aria-hidden="true"></span>
-            Catalog Governance
+          <button class="nav-item" type="button" data-view="reports">
+            <span class="nav-icon chart" aria-hidden="true"></span>
+            Reports
           </button>
           <button class="nav-item" type="button" data-view="system">
             <span class="nav-icon gear" aria-hidden="true"></span>
-            System Operations
+            Admin
           </button>
         </nav>
 
-        <div class="sidebar-footer">
-          <span>Comparison model</span>
-          <strong>Port 3001</strong>
+        <div class="topbar-actions">
+          <label class="theme-control">
+            Theme
+            <select id="themeSelect" aria-label="Theme">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="classic">Classic</option>
+            </select>
+          </label>
+          <button class="button secondary" id="refreshButton" type="button">Refresh</button>
+          <div class="user-chip" id="userChip" aria-label="Signed in user">
+            <span id="userInitials">IM</span>
+            <div>
+              <strong id="userName">#imargulis-staff</strong>
+              <small id="userRole">Inventory Team</small>
+            </div>
+          </div>
+          <button class="button secondary" id="signOutButton" type="button">Sign out</button>
         </div>
-      </aside>
+      </header>
 
       <main class="workspace">
         <header class="topbar">
           <div class="title-block">
             <div class="breadcrumb">
               <strong>Inventory 2.0</strong>
-              <span id="viewCrumb">Command Center</span>
+              <span id="viewCrumb">Search</span>
             </div>
-            <h1 id="viewTitle">Command Center</h1>
-            <p id="viewDescription">Executive inventory position with SKU-level drilldown, risk visibility, and stock controls.</p>
+            <h1 id="viewTitle">Search</h1>
+            <p id="viewDescription">Find one asset, one device family, or one exact identifier without extra noise.</p>
           </div>
-          <div class="topbar-actions">
-            <span class="status-chip online" id="runtimeChip">SQLite Online</span>
-            <button class="button secondary" id="refreshButton" type="button">Refresh</button>
-            <a class="button secondary" href="/exports/inventory-snapshot">Export Snapshot</a>
-            <div class="user-chip" aria-label="Signed in user">
-              <span>GM</span>
-              <div>
-                <strong>Gaurav Mehta</strong>
-                <small>Administrator</small>
-              </div>
-            </div>
+          <div class="topbar-actions page-actions">
+            <span class="status-chip online" id="runtimeChip">Live data</span>
           </div>
         </header>
 
@@ -87,7 +85,7 @@
             <select id="categoryFilter"></select>
           </label>
           <label>
-            SKU
+            Catalog ID
             <select id="skuFilter"></select>
           </label>
           <label>
@@ -99,13 +97,13 @@
             <select id="availabilityFilter">
               <option value="all">All availability</option>
               <option value="available">Available</option>
-              <option value="low">Low stock</option>
-              <option value="missing">Missing</option>
+              <option value="low">Needs review</option>
+              <option value="missing">Unavailable</option>
             </select>
           </label>
           <label class="search-control">
             Search
-            <input id="searchFilter" placeholder="Search SKU, part, alias, bin, owner, metadata" />
+            <input id="searchFilter" placeholder="Search catalog ID, model, alias, location, owner, metadata" />
           </label>
           <div class="filter-actions">
             <button class="button secondary" id="clearFiltersButton" type="button">Clear</button>
@@ -115,7 +113,7 @@
 
         <div class="work-grid" id="workGrid">
           <section class="module-surface" id="viewContent" aria-live="polite"></section>
-          <aside class="inspector" id="inspector" aria-label="Selected SKU details"></aside>
+          <aside class="inspector" id="inspector" aria-label="Selected catalog record details"></aside>
         </div>
 
         <p class="inline-status" id="statusLine" role="status"></p>
