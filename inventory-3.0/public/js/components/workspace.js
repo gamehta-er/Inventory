@@ -1,5 +1,5 @@
 ﻿  function renderSheet() {
-    const { asset, fields, requests, activity } = state.detail;
+    const { asset, fields, requests, activity, checkouts = [] } = state.detail;
     const tabs = state.user.role === "Admin User" ? ["Overview", "Operations", "Edit", "History"] : ["Overview", "Operations", "History"];
     return `
       <div class="sheet-backdrop" data-sheet-backdrop>
@@ -21,7 +21,7 @@
             ${state.detailTab === "Overview" ? renderOverview(asset, fields, requests) : ""}
             ${state.detailTab === "Operations" ? renderOperations(asset, requests) : ""}
             ${state.detailTab === "Edit" ? renderEdit(asset, fields) : ""}
-            ${state.detailTab === "History" ? renderHistory(activity) : ""}
+            ${state.detailTab === "History" ? renderHistory(activity, checkouts) : ""}
           </div>
         </aside>
       </div>
@@ -45,7 +45,7 @@
     ];
     return `
       <div class="info-grid">
-        ${sourceFields.map(([label, value]) => `<div class="info-card"><span class="meta-label">${esc(label)}</span><div class="meta-value">${typeof value === "string" ? value : value}</div></div>`).join("")}
+        ${sourceFields.map(([label, value]) => `<div class="info-card"><span class="meta-label">${esc(label)}</span><div class="meta-value">${typeof value === "string" ? esc(value) : value}</div></div>`).join("")}
       </div>
       <h3 style="margin-top:22px">Open Requests</h3>
       ${requests.length ? requests.map(renderRequestMini).join("") : `<p class="subtitle">No open requests for this asset.</p>`}
@@ -76,7 +76,7 @@
         ${inputField("model", "Model", asset.model, true)}
         ${inputField("serial", "Serial No.", asset.serial, false)}
         ${inputField("assetTag", "Asset Tag", asset.assetTag, true)}
-        ${selectField("status", "Status", asset.status, state.session.statuses.map((s) => [s, s]), true)}
+        ${selectField("status", "Status", asset.status, statusOptions(), true)}
         ${selectField("ownerId", "Owner / Assignee", asset.ownerId, [["", "Unassigned"], ...state.session.members.map((m) => [m.id, m.name])], asset.status === "In Use")}
         ${selectField("locationId", "Location", asset.locationId, state.session.locations.map((l) => [l.id, l.name]), true)}
         ${inputField("usage", "Usage", asset.usage, false)}
@@ -105,9 +105,17 @@
     `;
   }
 
-  function renderHistory(activity) {
-    if (!activity.length) return `<p class="subtitle">No activity yet.</p>`;
-    return `<div class="info-grid">${activity.map((item) => `
+  function renderHistory(activity, checkouts = []) {
+    const checkoutItems = checkouts.map((row) => ({
+      action: row.checkedInAt ? "check-in" : "check-out",
+      createdAt: row.checkedInAt || row.checkedOutAt,
+      summary: `${row.checkedInAt ? "Checked in" : "Checked out"} to ${row.assignedTo || "Unassigned"} @ ${row.location}`,
+      actorName: row.actorName || "",
+      reason: row.reason || "",
+    }));
+    const merged = [...checkoutItems, ...activity].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    if (!merged.length) return `<p class="subtitle">No activity yet.</p>`;
+    return `<div class="info-grid">${merged.map((item) => `
       <div class="info-card">
         <span class="meta-label">${esc(item.action)} - ${esc(formatDate(item.createdAt))}</span>
         <strong>${esc(item.summary)}</strong>
@@ -145,7 +153,7 @@
             <form id="actionForm" class="form-grid">
               ${isRequest ? selectField("requestType", "Request type", "Support", [["Support", "Support"], ["Transfer", "Transfer"], ["Repair", "Repair"], ["E-waste", "E-waste"], ["Restock", "Restock"]], true) : ""}
               ${isRequest ? selectField("priority", "Priority", "Normal", [["Low", "Low"], ["Normal", "Normal"], ["High", "High"], ["Urgent", "Urgent"]], true) : ""}
-              ${!isRequest ? selectField("status", "Status", action === "check-out" ? "In Use" : "Ready to Deploy", state.session.statuses.map((s) => [s, s]), true) : ""}
+              ${!isRequest ? selectField("status", "Status", action === "check-out" ? "In Use" : "Ready to Deploy", statusOptions(), true) : ""}
               ${selectField("ownerId", "Owner / Assignee", asset.ownerId || "", [["", "Unassigned"], ...state.session.members.map((m) => [m.id, m.name])], action === "check-out")}
               ${!isRequest ? selectField("locationId", "Location", asset.locationId, state.session.locations.map((l) => [l.id, l.name]), true) : ""}
               ${!isRequest ? inputField("usage", "Usage / project", asset.usage, false) : ""}
@@ -200,7 +208,7 @@
           <div class="modal-header"><div><h2>${esc(title)}</h2><p class="subtitle">${esc(selectedText)}</p></div><button class="close-button" data-close-modal>&times;</button></div>
           <div class="modal-body">
             <form id="bulkForm" class="form-grid">
-              ${!isPrint ? selectField("status", "Status", action === "check-out" ? "In Use" : action === "check-in" ? "Ready to Deploy" : "Idle", state.session.statuses.map((s) => [s, s]), true) : ""}
+              ${!isPrint ? selectField("status", "Status", action === "check-out" ? "In Use" : action === "check-in" ? "Ready to Deploy" : "Idle", statusOptions(), true) : ""}
               ${!isPrint ? selectField("ownerId", "Owner / Assignee", "", [["", "Keep current"], ...state.session.members.map((m) => [m.id, m.name])], false) : ""}
               ${!isPrint ? selectField("locationId", "Location", "", [["", "Keep current"], ...state.session.locations.map((l) => [l.id, l.name])], false) : ""}
               ${!isPrint ? inputField("nvbug", "NVBug #", "", false) : ""}

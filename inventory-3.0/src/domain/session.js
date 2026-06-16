@@ -1,10 +1,18 @@
 const { db, getRevision } = require("../db");
-const { STATUSES, IMPORT_PROFILES } = require("../config/constants");
+const { IMPORT_PROFILES } = require("../config/constants");
 const { now } = require("../lib/utils");
 const { categoryRows, memberRows, locationRows, fieldRows } = require("./catalog");
 const { getAllAssets, summarizeAssets } = require("./assets");
+const { statusLabelRows } = require("./statusLabels");
 
-function sessionSnapshot() {
+function loginBootstrap() {
+  return {
+    app: { name: "Inventory 3.0", team: "#imargulis-staff" },
+    members: memberRows(),
+  };
+}
+
+function sessionSnapshot(session) {
   const categories = categoryRows().map((category) => ({
     id: category.id,
     slug: category.slug,
@@ -17,7 +25,14 @@ function sessionSnapshot() {
   const allAssets = getAllAssets(true);
   return {
     app: { name: "Inventory 3.0", team: "#imargulis-staff", revision: getRevision(), updatedAt: now() },
-    statuses: STATUSES,
+    user: session ? {
+      id: session.memberId,
+      name: session.memberName,
+      email: session.email,
+      role: session.role,
+    } : null,
+    statuses: statusLabelRows(),
+    statusNames: statusLabelRows().map((row) => row.name),
     importProfiles: IMPORT_PROFILES,
     categories,
     members: memberRows(),
@@ -27,5 +42,6 @@ function sessionSnapshot() {
 }
 
 module.exports = {
+  loginBootstrap,
   sessionSnapshot,
 };

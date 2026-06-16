@@ -188,7 +188,7 @@
   function renderFilterField(field, assets) {
     const optionsByKey = {
       model: uniq(assets.map((a) => a.model)).map((v) => [v, v]),
-      status: state.session.statuses.map((v) => [v, v]),
+      status: statusOptions(),
       owner: state.session.members.map((m) => [m.name, m.name]),
       location: state.session.locations.map((l) => [l.name, l.name]),
       usage: uniq(assets.map((a) => a.usage).filter(Boolean)).map((v) => [v, v]),

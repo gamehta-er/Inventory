@@ -17,6 +17,8 @@ async function handleRequest(req, res) {
       error: error.message || "Internal server error.",
       errors: error.errors || undefined,
       preview: error.preview || undefined,
+      currentRevision: error.currentRevision || undefined,
+      revision: error.currentRevision || undefined,
     });
   }
 }

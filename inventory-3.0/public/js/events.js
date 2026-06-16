@@ -11,6 +11,7 @@
         if (state.page === "admin") await loadBackups(false);
         render();
       } else if (target.dataset.signout !== undefined) {
+        document.cookie = "inventory3_session=; Path=/; Max-Age=0";
         localStorage.removeItem("inventory3.user");
         state.user = null;
         renderLogin();
@@ -173,12 +174,36 @@
       } else if (target.dataset.exportActivity !== undefined) {
         exportActivityRows(state.activity || []);
       } else if (target.dataset.createBackup !== undefined) {
-        const result = await api("/api/v3/backups", { method: "POST", body: { actorName: state.user.name } });
+        const result = await api("/api/v3/backups", { method: "POST", body: {} });
         state.backups = result.backups || [];
         state.lastBackupLocation = result.backup?.location || result.backup?.folder || "";
         state.backupsLoaded = true;
         await loadSession();
         setToast(`DB Backup completed${state.lastBackupLocation ? `: ${state.lastBackupLocation}` : "."}`);
+        render();
+      } else if (target.dataset.restoreBackup) {
+        const backupId = target.dataset.restoreBackup;
+        const confirm = window.prompt(`Type RESTORE ${backupId} to confirm restore:`);
+        if (!confirm) return;
+        await api("/api/v3/backups/restore", { method: "POST", body: { backupId, confirm } });
+        await loadSession();
+        await loadBackups(false);
+        setToast("Database restored.");
+        render();
+      } else if (target.dataset.createLocation !== undefined) {
+        const name = document.getElementById("newLocationName")?.value?.trim();
+        if (!name) return setToast("Enter a location name.");
+        await api("/api/v3/locations", { method: "POST", body: { name } });
+        await loadSession();
+        setToast("Location added.");
+        render();
+      } else if (target.dataset.createMember !== undefined) {
+        const name = document.getElementById("newMemberName")?.value?.trim();
+        const email = document.getElementById("newMemberEmail")?.value?.trim();
+        if (!name || !email) return setToast("Enter member name and email.");
+        await api("/api/v3/members", { method: "POST", body: { name, email } });
+        await loadSession();
+        setToast("Member added.");
         render();
       } else if (target.dataset.profileToggle) {
         state.expandedProfileId = String(state.expandedProfileId) === String(target.dataset.profileToggle) ? "" : target.dataset.profileToggle;
@@ -243,7 +268,10 @@
         await loadAssetDetail(assetId, tab);
       }
     } catch (error) {
-      setToast(error.data?.error || error.message);
+      const message = error.status === 409
+        ? "Asset changed elsewhere. Refresh and try again."
+        : (error.data?.error || error.message);
+      setToast(message);
     }
   });
 

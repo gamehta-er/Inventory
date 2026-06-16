@@ -7,11 +7,10 @@
       <section class="summary-grid">${kpi("Categories", state.session.categories.length, "Workbook-inspired profiles")}${kpi("Locations", state.session.locations.length, "Building R, S, E")}${kpi("Members", state.session.members.length, "#imargulis-staff roster")}${kpi("Revision", state.session.app.revision, "Current data version")}</section>
       <section class="grid-2">
         <div class="panel import-box"><h2>Import Profiles and Field Rules</h2><p class="subtitle">Expand a profile to review columns and decide which fields are mandatory for import/admin entry.</p>${categories.map(renderProfileCard).join("")}</div>
-        <div class="panel import-box"><h2>Backups</h2><p class="subtitle">Create a local SQLite backup. The app reports the backup location after completion.</p>
+        <div class="panel import-box"><h2>Backups</h2><p class="subtitle">Create or restore a local SQLite backup. Restore requires typed confirmation.</p>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button class="primary-button" data-create-backup>Create DB Backup</button>
             <button class="secondary-button" data-nav="activity">Open Activity</button>
-            <button class="secondary-button" disabled title="Restore will require a separate admin confirmation flow.">Restore Backup</button>
           </div>
           ${state.lastBackupLocation ? `<div class="success-box"><strong>DB Backup completed</strong><span>${esc(state.lastBackupLocation)}</span></div>` : ""}
           <div class="backup-list">
@@ -19,8 +18,20 @@
               <div class="backup-row">
                 <strong>${esc(backup.filename)}</strong>
                 <span>${esc(backup.location || backup.folder || "")}</span>
+                ${state.user.role === "Admin User" ? `<button class="secondary-button" data-restore-backup="${esc(backup.id)}">Restore</button>` : ""}
               </div>
             `).join("") : `<p class="subtitle">No backups created yet.</p>`}
+          </div>
+        </div>
+        <div class="panel import-box"><h2>Master Data</h2><p class="subtitle">Add locations and members without editing seed files.</p>
+          <div class="form-grid">
+            <div class="field"><label>Location name</label><input id="newLocationName" placeholder="Santa Clara Building R / Lab 104" /></div>
+            <div class="field"><label>Member name</label><input id="newMemberName" placeholder="Pilot User" /></div>
+            <div class="field"><label>Member email</label><input id="newMemberEmail" placeholder="user@lab-pilot.example" /></div>
+          </div>
+          <div class="inline-actions" style="margin-top:12px">
+            <button class="secondary-button" data-create-location>Add Location</button>
+            <button class="secondary-button" data-create-member>Add Member</button>
           </div>
         </div>
         <div class="panel import-box full-span"><h2>Add Asset Row</h2><p class="subtitle">Add one new row inside the selected category profile. Required fields must be completed before save.</p>${addCategory ? renderAddAssetForm(addCategory) : `<p class="subtitle">No categories available.</p>`}</div>
@@ -76,7 +87,7 @@
         ${inputField("model", "Model", "", true)}
         ${inputField("serial", "Serial No.", "", false)}
         ${inputField("assetTag", "Asset Tag", "", true)}
-        ${selectField("status", "Status", "Ready to Deploy", state.session.statuses.map((s) => [s, s]), true)}
+        ${selectField("status", "Status", "Ready to Deploy", statusOptions(), true)}
         ${selectField("ownerId", "Owner / Assignee", "", [["", "Unassigned"], ...state.session.members.map((m) => [m.id, m.name])], false)}
         ${selectField("locationId", "Location", "", state.session.locations.map((l) => [l.id, l.name]), true)}
         ${inputField("usage", "Usage", "", false)}

@@ -19,6 +19,12 @@
     return `status-${String(status || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   }
 
+  function statusOptions() {
+    const list = state.session?.statusNames
+      || (state.session?.statuses || []).map((s) => (typeof s === "string" ? s : s.name));
+    return list.map((v) => [v, v]);
+  }
+
   function fieldLabel(key) {
     const map = {
       category: "Category",

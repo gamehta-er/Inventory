@@ -53,7 +53,9 @@ function canonicalField(value) {
 
 function csvEscape(value) {
   const s = String(value ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  const needsQuote = /[",\n\r]/.test(s) || /^[=+\-@\t]/.test(s);
+  const escaped = s.replace(/"/g, '""');
+  return needsQuote ? `"${escaped}"` : escaped;
 }
 
 module.exports = {

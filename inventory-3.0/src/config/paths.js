@@ -8,11 +8,12 @@ const dataDir = process.env.DATA_DIR
   : path.join(rootDir, "data");
 const uploadDir = path.join(dataDir, "uploads");
 const backupDir = path.join(dataDir, "backups");
+const logDir = path.join(dataDir, "logs");
 const dbPath = process.env.DB_PATH
   ? path.resolve(process.env.DB_PATH)
   : path.join(dataDir, "inventory-3.db");
 
-for (const dir of [dataDir, uploadDir, backupDir, path.dirname(dbPath)]) {
+for (const dir of [dataDir, uploadDir, backupDir, logDir, path.dirname(dbPath)]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -22,5 +23,6 @@ module.exports = {
   dataDir,
   uploadDir,
   backupDir,
+  logDir,
   dbPath,
 };

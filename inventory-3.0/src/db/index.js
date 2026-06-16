@@ -253,9 +253,15 @@ function logActivity(entry) {
   return Number(info.lastInsertRowid);
 }
 
+function shouldSeed() {
+  if (process.env.SEED_MODE === "0") return false;
+  if (process.env.NODE_ENV === "production") return false;
+  return true;
+}
+
 function seedIfNeeded() {
   const count = db.prepare("SELECT COUNT(*) AS count FROM categories").get().count;
-  if (count) return;
+  if (count || !shouldSeed()) return;
   tx(() => {
     db.prepare("INSERT INTO app_meta (key, value) VALUES ('revision', '1')").run();
 
@@ -300,9 +306,9 @@ function seedIfNeeded() {
     `);
     const insertAsset = db.prepare(`
       INSERT INTO assets (
-        model_id, category_id, serial, asset_tag, status, owner_id, location_id,
+        model_id, category_id, serial, asset_tag, status, status_id, owner_id, location_id,
         usage, nvbug, borrowed_lent, notes, extra_json, archived, created_at, updated_at, revision
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const statusCycle = ["Idle", "In Use", "Ready to Deploy", "Broken", "In Use", "Idle", "E-waste Pending"];
@@ -352,12 +358,14 @@ function seedIfNeeded() {
           else if (key === "ip") extra[key] = `10.30.${(i % 20) + 1}.${(globalAssetNumber % 200) + 20}`;
           else extra[key] = `${label} ${String(i).padStart(2, "0")}`;
         }
+        const statusIdRow = db.prepare("SELECT id FROM status_labels WHERE name = ?").get(status);
         insertAsset.run(
           modelId,
           category.id,
           serial,
           assetTag,
           status,
+          statusIdRow ? statusIdRow.id : null,
           ownerId,
           loc,
           usageCycle[i % usageCycle.length],

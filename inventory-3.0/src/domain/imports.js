@@ -1,6 +1,5 @@
 const { db, tx, logActivity, bumpRevision } = require("../db");
 const {
-  STATUSES,
   TEAM_MEMBERS,
   COMMON_FIELDS,
   CATEGORY_PROFILES,
@@ -8,6 +7,7 @@ const {
 } = require("../config/constants");
 const { now, json, safeJsonParse, normalizeBug, canonicalField } = require("../lib/utils");
 const { httpError } = require("../lib/http");
+const logger = require("../lib/logger");
 const {
   fieldRows,
   findCategoryByName,
@@ -15,6 +15,7 @@ const {
   getOrCreateMember,
   getOrCreateModel,
 } = require("./catalog");
+const { validateImportRow, statusIdForName } = require("./validators");
 
 function parseCsv(text) {
   const rows = [];
@@ -54,7 +55,7 @@ function parseCsv(text) {
   return rows.filter((r) => r.some((c) => String(c).trim()));
 }
 
-function validateImport(profileId, filename, csvText) {
+function validateImport(profileId, filename, csvText, actorName = "Import User") {
   const profile = IMPORT_PROFILES.find((p) => p.id === profileId) || IMPORT_PROFILES[0];
   const rows = parseCsv(csvText);
   if (!rows.length) throw httpError(400, "CSV is empty.");
@@ -69,15 +70,28 @@ function validateImport(profileId, filename, csvText) {
   });
 
   const issues = [];
+  const seenTags = new Set();
+  const seenSerials = new Set();
   for (const dataRow of dataRows) {
-    for (const required of profile.required || []) {
-      if (!dataRow.values[required]) issues.push({ row: dataRow.rowNumber, field: required, severity: "error", message: `${required} is required.` });
-    }
     const categoryName = dataRow.values.category || (profile.categorySlug ? (CATEGORY_PROFILES.find((p) => p.slug === profile.categorySlug) || {}).name : "");
     const category = categoryName ? findCategoryByName(categoryName) : null;
-    if (!profile.referenceType && !category) issues.push({ row: dataRow.rowNumber, field: "category", severity: "error", message: "Category is missing or not supported by this profile." });
-    const status = dataRow.values.status || "Ready to Deploy";
-    if (!profile.referenceType && !STATUSES.includes(status)) issues.push({ row: dataRow.rowNumber, field: "status", severity: "error", message: `Status '${status}' is not valid.` });
+    const rowIssues = validateImportRow(dataRow.values, profile, category).map((issue) => ({
+      row: dataRow.rowNumber,
+      ...issue,
+    }));
+    issues.push(...rowIssues);
+    if (dataRow.values.assetTag) {
+      if (seenTags.has(dataRow.values.assetTag.toLowerCase())) {
+        issues.push({ row: dataRow.rowNumber, field: "assetTag", severity: "error", message: `Duplicate asset tag in file: ${dataRow.values.assetTag}` });
+      }
+      seenTags.add(dataRow.values.assetTag.toLowerCase());
+    }
+    if (dataRow.values.serial) {
+      if (seenSerials.has(dataRow.values.serial.toLowerCase())) {
+        issues.push({ row: dataRow.rowNumber, field: "serial", severity: "error", message: `Duplicate serial in file: ${dataRow.values.serial}` });
+      }
+      seenSerials.add(dataRow.values.serial.toLowerCase());
+    }
   }
 
   const preview = {
@@ -99,12 +113,13 @@ function validateImport(profileId, filename, csvText) {
   preview.id = Number(info.lastInsertRowid);
   db.prepare("UPDATE import_batches SET preview_json = ? WHERE id = ?").run(json(preview), preview.id);
   logActivity({
-    actorName: "Import User",
+    actorName,
     action: "import-preview",
     summary: `Previewed ${filename || "CSV import"}`,
     source: "import",
     metadata: { profile: profile.id, rows: dataRows.length, issues: issues.length },
   });
+  if (!preview.canCommit) logger.warn("import preview blocked", { profile: profile.id, issues: issues.length });
   bumpRevision();
   return preview;
 }
@@ -146,15 +161,19 @@ function commitImport(batchId, actorName = "Import User") {
       const assetTag = values.assetTag || `INV3-IMP-${String(batchId).padStart(3, "0")}-${String(row.rowNumber).padStart(4, "0")}`;
       const existing = db.prepare("SELECT id FROM assets WHERE asset_tag = ?").get(assetTag);
       if (existing) continue;
+      if (values.serial && db.prepare("SELECT id FROM assets WHERE serial = ? AND serial != ''").get(values.serial)) continue;
+      const status = values.status || "Ready to Deploy";
+      const statusId = statusIdForName(status);
       const info = db.prepare(`
-        INSERT INTO assets (model_id, category_id, serial, asset_tag, status, owner_id, location_id, usage, nvbug, borrowed_lent, notes, extra_json, archived, created_at, updated_at, revision)
+        INSERT INTO assets (model_id, category_id, serial, asset_tag, status, status_id, owner_id, location_id, usage, nvbug, borrowed_lent, notes, extra_json, archived, created_at, updated_at, revision)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)
       `).run(
         modelId,
         category.id,
         values.serial || "",
         assetTag,
-        values.status || "Ready to Deploy",
+        status,
+        statusId,
         ownerId,
         locationId,
         values.usage || "",

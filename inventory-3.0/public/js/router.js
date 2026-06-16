@@ -42,7 +42,15 @@
   }
 
   async function init() {
-    await loadSession();
+    await loadBootstrap();
+    if (localStorage.getItem("inventory3.user")) {
+      try {
+        await loadSession();
+      } catch {
+        state.user = null;
+        localStorage.removeItem("inventory3.user");
+      }
+    }
     restoreFromUrl();
     if (!state.user) {
       renderLogin();

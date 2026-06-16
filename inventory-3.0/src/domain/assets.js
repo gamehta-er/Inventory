@@ -1,6 +1,5 @@
 const { db, tx, logActivity, getRevision } = require("../db");
 const {
-  STATUSES,
   ACTIVE_STATUSES,
   AVAILABLE_STATUSES,
   EXCEPTION_STATUSES,
@@ -13,6 +12,16 @@ const {
   getOrCreateModel,
 } = require("./catalog");
 const { formatActivity } = require("./activity");
+const { assertDeployable, findStatusByName } = require("./statusLabels");
+const {
+  requireRevision,
+  validateAssetPatch,
+  validateCreateAsset,
+  validateCheckout,
+  validateCheckin,
+  statusIdForName,
+} = require("./validators");
+const { createCheckout, closeCheckout, listCheckouts } = require("./checkouts");
 
 function hydrateAsset(row) {
   if (!row) return null;
@@ -57,17 +66,22 @@ function assetSelectSql() {
       a.*, c.name AS category_name, c.slug AS category_slug, c.prefix AS category_prefix,
       m.name AS model_name, m.manufacturer, m.model_number, m.sku, m.image_path,
       tm.name AS owner_name, tm.email AS owner_email,
-      l.name AS location_name, l.building
+      l.name AS location_name, l.building,
+      COALESCE(sl.name, a.status) AS status,
+      sl.deployable AS status_deployable,
+      sl.archived AS status_archived
     FROM assets a
     JOIN categories c ON c.id = a.category_id
     JOIN asset_models m ON m.id = a.model_id
     LEFT JOIN team_members tm ON tm.id = a.owner_id
     JOIN locations l ON l.id = a.location_id
+    LEFT JOIN status_labels sl ON sl.id = a.status_id
   `;
 }
 
 function getAllAssets(includeArchived = false) {
-  const rows = db.prepare(`${assetSelectSql()} ${includeArchived ? "" : "WHERE a.archived = 0"} ORDER BY c.sort_order, a.asset_tag`).all();
+  const clause = includeArchived ? "" : "WHERE a.archived = 0 AND (sl.archived IS NULL OR sl.archived = 0)";
+  const rows = db.prepare(`${assetSelectSql()} ${clause} ORDER BY c.sort_order, a.asset_tag`).all();
   return rows.map(hydrateAsset);
 }
 
@@ -190,33 +204,24 @@ function assetDetail(id) {
     ORDER BY r.created_at DESC
   `).all(id).map((row) => ({ ...row, nvbugLinks: bugLinks(row.nvbug) }));
   const activity = db.prepare("SELECT * FROM asset_activity_log WHERE asset_id = ? ORDER BY created_at DESC LIMIT 80").all(id).map(formatActivity);
-  return { asset, fields: fieldRows(asset.categoryId), requests, activity };
+  const checkouts = listCheckouts(id).map((row) => ({
+    id: row.id,
+    assignedTo: row.assigned_name || "",
+    location: row.location_name,
+    checkedOutAt: row.checked_out_at,
+    checkedInAt: row.checked_in_at,
+    statusAtCheckout: row.status_at_checkout,
+    reason: row.reason || "",
+    nvbug: row.nvbug || "",
+    actorName: row.actor_name || "",
+  }));
+  return { asset, fields: fieldRows(asset.categoryId), requests, activity, checkouts };
 }
 
-function validateAssetPatch(asset, patch, requireReason = true) {
-  const errors = {};
-  if (requireReason && !String(patch.reason || "").trim()) errors.reason = "Reason is required.";
-  const next = {
-    model: patch.model ?? asset.model,
-    serial: patch.serial ?? asset.serial,
-    assetTag: patch.assetTag ?? asset.assetTag,
-    status: patch.status ?? asset.status,
-    ownerId: patch.ownerId ?? asset.ownerId,
-    locationId: patch.locationId ?? asset.locationId,
-  };
-  if (!next.model) errors.model = "Model is required.";
-  if (!next.serial && !next.assetTag) errors.serial = "Serial No. or Asset Tag is required.";
-  if (!next.assetTag) errors.assetTag = "Asset Tag is required.";
-  if (!next.status) errors.status = "Status is required.";
-  if (next.status === "In Use" && !next.ownerId) errors.ownerId = "Owner / Assignee is required when status is In Use.";
-  if (!next.locationId) errors.locationId = "Location is required.";
-  return errors;
-}
-
-function updateAsset(id, patch) {
+function updateAsset(id, patch, actorName = "Admin User") {
   const current = getAsset(id, true);
   if (!current) throw httpError(404, "Asset not found.");
-  if (patch.revision && Number(patch.revision) !== Number(current.revision)) throw httpError(409, "This asset was changed in another session. Refresh and try again.");
+  requireRevision(current, patch);
   const errors = validateAssetPatch(current, patch, true);
   if (Object.keys(errors).length) throw httpError(400, "Missing required fields.", { errors });
 
@@ -227,10 +232,13 @@ function updateAsset(id, patch) {
     const before = current;
     const nextOwner = patch.ownerId === "" ? null : (patch.ownerId ?? current.ownerId ?? null);
     const nextLocation = patch.locationId ?? current.locationId;
+    const nextStatus = patch.status ?? current.status;
+    const nextStatusId = statusIdForName(nextStatus);
     db.prepare(`
       UPDATE assets SET
-        model_id = ?, category_id = ?, serial = ?, asset_tag = ?, status = ?, owner_id = ?,
+        model_id = ?, category_id = ?, serial = ?, asset_tag = ?, status = ?, status_id = ?, owner_id = ?,
         location_id = ?, usage = ?, nvbug = ?, borrowed_lent = ?, notes = ?, extra_json = ?,
+        archived = CASE WHEN ? IN ('Archived', 'E-Wasted') THEN 1 ELSE archived END,
         updated_at = ?, revision = revision + 1
       WHERE id = ?
     `).run(
@@ -238,7 +246,8 @@ function updateAsset(id, patch) {
       categoryId,
       patch.serial ?? current.serial,
       patch.assetTag ?? current.assetTag,
-      patch.status ?? current.status,
+      nextStatus,
+      nextStatusId,
       nextOwner,
       nextLocation,
       patch.usage ?? current.usage,
@@ -246,6 +255,7 @@ function updateAsset(id, patch) {
       patch.borrowedLent ?? current.borrowedLent,
       patch.notes ?? current.notes,
       json(extra),
+      nextStatus,
       now(),
       id,
     );
@@ -253,7 +263,7 @@ function updateAsset(id, patch) {
     logActivity({
       assetId: id,
       modelId,
-      actorName: patch.actorName || "Admin User",
+      actorName,
       action: "manual-edit",
       summary: `Edited ${after.assetTag}`,
       before,
@@ -265,11 +275,13 @@ function updateAsset(id, patch) {
   });
 }
 
-function createAsset(payload) {
+function createAsset(payload, actorName = "Admin User") {
   const category = payload.categoryId
     ? db.prepare("SELECT * FROM categories WHERE id = ?").get(payload.categoryId)
     : findCategoryByName(payload.category || "");
   if (!category) throw httpError(400, "Category is required.");
+  const errors = validateCreateAsset(payload, category);
+  if (Object.keys(errors).length) throw httpError(400, "Missing required fields.", { errors });
   const base = {
     model: String(payload.model || "").trim(),
     serial: String(payload.serial || "").trim(),
@@ -279,40 +291,13 @@ function createAsset(payload) {
     locationId: payload.locationId || "",
   };
   const extra = payload.extra || {};
-  const errors = {};
-  if (!base.model) errors.model = "Model is required.";
-  if (!base.serial && !base.assetTag) errors.serial = "Serial No. or Asset Tag is required.";
-  if (!base.assetTag) errors.assetTag = "Asset Tag is required.";
-  if (!STATUSES.includes(base.status)) errors.status = "Status is required.";
-  if (base.status === "In Use" && !base.ownerId) errors.ownerId = "Owner / Assignee is required when status is In Use.";
-  if (!base.locationId) errors.locationId = "Location is required.";
-  if (!String(payload.reason || "").trim()) errors.reason = "Reason is required.";
-  if (base.assetTag && db.prepare("SELECT id FROM assets WHERE asset_tag = ?").get(base.assetTag)) errors.assetTag = "Asset Tag already exists.";
-  const commonValues = {
-    category: category.name,
-    model: base.model,
-    serial: base.serial,
-    assetTag: base.assetTag,
-    status: base.status,
-    owner: base.ownerId,
-    location: base.locationId,
-    usage: payload.usage,
-    nvbug: payload.nvbug,
-    borrowedLent: payload.borrowedLent,
-    notes: payload.notes,
-  };
-  for (const field of fieldRows(category.id)) {
-    if (!field.required) continue;
-    const value = commonValues[field.key] ?? extra[field.key];
-    if (!String(value || "").trim()) errors[field.key] = `${field.label} is required.`;
-  }
-  if (Object.keys(errors).length) throw httpError(400, "Missing required fields.", { errors });
+  const statusId = statusIdForName(base.status);
 
   return tx(() => {
     const modelId = getOrCreateModel(category.id, base.model, payload);
     const info = db.prepare(`
       INSERT INTO assets (
-        model_id, category_id, serial, asset_tag, status, owner_id, location_id,
+        model_id, category_id, serial, asset_tag, status, status_id, owner_id, location_id,
         usage, nvbug, borrowed_lent, notes, extra_json, archived, created_at, updated_at, revision
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)
     `).run(
@@ -321,6 +306,7 @@ function createAsset(payload) {
       base.serial,
       base.assetTag,
       base.status,
+      statusId,
       base.ownerId || null,
       base.locationId,
       payload.usage || "",
@@ -336,7 +322,7 @@ function createAsset(payload) {
     logActivity({
       assetId: id,
       modelId,
-      actorName: payload.actorName || "Admin User",
+      actorName,
       action: "manual-add",
       summary: `Added ${asset.assetTag}`,
       after: asset,
@@ -348,11 +334,10 @@ function createAsset(payload) {
   });
 }
 
-function applyAction(id, action, payload = {}, parentId = null) {
+function applyAction(id, action, payload = {}, parentId = null, actorName = "Inventory User", actorMemberId = null) {
   const current = getAsset(id, true);
   if (!current) throw httpError(404, "Asset not found.");
-  if (payload.revision && Number(payload.revision) !== Number(current.revision)) throw httpError(409, `${current.assetTag} changed in another session.`);
-  const actorName = payload.actorName || "Inventory User";
+  if (action !== "print-label") requireRevision(current, payload);
   const reason = String(payload.reason || "").trim();
   const nvbug = normalizeBug(payload.nvbug || "");
 
@@ -394,30 +379,98 @@ function applyAction(id, action, payload = {}, parentId = null) {
     });
   }
 
+  if (action === "check-out") {
+    const errors = validateCheckout(payload, current);
+    if (Object.keys(errors).length) throw httpError(400, "Missing required fields.", { errors });
+    assertDeployable(payload.status);
+    return tx(() => {
+      const before = current;
+      const ownerId = payload.ownerId || current.ownerId || null;
+      const statusId = statusIdForName(payload.status);
+      db.prepare(`
+        UPDATE assets SET status = ?, status_id = ?, owner_id = ?, location_id = ?, usage = ?, nvbug = ?, borrowed_lent = ?,
+          archived = 0, updated_at = ?, revision = revision + 1
+        WHERE id = ?
+      `).run(payload.status, statusId, ownerId, payload.locationId, payload.usage ?? current.usage, nvbug || current.nvbug, payload.borrowedLent ?? current.borrowedLent, now(), id);
+      createCheckout({
+        assetId: id,
+        assignedToMemberId: ownerId,
+        locationId: payload.locationId,
+        reason,
+        nvbug,
+        actorMemberId,
+        statusAtCheckout: payload.status,
+      });
+      const after = getAsset(id, true);
+      logActivity({
+        parentId,
+        assetId: id,
+        modelId: current.modelId,
+        actorName,
+        action: "check-out",
+        summary: `check-out ${current.assetTag}`,
+        before,
+        after,
+        reason,
+        nvbug,
+      });
+      return { detail: assetDetail(id) };
+    });
+  }
+
+  if (action === "check-in") {
+    const errors = validateCheckin(payload);
+    if (Object.keys(errors).length) throw httpError(400, "Missing required fields.", { errors });
+    return tx(() => {
+      const before = current;
+      const ownerId = payload.ownerId || null;
+      const statusId = statusIdForName(payload.status);
+      closeCheckout(id, { reason, nvbug });
+      db.prepare(`
+        UPDATE assets SET status = ?, status_id = ?, owner_id = ?, location_id = ?, usage = ?, nvbug = ?, borrowed_lent = ?,
+          archived = CASE WHEN ? IN ('Archived', 'E-Wasted') THEN 1 ELSE 0 END,
+          updated_at = ?, revision = revision + 1
+        WHERE id = ?
+      `).run(payload.status, statusId, ownerId, payload.locationId, payload.usage ?? current.usage, nvbug || current.nvbug, payload.borrowedLent ?? current.borrowedLent, payload.status, now(), id);
+      const after = getAsset(id, true);
+      logActivity({
+        parentId,
+        assetId: id,
+        modelId: current.modelId,
+        actorName,
+        action: "check-in",
+        summary: `check-in ${current.assetTag}`,
+        before,
+        after,
+        reason,
+        nvbug,
+      });
+      return { detail: assetDetail(id) };
+    });
+  }
+
   if (!reason) throw httpError(400, "Reason is required.", { errors: { reason: "Reason is required." } });
   if (!payload.status) throw httpError(400, "Status is required.", { errors: { status: "Status is required." } });
   if (!payload.locationId) throw httpError(400, "Location is required.", { errors: { locationId: "Location is required." } });
-  if (action === "check-out" && !payload.ownerId) throw httpError(400, "Owner / Assignee is required.", { errors: { ownerId: "Owner / Assignee is required." } });
 
   return tx(() => {
     const before = current;
-    const ownerId = action === "check-in" ? payload.ownerId || null : payload.ownerId || current.ownerId || null;
-    const borrowedLent = payload.borrowedLent ?? current.borrowedLent;
+    const ownerId = payload.ownerId || current.ownerId || null;
+    const statusId = statusIdForName(payload.status);
     db.prepare(`
-      UPDATE assets SET status = ?, owner_id = ?, location_id = ?, usage = ?, nvbug = ?, borrowed_lent = ?,
+      UPDATE assets SET status = ?, status_id = ?, owner_id = ?, location_id = ?, usage = ?, nvbug = ?, borrowed_lent = ?,
         archived = CASE WHEN ? IN ('Archived', 'E-Wasted') THEN 1 ELSE 0 END,
         updated_at = ?, revision = revision + 1
       WHERE id = ?
-    `).run(payload.status, ownerId, payload.locationId, payload.usage ?? current.usage, nvbug || current.nvbug, borrowedLent, payload.status, now(), id);
+    `).run(payload.status, statusId, ownerId, payload.locationId, payload.usage ?? current.usage, nvbug || current.nvbug, payload.borrowedLent ?? current.borrowedLent, payload.status, now(), id);
     const after = getAsset(id, true);
-    const actionName = action === "check-out" ? "check-out" : action === "check-in" ? "check-in" : action;
     logActivity({
       parentId,
       assetId: id,
       modelId: current.modelId,
       actorName,
-      action: actionName,
-      summary: `${actionName} ${current.assetTag}`,
+      action,
+      summary: `${action} ${current.assetTag}`,
       before,
       after,
       reason,
@@ -439,8 +492,8 @@ function previewBulk(payload) {
       ineligible.push({ id, reason: "Asset not found." });
       continue;
     }
-    if (expected[id] && Number(expected[id]) !== Number(asset.revision)) {
-      conflicts.push({ id, assetTag: asset.assetTag, reason: "Changed in another session.", currentRevision: asset.revision });
+    if (!expected[id] || Number(expected[id]) !== Number(asset.revision)) {
+      conflicts.push({ id, assetTag: asset.assetTag, reason: "Revision required or stale.", currentRevision: asset.revision });
       continue;
     }
     if (asset.archived && !["restore", "print-label"].includes(payload.action)) {
@@ -459,13 +512,13 @@ function previewBulk(payload) {
   };
 }
 
-function commitBulk(payload) {
+function commitBulk(payload, actorName = "Inventory User") {
   const preview = previewBulk(payload);
   if (preview.conflicts.length || preview.ineligible.length) throw httpError(409, "Bulk action has conflicts or ineligible assets.", { preview });
   if (!preview.eligible.length) throw httpError(400, "No eligible assets selected.");
   return tx(() => {
     const parentId = logActivity({
-      actorName: payload.actorName || "Inventory User",
+      actorName,
       action: "bulk-action",
       summary: `Bulk ${payload.action} for ${preview.eligible.length} assets`,
       reason: payload.reason || "",
@@ -480,7 +533,7 @@ function commitBulk(payload) {
           parentId,
           assetId: row.id,
           modelId: current.modelId,
-          actorName: payload.actorName || "Inventory User",
+          actorName,
           action: "print-label",
           summary: `Prepared label for ${current.assetTag}`,
           reason: payload.reason || "Bulk label print",
@@ -488,19 +541,20 @@ function commitBulk(payload) {
         });
       } else {
         const before = current;
+        const statusId = statusIdForName(payload.status);
         db.prepare(`
-          UPDATE assets SET status = ?, owner_id = COALESCE(?, owner_id), location_id = COALESCE(?, location_id),
+          UPDATE assets SET status = ?, status_id = ?, owner_id = COALESCE(?, owner_id), location_id = COALESCE(?, location_id),
             usage = COALESCE(?, usage), nvbug = COALESCE(NULLIF(?, ''), nvbug), borrowed_lent = COALESCE(?, borrowed_lent),
             archived = CASE WHEN ? IN ('Archived', 'E-Wasted') THEN 1 ELSE archived END,
             updated_at = ?, revision = revision + 1
           WHERE id = ?
-        `).run(payload.status, payload.ownerId || null, payload.locationId || null, payload.usage || null, normalizeBug(payload.nvbug || ""), payload.borrowedLent || null, payload.status, now(), row.id);
+        `).run(payload.status, statusId, payload.ownerId || null, payload.locationId || null, payload.usage || null, normalizeBug(payload.nvbug || ""), payload.borrowedLent || null, payload.status, now(), row.id);
         const after = getAsset(row.id, true);
         logActivity({
           parentId,
           assetId: row.id,
           modelId: current.modelId,
-          actorName: payload.actorName || "Inventory User",
+          actorName,
           action: payload.action,
           summary: `Bulk ${payload.action} ${current.assetTag}`,
           before,

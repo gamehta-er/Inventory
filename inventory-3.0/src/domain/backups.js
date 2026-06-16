@@ -3,6 +3,7 @@ const path = require("node:path");
 const { db, logActivity, bumpRevision } = require("../db");
 const { dbPath, backupDir } = require("../config/paths");
 const { httpError } = require("../lib/http");
+const logger = require("../lib/logger");
 
 function listBackups() {
   return fs.readdirSync(backupDir)
@@ -49,8 +50,33 @@ function backupPathById(id) {
   return { filename, fullPath };
 }
 
+function restoreBackup(payload, actorName = "Admin User") {
+  const backupId = String(payload.backupId || "");
+  const confirm = String(payload.confirm || "");
+  const { filename, fullPath } = backupPathById(backupId);
+  if (confirm !== `RESTORE ${filename}`) {
+    throw httpError(400, "Confirmation text does not match.", { errors: { confirm: `Type RESTORE ${filename}` } });
+  }
+  const preRestoreName = `inventory-3-backup-prerestore-${Date.now()}.db`;
+  const preRestorePath = path.join(backupDir, preRestoreName);
+  db.exec("PRAGMA wal_checkpoint(FULL);");
+  fs.copyFileSync(dbPath, preRestorePath);
+  fs.copyFileSync(fullPath, dbPath);
+  logActivity({
+    actorName,
+    action: "backup-restore",
+    summary: `Restored backup ${filename}`,
+    source: "admin",
+    metadata: { filename, preRestoreName },
+  });
+  bumpRevision();
+  logger.warn("database restored", { filename, preRestoreName, actorName });
+  return { restored: filename, preRestoreBackup: preRestoreName, backups: listBackups() };
+}
+
 module.exports = {
   listBackups,
   createBackup,
   backupPathById,
+  restoreBackup,
 };
