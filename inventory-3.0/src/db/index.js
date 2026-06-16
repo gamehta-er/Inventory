@@ -1,5 +1,9 @@
+const fs = require("node:fs");
+const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 const { dbPath } = require("../config/paths");
+
+const migrationsDir = path.join(__dirname, "..", "..", "migrations");
 const {
   STATUSES,
   TEAM_MEMBERS,
@@ -150,6 +154,51 @@ function initSchema() {
       value TEXT NOT NULL
     );
   `);
+}
+
+function getSchemaVersion() {
+  const row = db.prepare("SELECT value FROM app_meta WHERE key = 'schema_version'").get();
+  return row ? Number(row.value) : 0;
+}
+
+function setSchemaVersion(version) {
+  db.prepare(`
+    INSERT INTO app_meta (key, value) VALUES ('schema_version', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(String(version));
+}
+
+function runMigrations() {
+  if (!fs.existsSync(migrationsDir)) {
+    console.log(`schema version ${getSchemaVersion()}`);
+    return;
+  }
+
+  const files = fs.readdirSync(migrationsDir)
+    .filter((name) => /^\d+_.+\.sql$/i.test(name))
+    .sort((a, b) => Number(a.split("_")[0]) - Number(b.split("_")[0]));
+
+  let currentVersion = getSchemaVersion();
+
+  for (const file of files) {
+    const version = Number(file.split("_")[0]);
+    if (version <= currentVersion) continue;
+
+    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+    db.exec("BEGIN IMMEDIATE;");
+    try {
+      if (sql.trim()) db.exec(sql);
+      setSchemaVersion(version);
+      db.exec("COMMIT;");
+      currentVersion = version;
+      console.log(`Applied migration ${file} (schema_version=${version})`);
+    } catch (error) {
+      db.exec("ROLLBACK;");
+      throw new Error(`Migration ${file} failed: ${error.message}`);
+    }
+  }
+
+  console.log(`schema version ${getSchemaVersion()}`);
 }
 
 function getRevision() {
@@ -337,10 +386,12 @@ function seedIfNeeded() {
 }
 
 initSchema();
+runMigrations();
 seedIfNeeded();
 
 module.exports = {
   db,
+  getSchemaVersion,
   getRevision,
   bumpRevision,
   tx,
