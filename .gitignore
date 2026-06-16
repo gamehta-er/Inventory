@@ -7,3 +7,7 @@ data/inventory.db*
 data/backups/
 inventory-2.0/data/*.db*
 inventory-2.0/data/backups/
+inventory-3.0/data/*.db*
+inventory-3.0/data/*.db-*
+inventory-3.0/data/backups/
+inventory-3.0/data/uploads/
