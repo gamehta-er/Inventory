@@ -4,6 +4,7 @@ const { csvEscape } = require("../lib/utils");
 function reportAssets(query) {
   const search = applySearch(query);
   const meaningfulKeys = Object.keys(query).filter((key) => !["actorName", "includeArchived"].includes(key) && String(query[key] || "").trim());
+  // No filters: same global active inventory as session.summary (not an empty search summary).
   const assets = query.includeArchived === "1" ? getAllAssets(true) : meaningfulKeys.length ? search.assets : getAllAssets(false);
   return {
     summary: summarizeAssets(assets),

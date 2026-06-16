@@ -1,5 +1,8 @@
 ﻿  function renderSearch() {
-    const summary = state.searchResult.summary || state.session.summary;
+    // Global KPIs come from session.summary; search only supplies summary for active queries.
+    const summary = state.searchResult.mode === "empty"
+      ? state.session.summary
+      : (state.searchResult.summary || state.session.summary);
     const assets = state.searchResult.assets || [];
     const hasResults = assets.length > 0;
     const resultCategory = state.session.categories.find((category) => category.slug === resultCategorySlug());
