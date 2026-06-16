@@ -44,6 +44,18 @@ function assertDeployable(statusName) {
   return label;
 }
 
+function assertAvailableForCheckout(asset) {
+  const label = findStatusByName(asset.status);
+  if (!label) throw httpError(400, "Invalid status.", { errors: { status: "Invalid status." } });
+  if (asset.archived || label.archived) {
+    throw httpError(400, "Archived assets cannot be checked out.", { errors: { status: "Archived assets cannot be checked out." } });
+  }
+  if (!label.deployable) {
+    throw httpError(400, "Asset is not available for checkout.", { errors: { status: "Only deployable assets can be checked out." } });
+  }
+  return label;
+}
+
 module.exports = {
   statusLabelRows,
   statusNames,
@@ -51,4 +63,5 @@ module.exports = {
   findStatusById,
   resolveStatusId,
   assertDeployable,
+  assertAvailableForCheckout,
 };

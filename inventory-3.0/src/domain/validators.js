@@ -82,17 +82,20 @@ function validateCheckout(payload, asset) {
   const errors = {};
   if (!String(payload.reason || "").trim()) errors.reason = "Reason is required.";
   if (!payload.status) errors.status = "Status is required.";
-  if (!payload.locationId) errors.locationId = "Location is required.";
-  if (!payload.ownerId) errors.ownerId = "Owner / Assignee is required.";
+  const locationId = payload.locationId || asset.locationId;
+  const ownerId = payload.ownerId || asset.ownerId;
+  if (!locationId) errors.locationId = "Location is required.";
+  if (!ownerId) errors.ownerId = "Owner / Assignee is required.";
   if (asset.archived) errors.status = "Archived assets cannot be checked out.";
   return errors;
 }
 
-function validateCheckin(payload) {
+function validateCheckin(payload, asset) {
   const errors = {};
   if (!String(payload.reason || "").trim()) errors.reason = "Reason is required.";
   if (!payload.status) errors.status = "Status is required.";
-  if (!payload.locationId) errors.locationId = "Location is required.";
+  const locationId = payload.locationId || asset?.locationId;
+  if (!locationId) errors.locationId = "Location is required.";
   return errors;
 }
 

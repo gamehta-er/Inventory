@@ -43,3 +43,31 @@
     state.backupsLoaded = true;
     if (renderAfter) render();
   }
+
+  async function refreshSelectedRevisions() {
+    const ids = [...state.selected.keys()];
+    await Promise.all(ids.map(async (id) => {
+      const detail = await api(`/api/v3/assets/${id}`);
+      const existing = state.selected.get(id) || {};
+      state.selected.set(id, { ...existing, ...detail.asset });
+    }));
+  }
+
+  async function openBulkAction(action) {
+    if (!state.selected.size) return setToast("Select at least one asset.");
+    if (action === "print-label" && state.selected.size === 1) {
+      state.modal = { type: "print", asset: [...state.selected.values()][0] };
+      render();
+      return;
+    }
+    await refreshSelectedRevisions();
+    state.modal = { type: "bulk", action, preview: null };
+    try {
+      const payload = bulkPayload(action);
+      state.modal.preview = await api("/api/v3/assets/bulk-preview", { method: "POST", body: payload });
+    } catch (error) {
+      state.modal = null;
+      throw error;
+    }
+    render();
+  }

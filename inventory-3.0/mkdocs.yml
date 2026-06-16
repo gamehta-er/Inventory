@@ -1,0 +1,86 @@
+site_name: Inventory 3.0
+site_description: Lab inventory pilot documentation for #imargulis-staff
+site_author: IM Lab
+
+repo_name: build-web-apps-plugin-build-web
+repo_url: https://gitlab-master.nvidia.com/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: green
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: green
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/gitlab
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Getting Started: getting-started.md
+  - Tutorials:
+      - First checkout: tutorials/first-checkout.md
+      - Bulk operations: tutorials/bulk-operations.md
+      - CSV import: tutorials/csv-import.md
+      - Admin & backups: tutorials/admin-backups.md
+  - FAQ: faq.md
+  - Troubleshooting: troubleshooting.md
+  - API Overview: api-overview.md
+  - Operations:
+      - Go-live checklist: GO-LIVE-CHECKLIST.md
+      - Rollback: ROLLBACK.md
+      - Colossus field map: COLOSSUS-FIELD-MAP.md
+      - Hardening rules: HARDENING-RULES.md
+
+extra:
+  social:
+    - icon: fontawesome/solid/book
+      link: index.md
+      name: Documentation home
+
+copyright: Copyright &copy; NVIDIA IM Lab Pilot

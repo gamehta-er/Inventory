@@ -19,6 +19,6 @@ Hardening scope: single go-live pilot (SQLite, 3–4 users, dedicated server, **
 ## Pilot constraints
 
 - SQLite with WAL (single-writer, fine for 3–4 users)
-- Server-side auth with shared pilot password (`PILOT_PASSWORD`)
+- Server-side auth with honor-system role picker (pilot); production SSO is post-pilot
 - Mandatory asset `revision` on all writes (except print-label)
 - Status labels and checkout records are governed data

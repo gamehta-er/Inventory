@@ -358,3 +358,16 @@ h3 {
   gap: 8px;
 }
 
+.results-actions {
+  flex-wrap: wrap;
+}
+
+.results-actions-left {
+  flex: 1 1 220px;
+}
+
+.bulk-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+

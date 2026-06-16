@@ -12,14 +12,7 @@ function parseCookies(header = "") {
   }).filter(([key]) => key));
 }
 
-function getPilotPassword() {
-  return process.env.PILOT_PASSWORD || "pilot";
-}
-
-function login({ memberId, role, password }) {
-  if (String(password || "") !== getPilotPassword()) {
-    throw httpError(401, "Invalid password.");
-  }
+function login({ memberId, role }) {
   if (!["Regular User", "Admin User"].includes(role)) {
     throw httpError(400, "Invalid role.");
   }
@@ -83,5 +76,4 @@ module.exports = {
   requireAdmin,
   actorFromSession,
   sessionCookie,
-  getPilotPassword,
 };

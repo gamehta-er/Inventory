@@ -13,3 +13,5 @@ inventory-3.0/data/*.log
 inventory-3.0/data/logs/
 inventory-3.0/data/backups/
 inventory-3.0/data/uploads/
+inventory-3.0/site/
+public/

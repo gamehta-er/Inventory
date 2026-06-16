@@ -107,6 +107,7 @@
 
   function renderHistory(activity, checkouts = []) {
     const checkoutItems = checkouts.map((row) => ({
+      id: row.id,
       action: row.checkedInAt ? "check-in" : "check-out",
       createdAt: row.checkedInAt || row.checkedOutAt,
       summary: `${row.checkedInAt ? "Checked in" : "Checked out"} to ${row.assignedTo || "Unassigned"} @ ${row.location}`,
@@ -116,10 +117,11 @@
     const merged = [...checkoutItems, ...activity].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     if (!merged.length) return `<p class="subtitle">No activity yet.</p>`;
     return `<div class="info-grid">${merged.map((item) => `
-      <div class="info-card">
+      <div class="info-card ${state.highlightActivityId && String(item.id) === String(state.highlightActivityId) ? "activity-highlight" : ""}">
         <span class="meta-label">${esc(item.action)} - ${esc(formatDate(item.createdAt))}</span>
         <strong>${esc(item.summary)}</strong>
         <div class="meta-value">${esc(item.actorName)}${item.reason ? ` - ${esc(item.reason)}` : ""}</div>
+        ${renderActivityChanges(item)}
       </div>
     `).join("")}</div>`;
   }
@@ -137,9 +139,30 @@
   }
 
   function renderModal() {
+    if (state.modal.type === "add-asset") return renderAddAssetModal();
     if (state.modal.type === "print") return renderPrintModal(state.modal.asset);
     if (state.modal.type === "bulk") return renderBulkModal();
     return renderActionModal(state.modal.asset, state.modal.action);
+  }
+
+  function renderAddAssetModal() {
+    const category = addAssetCategoryFromSearch();
+    const defaults = addAssetDefaultsFromSearch();
+    if (!category) return "";
+    return `
+      <div class="modal-backdrop">
+        <section class="modal modal-wide">
+          <div class="modal-header">
+            <div>
+              <h2>Add Asset</h2>
+              <p class="subtitle">Create a new inventory row from your current search context.</p>
+            </div>
+            <button class="close-button" data-close-modal>&times;</button>
+          </div>
+          <div class="modal-body">${renderAddAssetForm(category, defaults)}</div>
+        </section>
+      </div>
+    `;
   }
 
   function renderActionModal(asset, action) {
@@ -171,19 +194,25 @@
     `;
   }
 
+  function renderLabelCard(asset) {
+    return `
+      <div class="label-card">
+        <div style="font-weight:760">${esc(asset.model)}</div>
+        <strong>${esc(asset.assetTag)}</strong>
+        ${barcodeSvg(asset.assetTag)}
+        <div style="font-size:21px">${esc(asset.serial || asset.assetTag)}</div>
+      </div>
+    `;
+  }
+
   function renderPrintModal(asset) {
     return `
       <div class="modal-backdrop">
         <section class="modal" style="width:min(560px,100%)">
           <div class="modal-header"><div><h2>Label Preview</h2><p class="subtitle">Print through an installed USB/network printer or save as PDF.</p></div><button class="close-button" data-close-modal>&times;</button></div>
           <div class="modal-body">
-            <div class="label-preview">
-              <div class="label-card">
-                <div style="font-weight:760">${esc(asset.model)}</div>
-                <strong>${esc(asset.assetTag)}</strong>
-                ${barcodeSvg(asset.assetTag)}
-                <div style="font-size:21px">${esc(asset.serial || asset.assetTag)}</div>
-              </div>
+            <div class="label-preview label-print-sheet">
+              ${renderLabelCard(asset)}
             </div>
           </div>
           <div class="modal-actions">
@@ -200,31 +229,42 @@
     const action = state.modal.action;
     const preview = state.modal.preview;
     const isPrint = action === "print-label";
+    const isCheckout = action === "check-out";
     const title = isPrint ? "Print Labels" : humanAction(action);
     const selectedText = `${state.selected.size} asset${state.selected.size === 1 ? "" : "s"} selected`;
+    const canApply = preview && preview.eligible.length && !preview.conflicts.length;
+    const printAssets = isPrint && preview
+      ? preview.eligible.map((row) => state.selected.get(row.id)).filter(Boolean)
+      : [];
+    const issues = preview ? preview.conflicts.concat(preview.ineligible) : [];
     return `
       <div class="modal-backdrop">
-        <section class="modal">
-          <div class="modal-header"><div><h2>${esc(title)}</h2><p class="subtitle">${esc(selectedText)}</p></div><button class="close-button" data-close-modal>&times;</button></div>
+        <section class="modal ${isPrint ? "modal-wide" : ""}">
+          <div class="modal-header"><div><h2>${esc(title)}</h2><p class="subtitle">${esc(selectedText)}${preview && canApply ? ` · ${preview.eligible.length} ready` : ""}</p></div><button class="close-button" data-close-modal>&times;</button></div>
           <div class="modal-body">
-            <form id="bulkForm" class="form-grid">
-              ${!isPrint ? selectField("status", "Status", action === "check-out" ? "In Use" : action === "check-in" ? "Ready to Deploy" : "Idle", statusOptions(), true) : ""}
-              ${!isPrint ? selectField("ownerId", "Owner / Assignee", "", [["", "Keep current"], ...state.session.members.map((m) => [m.id, m.name])], false) : ""}
-              ${!isPrint ? selectField("locationId", "Location", "", [["", "Keep current"], ...state.session.locations.map((l) => [l.id, l.name])], false) : ""}
-              ${!isPrint ? inputField("nvbug", "NVBug #", "", false) : ""}
-              ${!isPrint ? textareaField("reason", "Reason", "", true) : ""}
-            </form>
-            ${preview ? `
-              <div class="panel import-box" style="margin-top:16px">
-                <h3>${isPrint ? "Print Preview" : "Preview"}</h3>
-                <p class="subtitle">${preview.eligible.length} eligible, ${preview.ineligible.length} ineligible, ${preview.conflicts.length} conflicts.</p>
-                ${preview.conflicts.concat(preview.ineligible).map((row) => `<div class="alert">${esc(row.assetTag || row.id)}: ${esc(row.reason)}</div>`).join("")}
+            ${issues.length ? `
+              <div class="alert-stack" style="margin-bottom:16px">
+                ${issues.map((row) => `<div class="alert">${esc(row.assetTag || row.id)}: ${esc(row.reason)}</div>`).join("")}
               </div>
             ` : ""}
+            ${!isPrint ? `
+            <form id="bulkForm" class="form-grid">
+              ${selectField("status", "Status", action === "check-out" ? "In Use" : action === "check-in" ? "Ready to Deploy" : "Idle", statusOptions(), true)}
+              ${selectField("ownerId", "Owner / Assignee", "", [["", isCheckout ? "Select owner" : "Keep current"], ...state.session.members.map((m) => [m.id, m.name])], isCheckout)}
+              ${selectField("locationId", "Location", "", [["", "Keep current"], ...state.session.locations.map((l) => [l.id, l.name])], false)}
+              ${inputField("nvbug", "NVBug #", "", false)}
+              ${textareaField("reason", "Reason", "", true)}
+            </form>
+            ` : `<form id="bulkForm" class="hidden"></form>`}
+            ${isPrint && printAssets.length ? `
+              <div class="label-preview label-print-sheet bulk-label-sheet">
+                ${printAssets.map((asset) => renderLabelCard(asset)).join("")}
+              </div>
+            ` : ""}
+            ${!preview ? `<p class="subtitle">Checking selected assets...</p>` : ""}
           </div>
           <div class="modal-actions">
-            <button class="secondary-button" data-preview-bulk="${action}">${isPrint ? "Print Preview" : "Preview"}</button>
-            <button class="primary-button" data-commit-bulk="${action}" ${preview && !preview.conflicts.length && !preview.ineligible.length ? "" : "disabled"}>${isPrint ? "Print" : "Apply"}</button>
+            <button class="primary-button" data-commit-bulk="${action}" ${canApply ? "" : "disabled"}>${isPrint ? "Print" : "Apply"}</button>
             <button class="secondary-button" data-close-modal>Cancel</button>
           </div>
         </section>

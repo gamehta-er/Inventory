@@ -136,7 +136,7 @@ async function handleApi(req, res, requestUrl) {
   }
   if (req.method === "POST" && pathname === "/api/v3/assets/bulk-commit") {
     const body = await parseBody(req);
-    return sendJson(res, 200, commitBulk(body, actor));
+    return sendJson(res, 200, commitBulk(body, actor, actorMemberId));
   }
 
   if (req.method === "GET" && pathname === "/api/v3/activity") return sendJson(res, 200, { activity: listActivity() });

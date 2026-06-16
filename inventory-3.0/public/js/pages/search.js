@@ -21,6 +21,7 @@
           </div>
           <button class="primary-button" data-search>Search</button>
           <button class="secondary-button" data-clear-search>Clear Search</button>
+          ${state.user.role === "Admin User" ? `<button class="secondary-button" data-open-add-asset>Add Asset</button>` : ""}
         </div>
         <div class="category-card-grid">
           ${state.session.categories.map((category) => `
@@ -45,9 +46,9 @@
               <h2>${assets.length} ${resultCategory ? `${esc(resultCategory.name)} ` : ""}result${assets.length === 1 ? "" : "s"}</h2>
               ${renderFilterSummary()}
             </div>
-              <button class="secondary-button" data-open-filters>Filters</button>
+            <button class="secondary-button" data-open-filters>Filters</button>
           </div>
-          ${renderBulkbar()}
+          ${renderResultsActions()}
           <div class="asset-list">${assets.map(renderAssetCard).join("")}</div>
         </section>
       ` : `
@@ -56,6 +57,7 @@
             <div>
               <h2>Start with a category or exact identifier.</h2>
               <p class="subtitle">Category searches stay strict. Serial and asset tag searches open the exact asset.</p>
+              ${state.user.role === "Admin User" ? `<div style="margin-top:18px"><button class="primary-button" data-open-add-asset>Add Asset</button></div>` : ""}
             </div>
           `}
         </section>
@@ -99,6 +101,7 @@
         <p class="subtitle">The search ran successfully, but nothing matched the current criteria.</p>
         ${renderCriteriaSummary()}
         <div style="display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap">
+          ${state.user.role === "Admin User" ? `<button class="primary-button" data-open-add-asset>Add Asset</button>` : ""}
           <button class="secondary-button" data-open-filters>Adjust Filters</button>
           <button class="secondary-button" data-clear-filters>Clear Filters</button>
           <button class="primary-button" data-clear-search>Clear Search</button>
@@ -200,19 +203,22 @@
     return filterText(`extra.${field.key}`, field.label, true);
   }
 
-  function renderBulkbar() {
+  function renderResultsActions() {
     const count = state.selected.size;
-    if (!count) return "";
+    const isAdmin = state.user.role === "Admin User";
     return `
-      <div class="bulkbar">
-        <strong>${count} selected</strong>
+      <div class="bulkbar results-actions">
+        <div class="results-actions-left">
+          ${count ? `<strong>${count} selected</strong>` : `<span class="subtitle">Select rows to run actions on multiple assets.</span>`}
+        </div>
         <div class="bulk-actions">
-          <button class="secondary-button" data-bulk="check-out">Check Out</button>
-          <button class="secondary-button" data-bulk="check-in">Check In</button>
-          <button class="secondary-button" data-bulk="status-change">Status Change</button>
-          <button class="secondary-button" data-bulk="print-label">Print Labels</button>
-          <button class="secondary-button" data-export-selected>Export Selected</button>
-          <button class="ghost-button" data-clear-selection>Clear</button>
+          <button class="secondary-button" data-bulk="check-out" ${count ? "" : "disabled"}>Check Out</button>
+          <button class="secondary-button" data-bulk="check-in" ${count ? "" : "disabled"}>Check In</button>
+          <button class="secondary-button" data-bulk="status-change" ${count ? "" : "disabled"}>Status Change</button>
+          <button class="secondary-button" data-bulk="print-label" ${count ? "" : "disabled"}>Print Labels</button>
+          <button class="secondary-button" data-export-selected ${count ? "" : "disabled"}>Export Selected</button>
+          ${count ? `<button class="ghost-button" data-clear-selection>Clear</button>` : ""}
+          ${isAdmin ? `<button class="primary-button" data-open-add-asset>Add Asset</button>` : ""}
         </div>
       </div>
     `;

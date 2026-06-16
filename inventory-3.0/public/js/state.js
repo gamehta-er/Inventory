@@ -34,6 +34,7 @@ var state = {
     addAssetCategoryId: "",
     toast: "",
     stale: false,
+    highlightActivityId: null,
   };
 
 var pages = ["Search", "Import", "Requests", "Reports", "Activity", "Admin"];

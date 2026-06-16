@@ -43,7 +43,11 @@ function bugLinks(value) {
 }
 
 function normalizeHeader(value) {
-  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return String(value || "")
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 function canonicalField(value) {

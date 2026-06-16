@@ -74,35 +74,3 @@
     `;
   }
 
-  function renderAddAssetForm(category) {
-    const extraFields = category.fields.filter((field) => !commonFilters.includes(field.key));
-    return `
-      <form id="addAssetForm" class="form-grid admin-add-form">
-        <div class="field full">
-          <label>Category <span class="required">*</span></label>
-          <select name="categoryId" data-add-category>
-            ${state.session.categories.map((cat) => `<option value="${cat.id}" ${String(cat.id) === String(category.id) ? "selected" : ""}>${esc(cat.name)}</option>`).join("")}
-          </select>
-        </div>
-        ${inputField("model", "Model", "", true)}
-        ${inputField("serial", "Serial No.", "", false)}
-        ${inputField("assetTag", "Asset Tag", "", true)}
-        ${selectField("status", "Status", "Ready to Deploy", statusOptions(), true)}
-        ${selectField("ownerId", "Owner / Assignee", "", [["", "Unassigned"], ...state.session.members.map((m) => [m.id, m.name])], false)}
-        ${selectField("locationId", "Location", "", state.session.locations.map((l) => [l.id, l.name]), true)}
-        ${inputField("usage", "Usage", "", false)}
-        ${inputField("nvbug", "NVBug #", "", false)}
-        ${selectField("borrowedLent", "Borrowed/Lent", "", [["", "None"], ["Borrowed", "Borrowed"], ["Lent", "Lent"]], false)}
-        ${extraFields.map((field) => field.options
-          ? selectField(`extra.${field.key}`, field.label, "", [["", `Select ${field.label}`], ...field.options.map((option) => [option, option])], field.required)
-          : inputField(`extra.${field.key}`, field.label, "", field.required)).join("")}
-        ${textareaField("notes", "Notes", "", false)}
-        ${textareaField("reason", "Reason", "", true)}
-      </form>
-      <div class="sticky-actions inline-actions">
-        <button class="primary-button" data-create-asset-row>Save New Row</button>
-        <button class="secondary-button" data-reset-add-row>Cancel</button>
-      </div>
-    `;
-  }
-

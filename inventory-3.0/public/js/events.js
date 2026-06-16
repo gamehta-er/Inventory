@@ -1,5 +1,5 @@
 ﻿  app.addEventListener("click", async (event) => {
-    const target = event.target.closest("button, [data-request-open-asset], [data-close-filters]");
+    const target = event.target.closest("button, [data-request-open-asset], [data-close-filters], [data-open-activity-asset], .activity-row-clickable");
     if (!target) return;
     try {
       if (target.dataset.nav) {
@@ -99,6 +99,12 @@
         if (target.dataset.action === "print-label") state.modal = { type: "print", asset };
         else state.modal = { type: "action", action: target.dataset.action, asset };
         render();
+      } else if (target.dataset.openAddAsset !== undefined) {
+        if (state.user.role !== "Admin User") return;
+        const category = addAssetCategoryFromSearch();
+        state.addAssetCategoryId = category?.id || "";
+        state.modal = { type: "add-asset" };
+        render();
       } else if (target.dataset.closeModal !== undefined) {
         state.modal = null;
         render();
@@ -114,26 +120,54 @@
         await afterMutation("Asset updated.");
         await loadAssetDetail(Number(target.dataset.saveEdit), "Overview");
       } else if (target.dataset.printNow || target.dataset.savePdf) {
+        const labelHtml = document.querySelector(".label-print-sheet")?.innerHTML || "";
         await api(`/api/v3/assets/${target.dataset.printNow || target.dataset.savePdf}/actions`, { method: "POST", body: { action: "print-label", actorName: state.user.name, reason: "Label preview" } });
-        window.print();
+        if (labelHtml) printLabelHtml(labelHtml);
+        state.modal = null;
         await afterMutation("Label prepared.");
       } else if (target.dataset.bulk) {
-        if (target.dataset.bulk === "print-label" && state.selected.size === 1) {
-          state.modal = { type: "print", asset: [...state.selected.values()][0] };
-        } else {
-          state.modal = { type: "bulk", action: target.dataset.bulk, preview: null };
-        }
-        render();
+        if (target.disabled) return;
+        await openBulkAction(target.dataset.bulk);
       } else if (target.dataset.previewBulk) {
+        await refreshSelectedRevisions();
         const payload = bulkPayload(target.dataset.previewBulk);
         state.modal.preview = await api("/api/v3/assets/bulk-preview", { method: "POST", body: payload });
         render();
       } else if (target.dataset.commitBulk) {
-        const payload = bulkPayload(target.dataset.commitBulk);
-        await api("/api/v3/assets/bulk-commit", { method: "POST", body: payload });
+        const action = target.dataset.commitBulk;
+        const form = document.getElementById("bulkForm");
+        if (form && action !== "print-label") {
+          const body = formToObject(form);
+          if (!String(body.reason || "").trim()) return setToast("Reason is required.");
+          if (action === "check-out" && !body.ownerId) return setToast("Owner is required for check out.");
+        }
+        await refreshSelectedRevisions();
+        const payload = bulkPayload(action);
+        if (action !== "print-label" && !payload.locationId) {
+          const first = state.selected.values().next().value;
+          if (first?.locationId) payload.locationId = first.locationId;
+        }
+        const labelHtml = action === "print-label"
+          ? document.querySelector(".label-print-sheet")?.innerHTML || ""
+          : "";
+        const result = await api("/api/v3/assets/bulk-commit", { method: "POST", body: payload });
+        const count = result.results?.length || payload.assetIds?.length || state.selected.size;
+        if (action === "print-label" && labelHtml) printLabelHtml(labelHtml);
         state.modal = null;
-        if (target.dataset.commitBulk === "print-label") window.print();
-        await afterMutation(target.dataset.commitBulk === "print-label" ? "Labels prepared." : "Bulk action applied.");
+        state.selected.clear();
+        const doneLabels = {
+          "check-out": "Check out complete",
+          "check-in": "Check in complete",
+          "status-change": "Status change complete",
+          "print-label": "Labels prepared",
+        };
+        await afterMutation(`${doneLabels[action] || "Bulk action complete"} — ${count} asset${count === 1 ? "" : "s"} updated.`);
+      } else if (target.dataset.openActivityAsset || target.classList.contains("activity-row-clickable")) {
+        const assetId = Number(target.dataset.openActivityAsset);
+        if (!assetId) return;
+        state.highlightActivityId = target.dataset.activityId || null;
+        state.page = "search";
+        await loadAssetDetail(assetId, "History");
       } else if (target.dataset.exportSelected !== undefined) {
         exportRows([...state.selected.values()]);
       } else if (target.dataset.previewImport !== undefined) {
@@ -235,16 +269,28 @@
         const form = document.getElementById("addAssetForm");
         if (!form) return;
         const body = formToObject(form);
-        const result = await api("/api/v3/assets", { method: "POST", body });
-        state.addAssetCategoryId = body.categoryId;
-        await afterMutation("New asset row added.");
-        if (result.detail) {
-          state.detail = result.detail;
-          state.detailTab = "Overview";
-          render();
+        if (!body.model?.trim()) return setToast("Model is required.");
+        if (!body.assetTag?.trim()) return setToast("Asset Tag is required.");
+        if (!body.locationId) return setToast("Location is required.");
+        if (!String(body.reason || "").trim()) return setToast("Reason is required.");
+        try {
+          const result = await api("/api/v3/assets", { method: "POST", body });
+          state.addAssetCategoryId = body.categoryId;
+          state.modal = null;
+          await afterMutation("New asset row added.");
+          if (result.detail) {
+            state.detail = result.detail;
+            state.detailTab = "Overview";
+            render();
+          }
+        } catch (error) {
+          const fieldErrors = error.data?.errors;
+          if (fieldErrors) setToast(Object.values(fieldErrors).join(" "));
+          else setToast(error.data?.error || error.message);
         }
       } else if (target.dataset.resetAddRow !== undefined) {
         state.addAssetCategoryId = "";
+        if (state.page === "search") state.modal = null;
         render();
       } else if (target.dataset.requestOpenAsset) {
         await loadAssetDetail(Number(target.dataset.requestOpenAsset), "Operations");
@@ -268,9 +314,10 @@
         await loadAssetDetail(assetId, tab);
       }
     } catch (error) {
+      const fieldErrors = error.data?.errors;
       const message = error.status === 409
         ? "Asset changed elsewhere. Refresh and try again."
-        : (error.data?.error || error.message);
+        : (fieldErrors ? Object.values(fieldErrors).join(" ") : (error.data?.error || error.message));
       setToast(message);
     }
   });
@@ -362,11 +409,12 @@
   async function afterMutation(message) {
     await loadSession();
     if (state.page === "search") await runSearch(false);
-    if (state.page === "reports") await loadReports();
-    if (state.page === "requests") await loadRequests();
-    if (state.page === "activity") await loadActivity();
-    if (state.page === "admin") await loadBackups();
+    if (state.page === "reports") await loadReports(false);
+    if (state.page === "requests") await loadRequests(false);
+    if (state.page === "activity") await loadActivity(false);
+    if (state.page === "admin") await loadBackups(false);
     setToast(message);
+    render();
   }
 
   function exportRows(rows) {

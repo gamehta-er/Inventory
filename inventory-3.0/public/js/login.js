@@ -8,7 +8,7 @@
             <div>NVIDIA <small>Inventory 3.0</small></div>
           </div>
           <h1 style="font-size:34px;line-height:1.08">Inventory Sign In</h1>
-          <p class="subtitle">Select your name, role, and pilot password.</p>
+          <p class="subtitle">Select your name and role for this pilot.</p>
           <div class="field" style="margin-top:20px">
             <label for="loginMember">Member</label>
             <select id="loginMember">
@@ -28,10 +28,6 @@
               <option value="Admin User">Admin User</option>
             </select>
           </div>
-          <div class="field" style="margin-top:12px">
-            <label for="loginPassword">Pilot password</label>
-            <input id="loginPassword" type="password" placeholder="Shared pilot password" />
-          </div>
           <button class="primary-button" id="loginContinue" style="width:100%;margin-top:20px">Continue</button>
         </section>
       </main>
@@ -50,15 +46,12 @@
     document.getElementById("loginContinue").addEventListener("click", async () => {
       const value = document.getElementById("loginMember").value;
       if (!value) return setToast("Select a member first.");
-      const password = document.getElementById("loginPassword").value;
-      if (!password) return setToast("Enter the pilot password.");
       try {
         const result = await api("/api/v3/login", {
           method: "POST",
           body: {
             memberId: value,
             role: document.getElementById("loginRole").value,
-            password,
           },
         });
         state.user = result.user;

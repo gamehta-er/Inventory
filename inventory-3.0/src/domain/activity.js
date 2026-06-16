@@ -26,7 +26,12 @@ function listAssetActivity(assetId, limit = 200) {
 }
 
 function listActivity(limit = 500) {
-  return db.prepare("SELECT * FROM asset_activity_log ORDER BY created_at DESC LIMIT ?").all(limit).map(formatActivity);
+  return db.prepare(`
+    SELECT * FROM asset_activity_log
+    WHERE parent_id IS NULL
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(limit).map(formatActivity);
 }
 
 module.exports = {

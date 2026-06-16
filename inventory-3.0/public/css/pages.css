@@ -17,6 +17,10 @@
   box-shadow: var(--shadow);
 }
 
+.modal-wide {
+  width: min(960px, 100%);
+}
+
 .modal-header,
 .modal-body,
 .modal-actions {
@@ -44,6 +48,12 @@
   border: 1px solid var(--line);
   border-radius: 13px;
   background: #f8fafb;
+}
+
+.bulk-label-sheet {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  place-items: stretch;
 }
 
 .label-card {
@@ -276,6 +286,57 @@ button.breakdown-row:hover {
 .activity-row strong {
   display: block;
   margin-top: 5px;
+}
+
+.activity-row-clickable {
+  cursor: pointer;
+}
+
+.activity-row-clickable:hover {
+  border-color: var(--accent);
+  background: rgba(118, 185, 0, 0.06);
+}
+
+.activity-asset-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.link-button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.activity-changes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.activity-changes span {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(118, 185, 0, 0.12);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.activity-highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(118, 185, 0, 0.18);
+}
+
+.alert-stack {
+  display: grid;
+  gap: 8px;
 }
 
 .backup-list {

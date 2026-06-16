@@ -55,31 +55,61 @@
 }
 
 @media print {
-  body * {
-    visibility: hidden;
+  @page {
+    size: 2.125in 1in;
+    margin: 0;
   }
 
-  .label-card,
-  .label-card * {
-    visibility: visible;
+  html,
+  body {
+    width: 2.125in;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    background: white;
   }
 
-  .label-card {
-    position: fixed;
-    left: 0;
-    top: 0;
+  body > *:not(#print-root) {
+    display: none !important;
+  }
+
+  #print-root {
+    display: block !important;
+    margin: 0;
+    padding: 0;
+  }
+
+  #print-root .label-card {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
     width: 2.125in;
     height: 1in;
+    margin: 0;
     padding: 0.08in;
+    border: none;
     border-radius: 0;
     box-shadow: none;
+    page-break-after: always;
+    break-after: page;
+    text-align: center;
   }
 
-  .label-card strong {
+  #print-root .label-card:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  #print-root .label-card strong {
+    display: block;
     font-size: 13pt;
+    line-height: 1.1;
   }
 
-  .barcode {
+  #print-root .barcode {
+    display: block;
     width: 1.75in;
     height: 0.32in;
   }

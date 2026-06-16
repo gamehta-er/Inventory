@@ -44,8 +44,7 @@ before(async () => {
       HOST: "127.0.0.1",
       PORT: String(port),
       DATA_DIR: tempDir,
-      SEED_MODE: "0",
-      PILOT_PASSWORD: "testpass",
+      SEED_MODE: "1",
       NODE_ENV: "test",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -64,8 +63,13 @@ before(async () => {
 });
 
 after(() => {
-  if (serverProc) serverProc.kill("SIGTERM");
-  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  if (serverProc) {
+    serverProc.kill("SIGTERM");
+    try { serverProc.kill("SIGKILL"); } catch { /* ignore */ }
+  }
+  if (tempDir) {
+    try { fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch { /* WAL lock on Windows */ }
+  }
 });
 
 test("health and ready endpoints", async () => {
@@ -83,7 +87,7 @@ test("unauthenticated session is rejected", async () => {
 });
 
 test("login and session", async () => {
-  const loginBody = JSON.stringify({ memberId: "guest", role: "Admin User", password: "testpass" });
+  const loginBody = JSON.stringify({ memberId: "guest", role: "Admin User" });
   const login = await request("/api/v3/login", {
     method: "POST",
     headers: { "content-type": "application/json", "content-length": Buffer.byteLength(loginBody) },
@@ -97,6 +101,37 @@ test("login and session", async () => {
 });
 
 test("csv escape blocks formula injection", () => {
-  const { csvEscape } = require(path.join(root, "src/lib/utils"));
+  const { csvEscape, canonicalField } = require(path.join(root, "src/lib/utils"));
   assert.equal(csvEscape("=1+1"), '"=1+1"');
+  assert.equal(canonicalField("assetTag"), "assetTag");
+  assert.equal(canonicalField("Asset Tag"), "assetTag");
+});
+
+test("create asset via API", async () => {
+  const loginBody = JSON.stringify({ memberId: "guest", role: "Admin User" });
+  const login = await request("/api/v3/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "content-length": Buffer.byteLength(loginBody) },
+    body: loginBody,
+  });
+  const cookie = login.headers["set-cookie"]?.[0] || "";
+  const session = await request("/api/v3/session", { headers: { cookie } });
+  const locationId = session.body.locations[0].id;
+  const categoryId = session.body.categories[0].id;
+  const body = JSON.stringify({
+    categoryId,
+    model: "Test GPU",
+    serial: "TEST-SN-001",
+    assetTag: "TEST-TAG-001",
+    status: "Ready to Deploy",
+    locationId,
+    reason: "API test create",
+  });
+  const created = await request("/api/v3/assets", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json", "content-length": Buffer.byteLength(body) },
+    body,
+  });
+  assert.equal(created.status, 200);
+  assert.equal(created.body.detail.asset.assetTag, "TEST-TAG-001");
 });

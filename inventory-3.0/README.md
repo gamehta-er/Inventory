@@ -2,6 +2,27 @@
 
 Clean-sheet local inventory pilot for #imargulis-staff.
 
+## Documentation
+
+Full documentation (architecture, tutorials, FAQ, troubleshooting):
+
+| Format | How to view |
+|--------|-------------|
+| **Markdown** | Start at [`docs/index.md`](docs/index.md) |
+| **Local site** | `pip install -r requirements-docs.txt && mkdocs serve` → http://127.0.0.1:8000 |
+| **GitLab Pages** | Published from CI to `/inventory-3.0/` when docs change |
+
+### Doc sections
+
+- [Overview](docs/index.md)
+- [Architecture](docs/architecture.md)
+- [Getting started](docs/getting-started.md)
+- [Tutorials](docs/tutorials/first-checkout.md) — checkout, bulk, import, admin
+- [FAQ](docs/faq.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [API overview](docs/api-overview.md)
+- [Go-live checklist](docs/GO-LIVE-CHECKLIST.md)
+
 ## Run
 
 From this directory:
@@ -18,7 +39,7 @@ Default URL:
 http://127.0.0.1:3003
 ```
 
-Default pilot password: `pilot` (override with `PILOT_PASSWORD`).
+Sign in with member + role (no password during multi-user pilot testing).
 
 ## Environment
 
@@ -30,21 +51,21 @@ Default pilot password: `pilot` (override with `PILOT_PASSWORD`).
 | `DB_PATH` | `{DATA_DIR}/inventory-3.db` | SQLite database file path |
 | `NODE_ENV` | *(unset)* | Set `production` to disable synthetic seed |
 | `SEED_MODE` | *(auto)* | Set `0` to disable synthetic seed on any environment |
-| `PILOT_PASSWORD` | `pilot` | Shared password for pilot login |
 
 Example — store data outside the repo:
 
 ```powershell
 $env:DATA_DIR = "D:\inventory-pilot\data"
-$env:PILOT_PASSWORD = "change-me"
 node server.js
 ```
 
 ## Tests
 
 ```powershell
-node --test test/hardening.test.js
+node --test test/hardening.test.js test/stress.test.js
 ```
+
+Stress suite runs **10 iterations** each of create, edit, checkout, bulk, import, backup, and reports.
 
 ## Operations
 
@@ -52,13 +73,6 @@ node --test test/hardening.test.js
 - Logs: `data/logs/app.log` (errors, restore, blocked imports).
 - Request body limit: 12 MB (`src/lib/http.js`).
 - Nightly backup example (Task Scheduler): copy `data/inventory-3.db` to `data/backups/`.
-
-## Go-live docs
-
-- `docs/HARDENING-RULES.md` — change rules
-- `docs/GO-LIVE-CHECKLIST.md` — 25 manual smoke steps
-- `docs/ROLLBACK.md` — backup and restore
-- `docs/COLOSSUS-FIELD-MAP.md` — import column mapping
 
 ## Notes
 

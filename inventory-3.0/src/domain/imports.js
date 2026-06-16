@@ -166,7 +166,7 @@ function commitImport(batchId, actorName = "Import User") {
       const statusId = statusIdForName(status);
       const info = db.prepare(`
         INSERT INTO assets (model_id, category_id, serial, asset_tag, status, status_id, owner_id, location_id, usage, nvbug, borrowed_lent, notes, extra_json, archived, created_at, updated_at, revision)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)
       `).run(
         modelId,
         category.id,

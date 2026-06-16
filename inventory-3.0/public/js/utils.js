@@ -43,3 +43,19 @@
     };
     return map[key] || key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
   }
+
+  function printLabelHtml(labelHtml) {
+    const existing = document.getElementById("print-root");
+    if (existing) existing.remove();
+    const root = document.createElement("div");
+    root.id = "print-root";
+    root.className = "label-print-sheet";
+    root.innerHTML = labelHtml;
+    document.body.appendChild(root);
+    const cleanup = () => {
+      root.remove();
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+  }

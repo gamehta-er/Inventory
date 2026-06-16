@@ -12,7 +12,7 @@ const {
   getOrCreateModel,
 } = require("./catalog");
 const { formatActivity } = require("./activity");
-const { assertDeployable, findStatusByName } = require("./statusLabels");
+const { assertAvailableForCheckout, findStatusByName } = require("./statusLabels");
 const {
   requireRevision,
   validateAssetPatch,
@@ -41,7 +41,7 @@ function hydrateAsset(row) {
     serial: row.serial || "",
     assetTag: row.asset_tag,
     status: row.status,
-    ownerId: row.owner_id || "",
+    ownerId: row.owner_id ?? "",
     owner: row.owner_name || "",
     ownerEmail: row.owner_email || "",
     locationId: row.location_id,
@@ -218,6 +218,18 @@ function assetDetail(id) {
   return { asset, fields: fieldRows(asset.categoryId), requests, activity, checkouts };
 }
 
+function resolveOwnerId(patchValue, currentValue) {
+  if (patchValue !== undefined) {
+    return patchValue === "" || patchValue === null ? null : patchValue;
+  }
+  return currentValue || null;
+}
+
+function asOwnerId(value) {
+  if (value === undefined || value === null || value === "") return null;
+  return value;
+}
+
 function updateAsset(id, patch, actorName = "Admin User") {
   const current = getAsset(id, true);
   if (!current) throw httpError(404, "Asset not found.");
@@ -230,7 +242,7 @@ function updateAsset(id, patch, actorName = "Admin User") {
     const modelId = patch.model ? getOrCreateModel(categoryId, patch.model, patch) : current.modelId;
     const extra = { ...current.extra, ...(patch.extra || {}) };
     const before = current;
-    const nextOwner = patch.ownerId === "" ? null : (patch.ownerId ?? current.ownerId ?? null);
+    const nextOwner = resolveOwnerId(patch.ownerId, current.ownerId);
     const nextLocation = patch.locationId ?? current.locationId;
     const nextStatus = patch.status ?? current.status;
     const nextStatusId = statusIdForName(nextStatus);
@@ -287,7 +299,7 @@ function createAsset(payload, actorName = "Admin User") {
     serial: String(payload.serial || "").trim(),
     assetTag: String(payload.assetTag || "").trim(),
     status: payload.status || "Ready to Deploy",
-    ownerId: payload.ownerId || "",
+    ownerId: asOwnerId(payload.ownerId),
     locationId: payload.locationId || "",
   };
   const extra = payload.extra || {};
@@ -299,7 +311,7 @@ function createAsset(payload, actorName = "Admin User") {
       INSERT INTO assets (
         model_id, category_id, serial, asset_tag, status, status_id, owner_id, location_id,
         usage, nvbug, borrowed_lent, notes, extra_json, archived, created_at, updated_at, revision
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)
     `).run(
       modelId,
       category.id,
@@ -307,7 +319,7 @@ function createAsset(payload, actorName = "Admin User") {
       base.assetTag,
       base.status,
       statusId,
-      base.ownerId || null,
+      base.ownerId,
       base.locationId,
       payload.usage || "",
       normalizeBug(payload.nvbug || ""),
@@ -334,10 +346,10 @@ function createAsset(payload, actorName = "Admin User") {
   });
 }
 
-function applyAction(id, action, payload = {}, parentId = null, actorName = "Inventory User", actorMemberId = null) {
+function applyAction(id, action, payload = {}, parentId = null, actorName = "Inventory User", actorMemberId = null, skipActivity = false) {
   const current = getAsset(id, true);
   if (!current) throw httpError(404, "Asset not found.");
-  if (action !== "print-label") requireRevision(current, payload);
+  if (action !== "print-label" && action !== "request") requireRevision(current, payload);
   const reason = String(payload.reason || "").trim();
   const nvbug = normalizeBug(payload.nvbug || "");
 
@@ -347,7 +359,7 @@ function applyAction(id, action, payload = {}, parentId = null, actorName = "Inv
       const info = db.prepare(`
         INSERT INTO asset_requests (asset_id, type, priority, status, owner_id, reason, nvbug, created_at, updated_at)
         VALUES (?, ?, ?, 'Open', ?, ?, ?, ?, ?)
-      `).run(id, payload.requestType || "Support", payload.priority || "Normal", payload.ownerId || null, reason, nvbug, now(), now());
+      `).run(id, payload.requestType || "Support", payload.priority || "Normal", asOwnerId(payload.ownerId), reason, nvbug, now(), now());
       logActivity({
         parentId,
         assetId: id,
@@ -365,16 +377,18 @@ function applyAction(id, action, payload = {}, parentId = null, actorName = "Inv
 
   if (action === "print-label") {
     return tx(() => {
-      logActivity({
-        parentId,
-        assetId: id,
-        modelId: current.modelId,
-        actorName,
-        action: "print-label",
-        summary: `Prepared label for ${current.assetTag}`,
-        reason: reason || "Label preview",
-        nvbug,
-      });
+      if (!skipActivity) {
+        logActivity({
+          parentId,
+          assetId: id,
+          modelId: current.modelId,
+          actorName,
+          action: "print-label",
+          summary: `Prepared label for ${current.assetTag}`,
+          reason: reason || "Label preview",
+          nvbug,
+        });
+      }
       return { detail: assetDetail(id) };
     });
   }
@@ -382,10 +396,13 @@ function applyAction(id, action, payload = {}, parentId = null, actorName = "Inv
   if (action === "check-out") {
     const errors = validateCheckout(payload, current);
     if (Object.keys(errors).length) throw httpError(400, "Missing required fields.", { errors });
-    assertDeployable(payload.status);
+    assertAvailableForCheckout(current);
+    if (!findStatusByName(payload.status)) {
+      throw httpError(400, "Invalid status.", { errors: { status: "Invalid status." } });
+    }
     return tx(() => {
       const before = current;
-      const ownerId = payload.ownerId || current.ownerId || null;
+      const ownerId = asOwnerId(payload.ownerId) ?? asOwnerId(current.ownerId);
       const statusId = statusIdForName(payload.status);
       db.prepare(`
         UPDATE assets SET status = ?, status_id = ?, owner_id = ?, location_id = ?, usage = ?, nvbug = ?, borrowed_lent = ?,
@@ -402,28 +419,30 @@ function applyAction(id, action, payload = {}, parentId = null, actorName = "Inv
         statusAtCheckout: payload.status,
       });
       const after = getAsset(id, true);
-      logActivity({
-        parentId,
-        assetId: id,
-        modelId: current.modelId,
-        actorName,
-        action: "check-out",
-        summary: `check-out ${current.assetTag}`,
-        before,
-        after,
-        reason,
-        nvbug,
-      });
+      if (!skipActivity) {
+        logActivity({
+          parentId,
+          assetId: id,
+          modelId: current.modelId,
+          actorName,
+          action: "check-out",
+          summary: `Checked out ${current.assetTag}`,
+          before,
+          after,
+          reason,
+          nvbug,
+        });
+      }
       return { detail: assetDetail(id) };
     });
   }
 
   if (action === "check-in") {
-    const errors = validateCheckin(payload);
+    const errors = validateCheckin(payload, current);
     if (Object.keys(errors).length) throw httpError(400, "Missing required fields.", { errors });
     return tx(() => {
       const before = current;
-      const ownerId = payload.ownerId || null;
+      const ownerId = asOwnerId(payload.ownerId);
       const statusId = statusIdForName(payload.status);
       closeCheckout(id, { reason, nvbug });
       db.prepare(`
@@ -433,18 +452,20 @@ function applyAction(id, action, payload = {}, parentId = null, actorName = "Inv
         WHERE id = ?
       `).run(payload.status, statusId, ownerId, payload.locationId, payload.usage ?? current.usage, nvbug || current.nvbug, payload.borrowedLent ?? current.borrowedLent, payload.status, now(), id);
       const after = getAsset(id, true);
-      logActivity({
-        parentId,
-        assetId: id,
-        modelId: current.modelId,
-        actorName,
-        action: "check-in",
-        summary: `check-in ${current.assetTag}`,
-        before,
-        after,
-        reason,
-        nvbug,
-      });
+      if (!skipActivity) {
+        logActivity({
+          parentId,
+          assetId: id,
+          modelId: current.modelId,
+          actorName,
+          action: "check-in",
+          summary: `Checked in ${current.assetTag}`,
+          before,
+          after,
+          reason,
+          nvbug,
+        });
+      }
       return { detail: assetDetail(id) };
     });
   }
@@ -455,7 +476,7 @@ function applyAction(id, action, payload = {}, parentId = null, actorName = "Inv
 
   return tx(() => {
     const before = current;
-    const ownerId = payload.ownerId || current.ownerId || null;
+    const ownerId = resolveOwnerId(payload.ownerId, current.ownerId);
     const statusId = statusIdForName(payload.status);
     db.prepare(`
       UPDATE assets SET status = ?, status_id = ?, owner_id = ?, location_id = ?, usage = ?, nvbug = ?, borrowed_lent = ?,
@@ -464,20 +485,31 @@ function applyAction(id, action, payload = {}, parentId = null, actorName = "Inv
       WHERE id = ?
     `).run(payload.status, statusId, ownerId, payload.locationId, payload.usage ?? current.usage, nvbug || current.nvbug, payload.borrowedLent ?? current.borrowedLent, payload.status, now(), id);
     const after = getAsset(id, true);
-    logActivity({
-      parentId,
-      assetId: id,
-      modelId: current.modelId,
-      actorName,
-      action,
-      summary: `${action} ${current.assetTag}`,
-      before,
-      after,
-      reason,
-      nvbug,
-    });
+    if (!skipActivity) {
+      logActivity({
+        parentId,
+        assetId: id,
+        modelId: current.modelId,
+        actorName,
+        action,
+        summary: `${humanActionName(action)} ${current.assetTag}`,
+        before,
+        after,
+        reason,
+        nvbug,
+      });
+    }
     return { detail: assetDetail(id) };
   });
+}
+
+function humanActionName(action) {
+  const map = {
+    "check-out": "Checked out",
+    "check-in": "Checked in",
+    "status-change": "Status changed for",
+  };
+  return map[action] || action;
 }
 
 function previewBulk(payload) {
@@ -492,9 +524,11 @@ function previewBulk(payload) {
       ineligible.push({ id, reason: "Asset not found." });
       continue;
     }
-    if (!expected[id] || Number(expected[id]) !== Number(asset.revision)) {
-      conflicts.push({ id, assetTag: asset.assetTag, reason: "Revision required or stale.", currentRevision: asset.revision });
-      continue;
+    if (payload.action !== "print-label") {
+      if (!expected[id] || Number(expected[id]) !== Number(asset.revision)) {
+        conflicts.push({ id, assetTag: asset.assetTag, reason: "Revision required or stale.", currentRevision: asset.revision });
+        continue;
+      }
     }
     if (asset.archived && !["restore", "print-label"].includes(payload.action)) {
       ineligible.push({ id, assetTag: asset.assetTag, reason: "Archived assets cannot use this action." });
@@ -512,61 +546,55 @@ function previewBulk(payload) {
   };
 }
 
-function commitBulk(payload, actorName = "Inventory User") {
+function commitBulk(payload, actorName = "Inventory User", actorMemberId = null) {
   const preview = previewBulk(payload);
-  if (preview.conflicts.length || preview.ineligible.length) throw httpError(409, "Bulk action has conflicts or ineligible assets.", { preview });
-  if (!preview.eligible.length) throw httpError(400, "No eligible assets selected.");
-  return tx(() => {
-    const parentId = logActivity({
-      actorName,
-      action: "bulk-action",
-      summary: `Bulk ${payload.action} for ${preview.eligible.length} assets`,
-      reason: payload.reason || "",
-      nvbug: payload.nvbug || "",
-      metadata: { action: payload.action, count: preview.eligible.length },
-    });
-    const results = [];
-    for (const row of preview.eligible) {
-      const current = getAsset(row.id, true);
-      if (payload.action === "print-label") {
-        logActivity({
-          parentId,
-          assetId: row.id,
-          modelId: current.modelId,
-          actorName,
-          action: "print-label",
-          summary: `Prepared label for ${current.assetTag}`,
-          reason: payload.reason || "Bulk label print",
-          nvbug: payload.nvbug || "",
-        });
-      } else {
-        const before = current;
-        const statusId = statusIdForName(payload.status);
-        db.prepare(`
-          UPDATE assets SET status = ?, status_id = ?, owner_id = COALESCE(?, owner_id), location_id = COALESCE(?, location_id),
-            usage = COALESCE(?, usage), nvbug = COALESCE(NULLIF(?, ''), nvbug), borrowed_lent = COALESCE(?, borrowed_lent),
-            archived = CASE WHEN ? IN ('Archived', 'E-Wasted') THEN 1 ELSE archived END,
-            updated_at = ?, revision = revision + 1
-          WHERE id = ?
-        `).run(payload.status, statusId, payload.ownerId || null, payload.locationId || null, payload.usage || null, normalizeBug(payload.nvbug || ""), payload.borrowedLent || null, payload.status, now(), row.id);
-        const after = getAsset(row.id, true);
-        logActivity({
-          parentId,
-          assetId: row.id,
-          modelId: current.modelId,
-          actorName,
-          action: payload.action,
-          summary: `Bulk ${payload.action} ${current.assetTag}`,
-          before,
-          after,
-          reason: payload.reason,
-          nvbug: payload.nvbug || "",
-        });
-      }
-      results.push({ id: row.id, assetTag: row.assetTag, ok: true });
-    }
-    return { preview, results };
+  if (preview.conflicts.length) throw httpError(409, "Bulk action has conflicts.", { preview });
+  if (!preview.eligible.length) throw httpError(400, "No eligible assets selected.", { preview });
+  const tags = preview.eligible.map((row) => row.assetTag).join(", ");
+  const actionLabel = {
+    "check-out": "Checked out",
+    "check-in": "Checked in",
+    "status-change": "Status changed for",
+    "print-label": "Printed labels for",
+  }[payload.action] || `Bulk ${payload.action} for`;
+  const parentId = logActivity({
+    actorName,
+    action: "bulk-action",
+    summary: `${actionLabel}: ${tags}`,
+    reason: payload.reason || "",
+    nvbug: payload.nvbug || "",
+    source: "bulk",
+    metadata: {
+      action: payload.action,
+      count: preview.eligible.length,
+      skipped: preview.ineligible.length,
+      assetIds: preview.eligible.map((row) => row.id),
+      assetTags: preview.eligible.map((row) => row.assetTag),
+    },
   });
+  const results = [];
+  for (const row of preview.eligible) {
+    const current = getAsset(row.id, true);
+    if (payload.action === "print-label") {
+      applyAction(row.id, "print-label", {
+        reason: payload.reason || "Bulk label print",
+        nvbug: payload.nvbug || "",
+      }, parentId, actorName, actorMemberId, true);
+    } else {
+      applyAction(row.id, payload.action, {
+        revision: current.revision,
+        status: payload.status || current.status,
+        ownerId: resolveOwnerId(payload.ownerId, current.ownerId),
+        locationId: payload.locationId || current.locationId,
+        usage: payload.usage,
+        nvbug: payload.nvbug,
+        borrowedLent: payload.borrowedLent,
+        reason: payload.reason,
+      }, parentId, actorName, actorMemberId, true);
+    }
+    results.push({ id: row.id, assetTag: row.assetTag, ok: true });
+  }
+  return { preview, results, parentId };
 }
 
 module.exports = {
