@@ -65,7 +65,8 @@ function actorFromSession(session) {
 }
 
 function sessionCookie(token) {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  // Only mark Secure when explicitly enabled (HTTPS). HTTP pilot hosts must not set Secure.
+  const secure = process.env.COOKIE_SECURE === "1" ? "; Secure" : "";
   return `inventory3_session=${token}; Path=/; HttpOnly; SameSite=Lax${secure}`;
 }
 

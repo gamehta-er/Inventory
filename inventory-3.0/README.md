@@ -74,6 +74,17 @@ Stress suite runs **10 iterations** each of create, edit, checkout, bulk, import
 - Request body limit: 12 MB (`src/lib/http.js`).
 - Nightly backup example (Task Scheduler): copy `data/inventory-3.db` to `data/backups/`.
 
+## Reseed synthetic data
+
+Dev seed runs once per empty database. To reload the synthetic roster and ~110 active assets:
+
+```powershell
+Remove-Item .\data\inventory-3.db* -ErrorAction SilentlyContinue
+node server.js
+```
+
+Ensure `SEED_MODE` is not `0` and `NODE_ENV` is not `production`.
+
 ## Notes
 
 - Uses SQLite with WAL, schema migrations, mandatory revision checks, and server-side auth.

@@ -60,7 +60,9 @@
         await runSearch(false);
         render();
       } catch (error) {
-        setToast(error.data?.error || error.message);
+        state.user = null;
+        localStorage.removeItem("inventory3.user");
+        setToast(error.data?.error || error.message || "Sign in failed. Try again.");
       }
     });
   }

@@ -9,6 +9,7 @@
         if (state.page === "requests") await loadRequests(false);
         if (state.page === "activity") await loadActivity(false);
         if (state.page === "admin") await loadBackups(false);
+        if (state.page === "import") await loadImportSample(null, false);
         render();
       } else if (target.dataset.signout !== undefined) {
         document.cookie = "inventory3_session=; Path=/; Max-Age=0";
@@ -22,6 +23,7 @@
         if (state.page === "requests") await loadRequests(false);
         if (state.page === "activity") await loadActivity(false);
         if (state.page === "admin") await loadBackups(false);
+        if (state.page === "import") await loadImportSample(null, false);
         state.stale = false;
         render();
       } else if (target.dataset.search !== undefined) {
@@ -170,6 +172,18 @@
         await loadAssetDetail(assetId, "History");
       } else if (target.dataset.exportSelected !== undefined) {
         exportRows([...state.selected.values()]);
+      } else if (target.dataset.importHelpTab) {
+        state.importHelpTab = target.dataset.importHelpTab;
+        render();
+      } else if (target.dataset.downloadImportSample !== undefined) {
+        if (!state.importSample?.csv) return setToast("Sample template is not ready yet.");
+        const blob = new Blob([state.importSample.csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = state.importSample.filename || "inventory-3-sample.csv";
+        a.click();
+        URL.revokeObjectURL(url);
       } else if (target.dataset.previewImport !== undefined) {
         const form = new FormData();
         form.append("importProfile", document.getElementById("importProfile").value);
@@ -323,6 +337,10 @@
   });
 
   app.addEventListener("change", async (event) => {
+    if (event.target.id === "importProfile") {
+      await loadImportSample(event.target.value, true);
+      return;
+    }
     const select = event.target.closest("[data-filter], [data-report-filter], [data-select-asset], [data-profile-required], [data-add-category]");
     if (!select) return;
     if (select.dataset.selectAsset) {

@@ -18,6 +18,7 @@ const { listAssetActivity, listActivity } = require("../domain/activity");
 const { listBackups, createBackup, backupPathById, restoreBackup } = require("../domain/backups");
 const { listRequests } = require("../domain/requests");
 const { validateImport, commitImport } = require("../domain/imports");
+const { getImportSample } = require("../domain/importSamples");
 const { reportAssets, exportAssetsCsv } = require("../domain/reports");
 const { uploadModelImage, removeModelImage } = require("../domain/images");
 const { updateCategoryFields } = require("../domain/catalog");
@@ -168,6 +169,10 @@ async function handleApi(req, res, requestUrl) {
   }
 
   if (req.method === "GET" && pathname === "/api/v3/requests") return sendJson(res, 200, { requests: listRequests() });
+
+  if (req.method === "GET" && pathname === "/api/v3/import/sample") {
+    return sendJson(res, 200, getImportSample(query.profile || "assets-gpu"));
+  }
 
   if (req.method === "POST" && pathname === "/api/v3/import/preview") {
     requireAdmin(session);

@@ -7,6 +7,7 @@ const migrationsDir = path.join(__dirname, "..", "..", "migrations");
 const {
   STATUSES,
   TEAM_MEMBERS,
+  SYNTHETIC_ASSET_COUNTS,
   COMMON_FIELDS,
   CATEGORY_PROFILES,
 } = require("../config/constants");
@@ -255,13 +256,173 @@ function logActivity(entry) {
 
 function shouldSeed() {
   if (process.env.SEED_MODE === "0") return false;
+  if (process.env.SEED_MODE === "1") return true;
   if (process.env.NODE_ENV === "production") return false;
   return true;
 }
 
+function seedMasterDataIfNeeded() {
+  if (process.env.SEED_MODE === "0") return;
+  const memberCount = db.prepare("SELECT COUNT(*) AS count FROM team_members").get().count;
+  const categoryCount = db.prepare("SELECT COUNT(*) AS count FROM categories").get().count;
+  const locationCount = db.prepare("SELECT COUNT(*) AS count FROM locations").get().count;
+  if (memberCount && categoryCount && locationCount) return;
+
+  tx(() => {
+    if (!db.prepare("SELECT COUNT(*) AS count FROM app_meta WHERE key = 'revision'").get().count) {
+      db.prepare("INSERT INTO app_meta (key, value) VALUES ('revision', '1')").run();
+    }
+    if (!categoryCount) {
+      const insertCategory = db.prepare("INSERT INTO categories (slug, name, description, prefix, sort_order) VALUES (?, ?, ?, ?, ?)");
+      const insertField = db.prepare("INSERT INTO field_definitions (category_id, field_key, label, type, required, options_json, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)");
+      CATEGORY_PROFILES.forEach((profile, index) => {
+        const categoryInfo = insertCategory.run(profile.slug, profile.name, profile.description, profile.prefix, index + 1);
+        const categoryId = Number(categoryInfo.lastInsertRowid);
+        let sort = 1;
+        COMMON_FIELDS.forEach(([key, label, type, required]) => {
+          const options = key === "status" ? STATUSES : key === "borrowedLent" ? ["", "Borrowed", "Lent"] : null;
+          insertField.run(categoryId, key, label, type, required, options ? json(options) : null, sort++);
+        });
+        profile.fields.forEach(([key, label, type, required, options]) => {
+          insertField.run(categoryId, key, label, type, required, options ? json(options) : null, sort++);
+        });
+      });
+    }
+    if (!memberCount) {
+      const insertMember = db.prepare("INSERT INTO team_members (name, email, username) VALUES (?, ?, ?)");
+      TEAM_MEMBERS.forEach((member) => insertMember.run(...member));
+    }
+    if (!locationCount) {
+      const insertLocation = db.prepare("INSERT INTO locations (name, building, detail) VALUES (?, ?, ?)");
+      const buildings = ["Building R", "Building S", "Building E"];
+      for (const building of buildings) {
+        for (const detail of ["Lab 104 / Rack 01 / Cabinet 01", "Lab 209 / Rack 02 / Cabinet 02", "Lab 305 / Rack 03 / Cabinet 03", "Lab 410 / Storage 04", "Lab 512 / Rack 05 / Cabinet 05"]) {
+          insertLocation.run(`Santa Clara ${building} / ${detail}`, building, detail);
+        }
+      }
+    }
+    if (!db.prepare("SELECT COUNT(*) AS count FROM label_templates").get().count) {
+      db.prepare("INSERT INTO label_templates (name, width_in, height_in, layout_json) VALUES (?, ?, ?, ?)").run(
+        "Small Asset Label",
+        2.125,
+        1,
+        json({ line1: "model", line2: "assetTag", barcode: "assetTag", line3: "serial" }),
+      );
+    }
+  }, false);
+}
+
+function seedSyntheticAssetsIfNeeded() {
+  const categoryCount = db.prepare("SELECT COUNT(*) AS count FROM categories").get().count;
+  const assetCount = db.prepare("SELECT COUNT(*) AS count FROM assets").get().count;
+  if (!categoryCount || assetCount || !shouldSeed()) return;
+
+  tx(() => {
+    const members = db.prepare("SELECT id FROM team_members ORDER BY id").all();
+    const locations = db.prepare("SELECT id FROM locations ORDER BY id").all();
+    if (!members.length || !locations.length) return;
+
+    const insertModel = db.prepare(`
+      INSERT INTO asset_models (category_id, name, manufacturer, model_number, sku, description, label_line, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertAsset = db.prepare(`
+      INSERT INTO assets (
+        model_id, category_id, serial, asset_tag, status, status_id, owner_id, location_id,
+        usage, nvbug, borrowed_lent, notes, extra_json, archived, created_at, updated_at, revision
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const statusCycle = ["Idle", "In Use", "Ready to Deploy", "Broken", "In Use", "Idle", "E-waste Pending"];
+    const usageCycle = ["Lab validation", "AI research", "Driver bring-up", "Automation", "Regression pool", "Thermal study", "Rack qualification"];
+    let globalAssetNumber = 1;
+
+    for (const profile of CATEGORY_PROFILES) {
+      const category = db.prepare("SELECT id FROM categories WHERE slug = ?").get(profile.slug);
+      if (!category) continue;
+      const modelIds = profile.models.map((modelName, modelIndex) => {
+        const sku = `${profile.prefix}-SKU-${String(modelIndex + 1).padStart(3, "0")}`;
+        const info = insertModel.run(
+          category.id,
+          modelName,
+          modelName.includes("Cable") ? "CableWorks" : modelName.includes("Switch") ? "NetFabric" : "Lab Systems",
+          `${profile.prefix}-${String(modelIndex + 1).padStart(4, "0")}`,
+          sku,
+          `${profile.name} model prepared for Inventory 3.0 validation.`,
+          `${profile.prefix} ${modelName}`,
+          now(),
+          now(),
+        );
+        return Number(info.lastInsertRowid);
+      });
+
+      const perCategory = SYNTHETIC_ASSET_COUNTS[profile.slug] ?? 8;
+      for (let i = 1; i <= perCategory; i += 1) {
+        const modelId = modelIds[(i - 1) % modelIds.length];
+        let status = statusCycle[(i - 1) % statusCycle.length];
+        if (profile.slug === "e-waste") status = i % 3 === 0 ? "E-Wasted" : "E-waste Pending";
+        if (profile.slug === "broken-devices") status = i % 4 === 0 ? "E-waste Pending" : "Broken";
+        const archived = status === "E-Wasted" ? 1 : 0;
+        const ownerId = status === "In Use" || status === "Lent" || profile.slug === "low-price-consumables" ? members[(i + globalAssetNumber) % members.length].id : null;
+        const loc = locations[(i + globalAssetNumber) % locations.length].id;
+        const assetTag = `INV3-${profile.prefix}-${String(i).padStart(5, "0")}`;
+        const serial = profile.slug === "low-price-consumables" ? "" : `${profile.prefix}3${String(20260000 + globalAssetNumber).padStart(8, "0")}`;
+        const extra = {};
+        for (const [key, label, type] of profile.fields) {
+          if (type === "date") extra[key] = `2026-${String(((i - 1) % 9) + 1).padStart(2, "0")}-${String(((i - 1) % 23) + 1).padStart(2, "0")}`;
+          else if (key === "quantity") extra[key] = 5 + (i % 40);
+          else if (key === "requester") extra[key] = TEAM_MEMBERS[(i + 2) % TEAM_MEMBERS.length][0];
+          else if (key === "problem") extra[key] = "Synthetic repair triage item. Validate before returning to service.";
+          else if (key === "eWastePending") extra[key] = i % 3 === 0 ? "Yes" : "No";
+          else if (key === "type") extra[key] = ["ETH", "IB", "RJ45"][i % 3];
+          else if (key === "gpuClass") extra[key] = ["Data Center", "Professional", "RTX"][i % 3];
+          else if (key === "nativeResolution") extra[key] = ["3840x2160", "2560x1440", "1920x1080"][i % 3];
+          else if (key === "openPartNo") extra[key] = `${profile.prefix}-OPN-${String(i).padStart(4, "0")}`;
+          else if (key === "ip") extra[key] = `10.30.${(i % 20) + 1}.${(globalAssetNumber % 200) + 20}`;
+          else extra[key] = `${label} ${String(i).padStart(2, "0")}`;
+        }
+        const statusIdRow = db.prepare("SELECT id FROM status_labels WHERE name = ?").get(status);
+        insertAsset.run(
+          modelId,
+          category.id,
+          serial,
+          assetTag,
+          status,
+          statusIdRow ? statusIdRow.id : null,
+          ownerId,
+          loc,
+          usageCycle[i % usageCycle.length],
+          String(9000000 + globalAssetNumber),
+          i % 17 === 0 ? "Borrowed" : i % 19 === 0 ? "Lent" : "",
+          "Synthetic Inventory 3.0 seed record.",
+          json(extra),
+          archived,
+          now(),
+          now(),
+          1,
+        );
+        logActivity({
+          assetId: Number(db.prepare("SELECT last_insert_rowid() AS id").get().id),
+          modelId,
+          actorName: "System",
+          action: "seed",
+          summary: `Seeded ${assetTag}`,
+          source: "seed",
+          metadata: { synthetic: true },
+        });
+        globalAssetNumber += 1;
+      }
+    }
+    bumpRevision();
+  }, false);
+}
+
 function seedIfNeeded() {
   const count = db.prepare("SELECT COUNT(*) AS count FROM categories").get().count;
-  if (count || !shouldSeed()) return;
+  if (count || !shouldSeed()) {
+    seedSyntheticAssetsIfNeeded();
+    return;
+  }
   tx(() => {
     db.prepare("INSERT INTO app_meta (key, value) VALUES ('revision', '1')").run();
 
@@ -333,7 +494,7 @@ function seedIfNeeded() {
         return Number(info.lastInsertRowid);
       });
 
-      const assetCount = profile.slug === "low-price-consumables" ? 18 : profile.slug === "converged-gpu-dpu" ? 15 : profile.slug === "switch" ? 18 : profile.slug === "broken-devices" ? 16 : profile.slug === "e-waste" ? 18 : 32;
+      const assetCount = SYNTHETIC_ASSET_COUNTS[profile.slug] ?? 8;
       for (let i = 1; i <= assetCount; i += 1) {
         const modelId = modelIds[(i - 1) % modelIds.length];
         let status = statusCycle[(i - 1) % statusCycle.length];
@@ -395,7 +556,9 @@ function seedIfNeeded() {
 
 initSchema();
 runMigrations();
+seedMasterDataIfNeeded();
 seedIfNeeded();
+seedSyntheticAssetsIfNeeded();
 
 module.exports = {
   db,

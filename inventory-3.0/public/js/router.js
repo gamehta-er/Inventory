@@ -61,6 +61,7 @@
     if (state.page === "requests") await loadRequests(false);
     if (state.page === "activity") await loadActivity(false);
     if (state.page === "admin") await loadBackups(false);
+    if (state.page === "import") await loadImportSample(null, false);
     pushUrl(true);
     render();
     setInterval(checkRevision, 15000);
@@ -77,6 +78,7 @@
       if (state.page === "requests") await loadRequests(false);
       if (state.page === "activity") await loadActivity(false);
       if (state.page === "admin") await loadBackups(false);
+      if (state.page === "import") await loadImportSample(null, false);
       render();
     } catch (error) {
       setToast(error.message);

@@ -44,6 +44,20 @@
     if (renderAfter) render();
   }
 
+  async function loadImportSample(profileId, renderAfter = true) {
+    const id = profileId
+      || document.getElementById("importProfile")?.value
+      || state.session?.importProfiles?.[0]?.id
+      || "assets-gpu";
+    if (state.importSampleProfileId === id && state.importSample) {
+      if (renderAfter) render();
+      return;
+    }
+    state.importSample = await api(`/api/v3/import/sample?profile=${encodeURIComponent(id)}`);
+    state.importSampleProfileId = id;
+    if (renderAfter) render();
+  }
+
   async function refreshSelectedRevisions() {
     const ids = [...state.selected.keys()];
     await Promise.all(ids.map(async (id) => {
