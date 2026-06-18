@@ -59,7 +59,7 @@ function getOrCreateMember(name, email = "") {
   const existing = findMemberByName(clean);
   if (existing) return existing.id;
   const username = clean.toLowerCase().replace(/[^a-z0-9]+/g, ".");
-  const info = db.prepare("INSERT INTO team_members (name, email, username) VALUES (?, ?, ?)").run(clean, email || `${username}@nvidia.com`, username);
+  const info = db.prepare("INSERT INTO team_members (name, email, username) VALUES (?, ?, ?)").run(clean, email || `${username}@lab-inventory.example`, username);
   return Number(info.lastInsertRowid);
 }
 

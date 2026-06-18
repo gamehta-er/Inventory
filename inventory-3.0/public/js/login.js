@@ -37,7 +37,7 @@
       const email = document.getElementById("loginEmail");
       if (value === "guest") {
         email.value = "";
-        email.placeholder = "guest@nvidia.com";
+        email.placeholder = "guest@lab-inventory.example";
         return;
       }
       const member = members.find((m) => String(m.id) === value);
