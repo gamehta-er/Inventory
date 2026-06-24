@@ -1,29 +1,29 @@
-﻿  function renderSheet() {
+﻿  function renderAssetDetailModal() {
     const { asset, fields, requests, activity, checkouts = [] } = state.detail;
     const tabs = state.user.role === "Admin User" ? ["Overview", "Operations", "Edit", "History"] : ["Overview", "Operations", "History"];
     return `
-      <div class="sheet-backdrop" data-sheet-backdrop>
-        <aside class="sheet" role="dialog" aria-label="Asset workspace">
-          <div class="sheet-header">
-            <div class="sheet-title">
+      <div class="modal-backdrop is-detail" data-close-detail-backdrop>
+        <section class="modal modal-wide modal-asset" role="dialog" aria-label="Asset workspace">
+          <div class="modal-header modal-asset-header">
+            <div class="modal-asset-title">
               ${renderAssetImage(asset)}
               <div>
                 <h2>${esc(asset.model)}</h2>
                 <div><span class="role-pill">${esc(asset.assetTag)}</span> ${renderBugLinks(asset.nvbugLinks)}</div>
               </div>
-              <button class="close-button" data-close-sheet>&times;</button>
+              <button class="close-button" data-close-detail>&times;</button>
             </div>
             <div class="tabs">
               ${tabs.map((tab) => `<button class="${state.detailTab === tab ? "active" : ""}" data-tab="${tab}">${tab}</button>`).join("")}
             </div>
           </div>
-          <div class="sheet-body">
+          <div class="modal-body">
             ${state.detailTab === "Overview" ? renderOverview(asset, fields, requests) : ""}
             ${state.detailTab === "Operations" ? renderOperations(asset, requests) : ""}
             ${state.detailTab === "Edit" ? renderEdit(asset, fields) : ""}
             ${state.detailTab === "History" ? renderHistory(activity, checkouts) : ""}
           </div>
-        </aside>
+        </section>
       </div>
     `;
   }
@@ -100,7 +100,7 @@
       </div>
       <div class="sticky-actions">
         <button class="primary-button" data-save-edit="${asset.id}">Save Changes</button>
-        <button class="secondary-button" data-close-sheet>Cancel</button>
+        <button class="secondary-button" data-close-detail>Cancel</button>
       </div>
     `;
   }
@@ -195,21 +195,14 @@
   }
 
   function renderLabelCard(asset) {
-    return `
-      <div class="label-card">
-        <div style="font-weight:760">${esc(asset.model)}</div>
-        <strong>${esc(asset.assetTag)}</strong>
-        ${barcodeSvg(asset.assetTag)}
-        <div style="font-size:21px">${esc(asset.serial || asset.assetTag)}</div>
-      </div>
-    `;
+    return renderAssetLabelCard(asset);
   }
 
   function renderPrintModal(asset) {
     return `
       <div class="modal-backdrop">
         <section class="modal" style="width:min(560px,100%)">
-          <div class="modal-header"><div><h2>Label Preview</h2><p class="subtitle">Print through an installed USB/network printer or save as PDF.</p></div><button class="close-button" data-close-modal>&times;</button></div>
+          <div class="modal-header"><div><h2>Label Preview</h2><p class="subtitle">This label prints in the standard inventory format.</p></div><button class="close-button" data-close-modal>&times;</button></div>
           <div class="modal-body">
             <div class="label-preview label-print-sheet">
               ${renderLabelCard(asset)}
@@ -217,7 +210,7 @@
           </div>
           <div class="modal-actions">
             <button class="primary-button" data-print-now="${asset.id}">Print</button>
-            <button class="secondary-button" data-save-pdf="${asset.id}">Save as PDF</button>
+            <button class="secondary-button" data-save-pdf="${asset.id}">Export PDF</button>
             <button class="secondary-button" data-close-modal>Cancel</button>
           </div>
         </section>
@@ -280,19 +273,5 @@
       "print-label": "Print Labels",
     };
     return map[action] || fieldLabel(action);
-  }
-
-  function barcodeSvg(value) {
-    const text = String(value || "INV3");
-    let x = 0;
-    const bars = [];
-    for (let i = 0; i < text.length * 5; i += 1) {
-      const code = text.charCodeAt(i % text.length) + i * 17;
-      const width = (code % 3) + 1;
-      const gap = ((code >> 2) % 2) + 1;
-      bars.push(`<rect x="${x}" y="0" width="${width}" height="62"></rect>`);
-      x += width + gap;
-    }
-    return `<svg class="barcode" viewBox="0 0 ${x} 62" preserveAspectRatio="none" role="img" aria-label="Barcode">${bars.join("")}</svg>`;
   }
 

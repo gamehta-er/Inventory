@@ -45,6 +45,12 @@
   }
 
   async function loadImportSample(profileId, renderAfter = true) {
+    if (state.user?.role !== "Admin User") {
+      state.importSample = null;
+      state.importSampleProfileId = "";
+      if (renderAfter) render();
+      return;
+    }
     const id = profileId
       || document.getElementById("importProfile")?.value
       || state.session?.importProfiles?.[0]?.id

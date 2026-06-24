@@ -1,5 +1,5 @@
 ﻿  app.addEventListener("click", async (event) => {
-    const target = event.target.closest("button, [data-request-open-asset], [data-close-filters], [data-open-activity-asset], .activity-row-clickable");
+    const target = event.target.closest("button, [data-request-open-asset], [data-close-filters], [data-close-detail-backdrop], [data-open-activity-asset], .activity-row-clickable");
     if (!target) return;
     try {
       if (target.dataset.nav) {
@@ -11,7 +11,25 @@
         if (state.page === "admin") await loadBackups(false);
         if (state.page === "import") await loadImportSample(null, false);
         render();
+      } else if (target.dataset.navHome !== undefined) {
+        resetPageState("search");
+        state.query = "";
+        state.quickCategory = "";
+        state.selectedCategory = "";
+        state.filters = {};
+        state.extraFilters = {};
+        state.draftFilters = {};
+        state.draftExtraFilters = {};
+        state.searchResult = { assets: [], summary: null, mode: "empty", appliedCategory: "" };
+        pushUrl();
+        await runSearch(false);
+        render();
       } else if (target.dataset.signout !== undefined) {
+        try {
+          await api("/api/v3/logout", { method: "POST", body: {} });
+        } catch {
+          // Clear local state even if server session is already gone.
+        }
         document.cookie = "inventory3_session=; Path=/; Max-Age=0";
         localStorage.removeItem("inventory3.user");
         state.user = null;
@@ -90,15 +108,22 @@
         await loadAssetDetail(Number(target.dataset.openDetail), "Overview");
       } else if (target.dataset.openEdit) {
         await loadAssetDetail(Number(target.dataset.openEdit), "Edit");
-      } else if (target.dataset.closeSheet !== undefined) {
+      } else if (target.dataset.closeDetail !== undefined) {
         state.detail = null;
         render();
+      } else if (target.dataset.closeDetailBackdrop !== undefined) {
+        if (target === event.target) {
+          state.detail = null;
+          render();
+        }
       } else if (target.dataset.tab) {
         state.detailTab = target.dataset.tab;
         render();
       } else if (target.dataset.action) {
         const asset = findVisibleAsset(Number(target.dataset.id)) || state.detail?.asset;
-        if (target.dataset.action === "print-label") state.modal = { type: "print", asset };
+        if (target.dataset.action === "print-label") {
+          state.modal = { type: "print", asset };
+        }
         else state.modal = { type: "action", action: target.dataset.action, asset };
         render();
       } else if (target.dataset.openAddAsset !== undefined) {
@@ -122,9 +147,24 @@
         await afterMutation("Asset updated.");
         await loadAssetDetail(Number(target.dataset.saveEdit), "Overview");
       } else if (target.dataset.printNow || target.dataset.savePdf) {
-        const labelHtml = document.querySelector(".label-print-sheet")?.innerHTML || "";
-        await api(`/api/v3/assets/${target.dataset.printNow || target.dataset.savePdf}/actions`, { method: "POST", body: { action: "print-label", actorName: state.user.name, reason: "Label preview" } });
-        if (labelHtml) printLabelHtml(labelHtml);
+        const assetId = Number(target.dataset.printNow || target.dataset.savePdf);
+        const asset = state.modal?.asset || findVisibleAsset(assetId) || state.detail?.asset;
+        if (asset) {
+          if (target.dataset.savePdf) {
+            await api(`/api/v3/assets/${assetId}/actions`, { method: "POST", body: { action: "print-label", actorName: state.user.name, reason: "Label PDF download" } });
+            openLabelPdf([assetId], { download: true });
+            setToast("Label PDF generated.");
+          } else {
+            const result = await printAssetLabels([asset], { reason: "Label preview" });
+            if (result.mode === "queue") {
+              if (result.status === "done") setToast("Printed successfully.");
+              else if (result.status === "failed") setToast(`Print failed: ${result.message}`);
+              else setToast("Print request queued.");
+            } else if (result.mode === "browser") {
+              setToast("Server queue unavailable. Opened browser print fallback.");
+            }
+          }
+        }
         state.modal = null;
         await afterMutation("Label prepared.");
       } else if (target.dataset.bulk) {
@@ -149,12 +189,28 @@
           const first = state.selected.values().next().value;
           if (first?.locationId) payload.locationId = first.locationId;
         }
-        const labelHtml = action === "print-label"
-          ? document.querySelector(".label-print-sheet")?.innerHTML || ""
-          : "";
-        const result = await api("/api/v3/assets/bulk-commit", { method: "POST", body: payload });
-        const count = result.results?.length || payload.assetIds?.length || state.selected.size;
-        if (action === "print-label" && labelHtml) printLabelHtml(labelHtml);
+        const printAssets = action === "print-label" && state.modal.preview
+          ? state.modal.preview.eligible.map((row) => state.selected.get(row.id)).filter(Boolean)
+          : [];
+        let count = payload.assetIds?.length || state.selected.size;
+        if (action !== "print-label") {
+          const result = await api("/api/v3/assets/bulk-commit", { method: "POST", body: payload });
+          count = result.results?.length || payload.assetIds?.length || state.selected.size;
+        } else if (printAssets.length) {
+          const printResult = await printAssetLabels(printAssets, { reason: "Bulk label print" });
+          count = printResult.count || count;
+          if (printResult.mode === "queue") {
+            if (printResult.status === "done") {
+              setToast(`Printed ${printResult.count} label${printResult.count === 1 ? "" : "s"}.`);
+            } else if (printResult.status === "failed") {
+              setToast(`Bulk print failed: ${printResult.message}`);
+            } else {
+              setToast(`Queued ${printResult.count} label${printResult.count === 1 ? "" : "s"}.`);
+            }
+          } else if (printResult.mode === "browser") {
+            setToast(`Server queue unavailable. Opened browser print for ${printResult.count} label${printResult.count === 1 ? "" : "s"}.`);
+          }
+        }
         state.modal = null;
         state.selected.clear();
         const doneLabels = {
@@ -369,6 +425,7 @@
     if (select.dataset.addCategory !== undefined) {
       state.addAssetCategoryId = select.value;
       render();
+      return;
     }
   });
 
@@ -383,6 +440,18 @@
   }, 300));
 
   app.addEventListener("keydown", async (event) => {
+    if (event.key === "Escape") {
+      if (state.modal) {
+        state.modal = null;
+        render();
+        return;
+      }
+      if (state.detail) {
+        state.detail = null;
+        render();
+        return;
+      }
+    }
     if (event.key === "Enter" && event.target.id === "searchInput") {
       state.query = event.target.value.trim();
       state.quickCategory = "";
