@@ -8,6 +8,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ConformanceGate = Join-Path $PSScriptRoot 'Test-FrameworkConformance.ps1'
+& $ConformanceGate -ReleaseGate
+if ($LASTEXITCODE -ne 0) { throw 'Framework release gate failed. No release-tools package was created.' }
 if (-not $OutputRoot) { $OutputRoot = Join-Path $ProjectRoot 'artifacts' }
 $PackageName = "InventoryProject-ReleaseTools-$Version"
 $Staging = Join-Path $OutputRoot $PackageName

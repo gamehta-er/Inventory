@@ -1,0 +1,11 @@
+{
+  "frameworkVersion": "1.0",
+  "productOwner": "Gaurav Mehta",
+  "status": "PENDING_APPROVAL",
+  "decision": null,
+  "approvedAt": null,
+  "approvedPdfSha256": null,
+  "approvedCommit": null,
+  "approvalEvidence": null,
+  "comments": "Framework approval must be recorded before implementation changes or release packaging resume."
+}

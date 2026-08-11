@@ -8,6 +8,9 @@
     "frontend"
   ],
   "scripts": {
+    "framework:export": "python tools/export_framework_catalogue.py",
+    "conformance:check": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File operations/Test-FrameworkConformance.ps1",
+    "conformance:release": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File operations/Test-FrameworkConformance.ps1 -ReleaseGate",
     "dev": "concurrently -k -n API,WEB -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "npm --workspace backend run dev",
     "dev:web": "npm --workspace frontend run dev",

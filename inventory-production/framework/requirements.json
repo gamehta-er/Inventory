@@ -1,0 +1,1011 @@
+{
+  "document": {
+    "title": "Inventory Project Product and Engineering Framework",
+    "version": "1.0",
+    "productOwner": "Gaurav Mehta",
+    "approvalAuthority": "Gaurav Mehta",
+    "status": "PENDING_APPROVAL",
+    "sourcePdf": "output/pdf/Inventory-Project-Product-and-Engineering-Framework-v1.0.pdf",
+    "pdfSha256": "3d4c67e9e501fc3725f9410b03fc8b9b4ec3c35ac7c51c58173420d0c8825be3",
+    "requirementCount": 138
+  },
+  "requirements": [
+    {
+      "id": "GOV-001",
+      "area": "Governance",
+      "statement": "This PDF is the governing product and engineering baseline after Product Owner approval.",
+      "requiredEvidence": "Signed approval page and controlled document hash."
+    },
+    {
+      "id": "GOV-002",
+      "area": "Governance",
+      "statement": "Gaurav Mehta is Product Owner and sole approval authority for v1.0.",
+      "requiredEvidence": "Approval signature and date."
+    },
+    {
+      "id": "GOV-003",
+      "area": "Governance",
+      "statement": "DBA and Operations feedback is retained as technical review evidence without separate approval authority.",
+      "requiredEvidence": "Review evidence listed in the change record."
+    },
+    {
+      "id": "GOV-004",
+      "area": "Governance",
+      "statement": "No release or application change proceeds while this framework is unapproved.",
+      "requiredEvidence": "Release ledger contains no post-freeze production package."
+    },
+    {
+      "id": "GOV-005",
+      "area": "Governance",
+      "statement": "Every change starts with a requirement ID or approved change request.",
+      "requiredEvidence": "Change request links to affected requirement IDs."
+    },
+    {
+      "id": "GOV-006",
+      "area": "Governance",
+      "statement": "Direct production edits, minified JavaScript patches, manual database corrections, and reused migration IDs are prohibited.",
+      "requiredEvidence": "Repository and deployment evidence show packaged, unique, reviewed changes."
+    },
+    {
+      "id": "GOV-007",
+      "area": "Governance",
+      "statement": "The approved framework remains effective for five years unless amended through change control.",
+      "requiredEvidence": "Document control records approval and amendment history."
+    },
+    {
+      "id": "GOV-008",
+      "area": "Governance",
+      "statement": "Source is committed and tagged before any implementation candidate is releasable.",
+      "requiredEvidence": "Git commit, clean status, signed or protected tag."
+    },
+    {
+      "id": "ARCH-001",
+      "area": "Architecture",
+      "statement": "Production request path is Browser -> IIS -> compiled React -> Fastify /api/v1 -> PostgreSQL.",
+      "requiredEvidence": "Architecture and runtime topology checks."
+    },
+    {
+      "id": "ARCH-002",
+      "area": "Architecture",
+      "statement": "IIS owns public port 80; Fastify binds 127.0.0.1:3020; PostgreSQL binds 127.0.0.1:5432.",
+      "requiredEvidence": "Port and service inspection after reboot."
+    },
+    {
+      "id": "ARCH-003",
+      "area": "Architecture",
+      "statement": "Vite, gateway, presentation mode, memory persistence, direct browser database access, and runtime schema creation are prohibited in production.",
+      "requiredEvidence": "Process, package, and configuration inventory."
+    },
+    {
+      "id": "ARCH-004",
+      "area": "Architecture",
+      "statement": "React presents server state and never defines permissions, validation, statuses, fields, or report semantics.",
+      "requiredEvidence": "Source conformance tests and API-driven rendering tests."
+    },
+    {
+      "id": "ARCH-005",
+      "area": "Architecture",
+      "statement": "Fastify owns authorization, validation, transactions, concurrency, and stable response contracts.",
+      "requiredEvidence": "Endpoint tests under every role and failure mode."
+    },
+    {
+      "id": "ARCH-006",
+      "area": "Architecture",
+      "statement": "PostgreSQL is authoritative for inventory, configuration, permissions, imports, reporting definitions, and activity.",
+      "requiredEvidence": "Persistence and restart tests."
+    },
+    {
+      "id": "ARCH-007",
+      "area": "Architecture",
+      "statement": "Snipe-IT and InvenTree are architectural references, not copied code or user interface.",
+      "requiredEvidence": "Design review traceability."
+    },
+    {
+      "id": "ARCH-008",
+      "area": "Architecture",
+      "statement": "Dependencies and responsibility boundaries are recorded and owned.",
+      "requiredEvidence": "Operations dependency inventory and owner matrix."
+    },
+    {
+      "id": "ARCH-009",
+      "area": "Architecture",
+      "statement": "API and web compatibility are exposed by a version contract and checked before publication.",
+      "requiredEvidence": "Version endpoint and updater compatibility check."
+    },
+    {
+      "id": "ARCH-010",
+      "area": "Architecture",
+      "statement": "One locked component system governs all product pages and cosmetic changes.",
+      "requiredEvidence": "Visual regression suite and token audit."
+    },
+    {
+      "id": "DATA-001",
+      "area": "Database",
+      "statement": "Application objects reside in dedicated PostgreSQL schema invmgmt after one controlled migration from public.",
+      "requiredEvidence": "Schema inventory, object ownership, grants, and migration evidence."
+    },
+    {
+      "id": "DATA-002",
+      "area": "Database",
+      "statement": "Database inventory_project and schema invmgmt are distinct concepts; PostgreSQL remains the only database engine.",
+      "requiredEvidence": "Connection configuration and catalog evidence."
+    },
+    {
+      "id": "DATA-003",
+      "area": "Database",
+      "statement": "Every relational business record has a primary key and every relationship uses a foreign key.",
+      "requiredEvidence": "Catalog query finds no missing required key."
+    },
+    {
+      "id": "DATA-004",
+      "area": "Database",
+      "statement": "Display labels are not stored as relational identifiers.",
+      "requiredEvidence": "Schema and query review."
+    },
+    {
+      "id": "DATA-005",
+      "area": "Database",
+      "statement": "Physical deletion of referenced business records is prohibited; assets archive and configuration deactivates or deprecates.",
+      "requiredEvidence": "Delete behavior and API tests."
+    },
+    {
+      "id": "DATA-006",
+      "area": "Database",
+      "statement": "Business foreign keys use RESTRICT unless an approved lifecycle rule explicitly permits another behavior.",
+      "requiredEvidence": "Foreign-key catalogue reconciliation."
+    },
+    {
+      "id": "DATA-007",
+      "area": "Database",
+      "statement": "Technical children use CASCADE only when their parent is the sole owner of their lifecycle.",
+      "requiredEvidence": "Foreign-key catalogue reconciliation."
+    },
+    {
+      "id": "DATA-008",
+      "area": "Database",
+      "statement": "Serial number is required and globally unique; populated asset tag is unique.",
+      "requiredEvidence": "Constraint and duplicate-write tests."
+    },
+    {
+      "id": "DATA-009",
+      "area": "Database",
+      "statement": "Exactly 19 standard fields exist: eight required and eleven optional.",
+      "requiredEvidence": "Registry count assertion and generated surface tests."
+    },
+    {
+      "id": "DATA-010",
+      "area": "Database",
+      "statement": "Lifecycle statuses are exactly IN_USE, REWORK, E_WASTE, ARCHIVE, GPU_READY, and AVAILABLE until changed through governance.",
+      "requiredEvidence": "Controlled-list count and value assertion."
+    },
+    {
+      "id": "DATA-011",
+      "area": "Database",
+      "statement": "Locations follow Building -> Lab/Room -> Rack -> RU -> Cabinet/Storage with nullable optional assignment.",
+      "requiredEvidence": "Hierarchy constraints and traversal tests."
+    },
+    {
+      "id": "DATA-012",
+      "area": "Database",
+      "statement": "Indexes support identifiers, status, model, location, owner, date, references, activity, and resumable imports.",
+      "requiredEvidence": "Index catalogue and query-plan review."
+    },
+    {
+      "id": "DATA-013",
+      "area": "Database",
+      "statement": "All business mutations are atomic, revision-controlled, permission-checked, and recorded in Activity.",
+      "requiredEvidence": "Rollback, conflict, authorization, and activity tests."
+    },
+    {
+      "id": "DATA-014",
+      "area": "Database",
+      "statement": "Migrations are immutable, unique, transactional, forward-only, and executed before application startup.",
+      "requiredEvidence": "Migration ledger and failure rollback tests."
+    },
+    {
+      "id": "DATA-015",
+      "area": "Database",
+      "statement": "Database ownership and grants follow least privilege; PUBLIC cannot create application objects in invmgmt.",
+      "requiredEvidence": "Role, schema owner, and privilege catalogue."
+    },
+    {
+      "id": "PROF-001",
+      "area": "Profile registry",
+      "statement": "The profile registry is the only source of field behavior.",
+      "requiredEvidence": "Cross-surface registry propagation test."
+    },
+    {
+      "id": "PROF-002",
+      "area": "Profile registry",
+      "statement": "A field definition includes key, label, definition, help text, type, validation, uniqueness, aliases, visibility, ordering, active state, and deprecation state.",
+      "requiredEvidence": "Admin and database contract tests."
+    },
+    {
+      "id": "PROF-003",
+      "area": "Profile registry",
+      "statement": "Profile versions pin import sessions and preserve historical interpretation.",
+      "requiredEvidence": "Version and stale-session tests."
+    },
+    {
+      "id": "PROF-004",
+      "area": "Profile registry",
+      "statement": "Administrator field additions propagate to Add, Update, Filter, Detail, Import, Report, and Export without code changes.",
+      "requiredEvidence": "Twentieth-field end-to-end test."
+    },
+    {
+      "id": "PROF-005",
+      "area": "Profile registry",
+      "statement": "Field keys are immutable after first use; labels may change with audit.",
+      "requiredEvidence": "Admin mutation tests."
+    },
+    {
+      "id": "PROF-006",
+      "area": "Profile registry",
+      "statement": "Invalid destructive profile changes with active dependencies are blocked clearly.",
+      "requiredEvidence": "Dependency and deactivation tests."
+    },
+    {
+      "id": "PROF-007",
+      "area": "Profile registry",
+      "statement": "Dropdown values have aliases, active state, ordering, usage count, and ownership.",
+      "requiredEvidence": "Admin lookup registry and import matching tests."
+    },
+    {
+      "id": "PROF-008",
+      "area": "Profile registry",
+      "statement": "Optional blank controlled fields never produce validation errors.",
+      "requiredEvidence": "Create, update, filter, and import tests."
+    },
+    {
+      "id": "PROF-009",
+      "area": "Profile registry",
+      "statement": "Storage mappings are explicit and checked for compatibility with field type.",
+      "requiredEvidence": "Registry health query and admin validation."
+    },
+    {
+      "id": "PROF-010",
+      "area": "Profile registry",
+      "statement": "Every enabled surface declares how it consumes each enabled field.",
+      "requiredEvidence": "Conformance report surface matrix."
+    },
+    {
+      "id": "AUTH-001",
+      "area": "Users and permissions",
+      "statement": "Phase 1 uses a database-backed company-network user picker without passwords or SSO.",
+      "requiredEvidence": "Authentication mode and session tests."
+    },
+    {
+      "id": "AUTH-002",
+      "area": "Users and permissions",
+      "statement": "Every listed member receives User; Igor Margulis, Monica Martin, and Gaurav Mehta also receive Super User and Privileged Administrator.",
+      "requiredEvidence": "Seed and effective-role query."
+    },
+    {
+      "id": "AUTH-003",
+      "area": "Users and permissions",
+      "statement": "The backend resolves actor, roles, and permissions from the session; clients cannot submit or spoof them.",
+      "requiredEvidence": "Payload tampering and endpoint tests."
+    },
+    {
+      "id": "AUTH-004",
+      "area": "Users and permissions",
+      "statement": "User may view assets, history, and print labels.",
+      "requiredEvidence": "Role matrix endpoint suite."
+    },
+    {
+      "id": "AUTH-005",
+      "area": "Users and permissions",
+      "statement": "Super User adds and updates assets, operates assets, imports, exports, views reports and activity, and resolves permitted lookup issues.",
+      "requiredEvidence": "Role matrix endpoint suite."
+    },
+    {
+      "id": "AUTH-006",
+      "area": "Users and permissions",
+      "statement": "Privileged Administrator manages profiles, lookups, locations, identities, roles, and system configuration.",
+      "requiredEvidence": "Role matrix endpoint suite."
+    },
+    {
+      "id": "AUTH-007",
+      "area": "Users and permissions",
+      "statement": "Unauthorized operations return a structured 403 and are not merely hidden in React.",
+      "requiredEvidence": "Direct API authorization tests."
+    },
+    {
+      "id": "AUTH-008",
+      "area": "Users and permissions",
+      "statement": "SSO is a later controlled phase and cannot be partially enabled in Phase 1.",
+      "requiredEvidence": "Configuration and roadmap gate."
+    },
+    {
+      "id": "ASSET-001",
+      "area": "Asset operations",
+      "statement": "Asset Model stores shared manufacturer, SKU, model, specifications, and image; Asset stores instance identity and state.",
+      "requiredEvidence": "Schema and API contract tests."
+    },
+    {
+      "id": "ASSET-002",
+      "area": "Asset operations",
+      "statement": "Create and Update are profile-driven and validate server-side.",
+      "requiredEvidence": "Cross-surface and API tests."
+    },
+    {
+      "id": "ASSET-003",
+      "area": "Asset operations",
+      "statement": "User actions are Assign, Return, Transfer, Change Status, Archive, and Restore.",
+      "requiredEvidence": "UI terminology and operation endpoint tests."
+    },
+    {
+      "id": "ASSET-004",
+      "area": "Asset operations",
+      "statement": "Assign, Return, Transfer, status, archive, and restore update state and Activity in one transaction.",
+      "requiredEvidence": "Atomic rollback and event tests."
+    },
+    {
+      "id": "ASSET-005",
+      "area": "Asset operations",
+      "statement": "Asset updates require revision and stale edits return structured 409 Conflict.",
+      "requiredEvidence": "Five-session concurrency test."
+    },
+    {
+      "id": "ASSET-006",
+      "area": "Asset operations",
+      "statement": "Relationships use explicit parent, child, and relationship type and prevent self-reference.",
+      "requiredEvidence": "Constraint and API tests."
+    },
+    {
+      "id": "ASSET-007",
+      "area": "Asset operations",
+      "statement": "Model images are type, size, and dimension validated and have category fallback icons.",
+      "requiredEvidence": "Upload and rendering tests."
+    },
+    {
+      "id": "ASSET-008",
+      "area": "Asset operations",
+      "statement": "NVBug, MRS, and Capacity references are relational, normalized, deduplicated, and preserved individually.",
+      "requiredEvidence": "Reference mutation and database tests."
+    },
+    {
+      "id": "ASSET-009",
+      "area": "Asset operations",
+      "statement": "Multiple references accept comma, semicolon, or newline separators and return newest first.",
+      "requiredEvidence": "Create/update/detail/search ordering tests."
+    },
+    {
+      "id": "ASSET-010",
+      "area": "Asset operations",
+      "statement": "Compact cards show the newest reference plus additional count; details show all reference groups.",
+      "requiredEvidence": "Page rendering tests."
+    },
+    {
+      "id": "IMPORT-001",
+      "area": "Import",
+      "statement": "Imports use persistent, resumable server-side sessions.",
+      "requiredEvidence": "Leave, resume, restart, and ownership tests."
+    },
+    {
+      "id": "IMPORT-002",
+      "area": "Import",
+      "statement": "Create Assets and Update Existing are separate modes; update matches exact unique Serial #.",
+      "requiredEvidence": "Mode and duplicate tests."
+    },
+    {
+      "id": "IMPORT-003",
+      "area": "Import",
+      "statement": "Templates and instructions are generated from the pinned profile version.",
+      "requiredEvidence": "Standard and twentieth-field template tests."
+    },
+    {
+      "id": "IMPORT-004",
+      "area": "Import",
+      "statement": "CSV parsing supports UTF-8 BOM, quotes, commas, Windows endings, and multiple rows.",
+      "requiredEvidence": "Parser fixture suite."
+    },
+    {
+      "id": "IMPORT-005",
+      "area": "Import",
+      "statement": "Mapping accepts case-insensitive labels, field keys, and configured aliases but never guesses ambiguity.",
+      "requiredEvidence": "Mapping fixture suite."
+    },
+    {
+      "id": "IMPORT-006",
+      "area": "Import",
+      "statement": "Duplicate headers, duplicate mappings, and unmapped required fields block validation.",
+      "requiredEvidence": "Mapping error tests."
+    },
+    {
+      "id": "IMPORT-007",
+      "area": "Import",
+      "statement": "Validation classes are Valid, Warning, Blocking Error, and Configuration Error.",
+      "requiredEvidence": "Issue contract and UI tests."
+    },
+    {
+      "id": "IMPORT-008",
+      "area": "Import",
+      "statement": "Required blanks block; optional blanks, including Location, do not block.",
+      "requiredEvidence": "All 19 field blank-state tests."
+    },
+    {
+      "id": "IMPORT-009",
+      "area": "Import",
+      "statement": "Unknown required Owner or Vendor blocks; unknown optional Location warns and imports without location.",
+      "requiredEvidence": "Relationship resolution tests."
+    },
+    {
+      "id": "IMPORT-010",
+      "area": "Import",
+      "statement": "Optional free-text Notes is never validated as a controlled value.",
+      "requiredEvidence": "Notes import tests."
+    },
+    {
+      "id": "IMPORT-011",
+      "area": "Import",
+      "statement": "Controlled values resolve by exact value, normalized value, and active alias.",
+      "requiredEvidence": "Lookup matching tests."
+    },
+    {
+      "id": "IMPORT-012",
+      "area": "Import",
+      "statement": "Every issue links to row and field and offers correction, approved value, authorized add, source correction, or profile repair as applicable.",
+      "requiredEvidence": "Guided remediation browser tests."
+    },
+    {
+      "id": "IMPORT-013",
+      "area": "Import",
+      "statement": "Users may edit, exclude, restore, bulk-correct, and export validation issues without re-uploading.",
+      "requiredEvidence": "Session operation tests."
+    },
+    {
+      "id": "IMPORT-014",
+      "area": "Import",
+      "statement": "Included rows commit atomically and idempotently; any database or conflict error rolls back the batch.",
+      "requiredEvidence": "Rollback and retry tests."
+    },
+    {
+      "id": "IMPORT-015",
+      "area": "Import",
+      "statement": "Successful commit refreshes Search, Inventory, Reports, Activity, import history, and category totals.",
+      "requiredEvidence": "Cross-page cache invalidation test."
+    },
+    {
+      "id": "RPT-001",
+      "area": "Reports",
+      "statement": "Report calculations execute server-side and are registry-driven.",
+      "requiredEvidence": "API and SQL query tests."
+    },
+    {
+      "id": "RPT-002",
+      "area": "Reports",
+      "statement": "KPI, drilldown, and CSV export share one filtered query contract and reconcile exactly.",
+      "requiredEvidence": "Automated reconciliation suite."
+    },
+    {
+      "id": "RPT-003",
+      "area": "Reports",
+      "statement": "Reports include totals, lifecycle availability, category, status, location, owner, vendor, model, and project breakdowns.",
+      "requiredEvidence": "Report catalogue tests."
+    },
+    {
+      "id": "RPT-004",
+      "area": "Reports",
+      "statement": "Reports include missing metadata, rework, e-waste, aging, and date-received trends.",
+      "requiredEvidence": "Report catalogue tests."
+    },
+    {
+      "id": "RPT-005",
+      "area": "Reports",
+      "statement": "Every KPI and chart element opens its matching paginated asset result.",
+      "requiredEvidence": "Browser drilldown tests."
+    },
+    {
+      "id": "RPT-006",
+      "area": "Reports",
+      "statement": "Report responses always initialize KPI, dimensions, trends, rows, and pagination.",
+      "requiredEvidence": "Contract and malformed-data tests."
+    },
+    {
+      "id": "RPT-007",
+      "area": "Reports",
+      "statement": "Saved reports store owner, filters, columns, sorting, and compatible profile version.",
+      "requiredEvidence": "Save/open/version tests."
+    },
+    {
+      "id": "RPT-008",
+      "area": "Reports",
+      "statement": "CSV export is generated by the server with permission and Activity records.",
+      "requiredEvidence": "Download, permission, and audit tests."
+    },
+    {
+      "id": "RPT-009",
+      "area": "Reports",
+      "statement": "Charts provide text/table equivalents and do not use color alone.",
+      "requiredEvidence": "Accessibility review."
+    },
+    {
+      "id": "RPT-010",
+      "area": "Reports",
+      "statement": "No report may label incomplete or stale data as current without a visible qualification.",
+      "requiredEvidence": "Staleness and configuration tests."
+    },
+    {
+      "id": "ACT-001",
+      "area": "Activity",
+      "statement": "Activity is immutable and records actor, time, action, source, reason, record type, and record ID.",
+      "requiredEvidence": "Database trigger and API tests."
+    },
+    {
+      "id": "ACT-002",
+      "area": "Activity",
+      "statement": "Activity records parent import/bulk operation and NVBug/reference context where applicable.",
+      "requiredEvidence": "Import and bulk event tests."
+    },
+    {
+      "id": "ACT-003",
+      "area": "Activity",
+      "statement": "Before/after changes are structured rows, not embedded in narrative reason text.",
+      "requiredEvidence": "Mutation contract tests."
+    },
+    {
+      "id": "ACT-004",
+      "area": "Activity",
+      "statement": "Every activity response initializes changes as an array.",
+      "requiredEvidence": "Contract and legacy-record tests."
+    },
+    {
+      "id": "ACT-005",
+      "area": "Activity",
+      "statement": "Every event links directly to the affected asset, profile, import, or admin record.",
+      "requiredEvidence": "Navigation tests."
+    },
+    {
+      "id": "ACT-006",
+      "area": "Activity",
+      "statement": "Global and asset activity are paginated and filterable.",
+      "requiredEvidence": "Pagination and filter tests."
+    },
+    {
+      "id": "ACT-007",
+      "area": "Activity",
+      "statement": "Create, update, status, assignment, transfer, import, profile, lookup, image, export, and print actions are covered.",
+      "requiredEvidence": "Action coverage matrix."
+    },
+    {
+      "id": "ACT-008",
+      "area": "Activity",
+      "statement": "Malformed or legacy activity data cannot blank the Activity route.",
+      "requiredEvidence": "Defensive rendering tests."
+    },
+    {
+      "id": "API-001",
+      "area": "API contracts",
+      "statement": "All public application endpoints are versioned under /api/v1.",
+      "requiredEvidence": "Route catalogue test."
+    },
+    {
+      "id": "API-002",
+      "area": "API contracts",
+      "statement": "Collections return arrays even when empty; optional aggregate objects are initialized.",
+      "requiredEvidence": "Contract schema tests."
+    },
+    {
+      "id": "API-003",
+      "area": "API contracts",
+      "statement": "Errors use a stable envelope with status, code, message, details, requestId, and latest conflict state when relevant.",
+      "requiredEvidence": "Failure contract tests."
+    },
+    {
+      "id": "API-004",
+      "area": "API contracts",
+      "statement": "Pagination uses documented page, limit, total, and deterministic ordering.",
+      "requiredEvidence": "Pagination contract tests."
+    },
+    {
+      "id": "API-005",
+      "area": "API contracts",
+      "statement": "Asset responses always include nvbugs, mrsOrders, and capacityRequests arrays.",
+      "requiredEvidence": "Asset contract tests."
+    },
+    {
+      "id": "API-006",
+      "area": "API contracts",
+      "statement": "Import create, fetch, validate, correct, and commit return one documented session envelope.",
+      "requiredEvidence": "Import contract tests."
+    },
+    {
+      "id": "API-007",
+      "area": "API contracts",
+      "statement": "Version endpoint exposes web, API, schema, import-contract, and package compatibility.",
+      "requiredEvidence": "Version contract test through IIS."
+    },
+    {
+      "id": "API-008",
+      "area": "API contracts",
+      "statement": "Request IDs appear in logs and user-visible failure states.",
+      "requiredEvidence": "End-to-end error correlation test."
+    },
+    {
+      "id": "API-009",
+      "area": "API contracts",
+      "statement": "The frontend normalizes responses before rendering and rejects incompatible contracts visibly.",
+      "requiredEvidence": "Adapter and compatibility tests."
+    },
+    {
+      "id": "API-010",
+      "area": "API contracts",
+      "statement": "API catalogue and frontend requests reconcile with no undocumented call.",
+      "requiredEvidence": "Static request-to-route reconciliation."
+    },
+    {
+      "id": "UX-001",
+      "area": "User experience",
+      "statement": "The component system defines typography, spacing, fields, buttons, cards, tabs, sheets, dialogs, tables, and feedback.",
+      "requiredEvidence": "Token and component inventory."
+    },
+    {
+      "id": "UX-002",
+      "area": "User experience",
+      "statement": "Pages use professional domain wording and do not expose implementation terminology to users.",
+      "requiredEvidence": "Product copy review."
+    },
+    {
+      "id": "UX-003",
+      "area": "User experience",
+      "statement": "Every page has loading, empty, permission, configuration, and failure states.",
+      "requiredEvidence": "Page-state browser matrix."
+    },
+    {
+      "id": "UX-004",
+      "area": "User experience",
+      "statement": "Route-level error boundaries prevent one malformed record from blanking a route and offer Retry and Return to Search.",
+      "requiredEvidence": "Injected-error browser tests."
+    },
+    {
+      "id": "UX-005",
+      "area": "User experience",
+      "statement": "Overlays have one internal scroll surface, fixed actions, backdrop/Escape/close dismissal, and focus restoration.",
+      "requiredEvidence": "Keyboard and viewport tests."
+    },
+    {
+      "id": "UX-006",
+      "area": "User experience",
+      "statement": "Browser Back closes overlays or returns to the prior page without losing committed state.",
+      "requiredEvidence": "History navigation tests."
+    },
+    {
+      "id": "UX-007",
+      "area": "User experience",
+      "statement": "Search text, category shortcuts, and applied filters remain independent.",
+      "requiredEvidence": "Interaction tests."
+    },
+    {
+      "id": "UX-008",
+      "area": "User experience",
+      "statement": "The NVIDIA logo is official, clickable, and returns to Search while clearing transient state.",
+      "requiredEvidence": "Header navigation test."
+    },
+    {
+      "id": "UX-009",
+      "area": "User experience",
+      "statement": "Motion is restrained, communicates state, and respects prefers-reduced-motion.",
+      "requiredEvidence": "Motion and reduced-motion tests."
+    },
+    {
+      "id": "UX-010",
+      "area": "User experience",
+      "statement": "Supported widths have no overlap, clipped actions, nested scrollbars, or horizontal page overflow.",
+      "requiredEvidence": "Screenshot and overflow suite at five required viewports."
+    },
+    {
+      "id": "UX-011",
+      "area": "User experience",
+      "statement": "Forms expose definitions, required state, constraints, and direct recovery guidance without clutter.",
+      "requiredEvidence": "Usability and accessibility review."
+    },
+    {
+      "id": "UX-012",
+      "area": "User experience",
+      "statement": "Labels use Code 128 SVG, isolate print content, create one label-sized page per asset, and record print activity.",
+      "requiredEvidence": "Barcode scan and print tests."
+    },
+    {
+      "id": "OPS-001",
+      "area": "Operations",
+      "statement": "Production runtime is IIS, one Fastify Windows service, and PostgreSQL; Node runtime is bundled.",
+      "requiredEvidence": "Service and process inventory."
+    },
+    {
+      "id": "OPS-002",
+      "area": "Operations",
+      "statement": "Start order is PostgreSQL, Fastify, then IIS; stop order is IIS, Fastify, then PostgreSQL when database maintenance requires it.",
+      "requiredEvidence": "Runbook and maintenance test."
+    },
+    {
+      "id": "OPS-003",
+      "area": "Operations",
+      "statement": "Operations provide install, migrate, start, stop, restart, status, maintenance, logs, cleanup, and health commands.",
+      "requiredEvidence": "Script execution matrix."
+    },
+    {
+      "id": "OPS-004",
+      "area": "Operations",
+      "statement": "Normal changes use component deltas; full baseline is only for clean installation or disaster recovery.",
+      "requiredEvidence": "Package manifest review."
+    },
+    {
+      "id": "OPS-005",
+      "area": "Operations",
+      "statement": "Delta updater verifies version and hashes before stopping services and publishes only declared components.",
+      "requiredEvidence": "Tamper and component-scope tests."
+    },
+    {
+      "id": "OPS-006",
+      "area": "Operations",
+      "statement": "Temporary packages and temporary previous components are removed after success; no persistent backup or snapshot is created by this framework.",
+      "requiredEvidence": "Filesystem cleanup test."
+    },
+    {
+      "id": "OPS-007",
+      "area": "Operations",
+      "statement": "Maintenance mode protects users during component switch and never masks a failed recovery.",
+      "requiredEvidence": "Maintenance and failure tests."
+    },
+    {
+      "id": "OPS-008",
+      "area": "Operations",
+      "statement": "Logs are structured, rotate, contain request IDs and record links, and separate service, update, audit, and health concerns.",
+      "requiredEvidence": "Log format and navigation tests."
+    },
+    {
+      "id": "OPS-009",
+      "area": "Operations",
+      "statement": "Health includes liveness, readiness, version compatibility, database reachability, and dependency state.",
+      "requiredEvidence": "Health endpoint and degraded-state tests."
+    },
+    {
+      "id": "OPS-010",
+      "area": "Operations",
+      "statement": "External monitoring alerts on unavailability, sustained latency, error rate, and database connection failure.",
+      "requiredEvidence": "Monitor evidence and alert drill."
+    },
+    {
+      "id": "OPS-011",
+      "area": "Operations",
+      "statement": "Support documentation defines ownership, severity, diagnosis, escalation, and recovery.",
+      "requiredEvidence": "Runbook tabletop exercise."
+    },
+    {
+      "id": "OPS-012",
+      "area": "Operations",
+      "statement": "A release ledger records version, package hash, operator, components, migrations, acceptance evidence, and outcome.",
+      "requiredEvidence": "Ledger and package reconciliation."
+    },
+    {
+      "id": "TEST-001",
+      "area": "Acceptance testing",
+      "statement": "Requirement IDs appear in automated test names and the generated conformance report.",
+      "requiredEvidence": "Test report parse."
+    },
+    {
+      "id": "TEST-002",
+      "area": "Acceptance testing",
+      "statement": "HTTP 200 alone cannot approve a release; browser rendering and business workflows are mandatory.",
+      "requiredEvidence": "Acceptance report includes browser and workflow gates."
+    },
+    {
+      "id": "TEST-003",
+      "area": "Acceptance testing",
+      "statement": "Every route is tested directly and through navigation under all three roles.",
+      "requiredEvidence": "Role-by-route browser matrix."
+    },
+    {
+      "id": "TEST-004",
+      "area": "Acceptance testing",
+      "statement": "Database tests cover keys, constraints, indexes, rollback, restart persistence, ownership, and deletion behavior.",
+      "requiredEvidence": "Database acceptance report."
+    },
+    {
+      "id": "TEST-005",
+      "area": "Acceptance testing",
+      "statement": "Five concurrent sessions cannot silently overwrite asset changes.",
+      "requiredEvidence": "409 conflict concurrency report."
+    },
+    {
+      "id": "TEST-006",
+      "area": "Acceptance testing",
+      "statement": "Import tests cover all 19 fields and one administrator-added twentieth field.",
+      "requiredEvidence": "Import conformance report."
+    },
+    {
+      "id": "TEST-007",
+      "area": "Acceptance testing",
+      "statement": "Report KPI, drilldown, and export reconcile for every standard dimension.",
+      "requiredEvidence": "Report reconciliation report."
+    },
+    {
+      "id": "TEST-008",
+      "area": "Acceptance testing",
+      "statement": "Visual acceptance covers 1920x1080, 1366x768, 1280x720, 768x1024, and 390x844.",
+      "requiredEvidence": "Screenshot evidence set."
+    },
+    {
+      "id": "TEST-009",
+      "area": "Acceptance testing",
+      "statement": "Performance targets are p95 <500 ms search/detail, <800 ms mutation, and <2 s reports at expected volume.",
+      "requiredEvidence": "Load report with five concurrent sessions."
+    },
+    {
+      "id": "TEST-010",
+      "area": "Acceptance testing",
+      "statement": "A candidate with any failed applicable requirement is not packaged or assigned a release version.",
+      "requiredEvidence": "Conformance and release ledger gate."
+    }
+  ],
+  "standardFields": [
+    {
+      "fieldKey": "mrs_order",
+      "label": "MRS order #",
+      "requirement": "Optional",
+      "dataType": "Multi-reference",
+      "storageTarget": "external_reference:MRS_ORDER",
+      "definition": "Material Request System order reference. Canonical header and key accepted; configured aliases may extend mapping."
+    },
+    {
+      "fieldKey": "nvbugs",
+      "label": "NVBugs #",
+      "requirement": "Required",
+      "dataType": "Multi-reference",
+      "storageTarget": "external_reference:NVBUG",
+      "definition": "Internal NVIDIA bug, enhancement, or task reference. Normalize, deduplicate, and preserve individually."
+    },
+    {
+      "fieldKey": "capacity_request",
+      "label": "Capacity Request #",
+      "requirement": "Optional",
+      "dataType": "Multi-reference",
+      "storageTarget": "external_reference:CAPACITY_REQUEST",
+      "definition": "Internal Capacity Request Number."
+    },
+    {
+      "fieldKey": "date_received",
+      "label": "Date Received",
+      "requirement": "Required",
+      "dataType": "Date",
+      "storageTarget": "assets.date_received",
+      "definition": "Day 0 receipt date. ISO date in API; locale-friendly display in UI."
+    },
+    {
+      "fieldKey": "board_sku",
+      "label": "Board SKU",
+      "requirement": "Optional",
+      "dataType": "Text",
+      "storageTarget": "asset_models.board_sku",
+      "definition": "Board or card assembly code shared by the asset model."
+    },
+    {
+      "fieldKey": "gpu_sku",
+      "label": "GPU SKU",
+      "requirement": "Optional",
+      "dataType": "Text",
+      "storageTarget": "asset_models.gpu_sku",
+      "definition": "GPU or chip variant code shared by the asset model."
+    },
+    {
+      "fieldKey": "model_number",
+      "label": "Model #",
+      "requirement": "Required",
+      "dataType": "Text",
+      "storageTarget": "asset_models.model_number",
+      "definition": "Manufacturer or internal model identifier used to resolve shared model metadata."
+    },
+    {
+      "fieldKey": "serial_number",
+      "label": "Serial #",
+      "requirement": "Required",
+      "dataType": "Text / unique",
+      "storageTarget": "assets.serial_number",
+      "definition": "Unique physical or logical instance identifier. Exact match key for Update Existing import mode."
+    },
+    {
+      "fieldKey": "milestone",
+      "label": "Milestone",
+      "requirement": "Optional",
+      "dataType": "Text",
+      "storageTarget": "assets.milestone",
+      "definition": "Engineering checkpoint or maturity state associated with the asset instance."
+    },
+    {
+      "fieldKey": "product_name",
+      "label": "Product Name",
+      "requirement": "Required",
+      "dataType": "Text",
+      "storageTarget": "asset_models.product_name",
+      "definition": "Human-readable product name shared by the asset model."
+    },
+    {
+      "fieldKey": "location",
+      "label": "Location",
+      "requirement": "Optional",
+      "dataType": "Entity",
+      "storageTarget": "assets.location_id",
+      "definition": "Foreign key to the hierarchical location tree. Blank never blocks import."
+    },
+    {
+      "fieldKey": "asset_status",
+      "label": "Status",
+      "requirement": "Required",
+      "dataType": "Controlled value",
+      "storageTarget": "assets.status_value_id",
+      "definition": "Lifecycle status from the approved six-value status list."
+    },
+    {
+      "fieldKey": "board_architecture",
+      "label": "Board Architecture",
+      "requirement": "Optional",
+      "dataType": "Controlled value",
+      "storageTarget": "asset_models.board_architecture",
+      "definition": "Approved architecture classification. Blank is valid; aliases are registry-managed."
+    },
+    {
+      "fieldKey": "pool_team",
+      "label": "Pool/Team",
+      "requirement": "Optional",
+      "dataType": "Controlled value",
+      "storageTarget": "assets.pool_team",
+      "definition": "Organizational pool or team responsible for operational use. Blank is valid."
+    },
+    {
+      "fieldKey": "project",
+      "label": "Project",
+      "requirement": "Optional",
+      "dataType": "Text",
+      "storageTarget": "assets.project",
+      "definition": "Project or operational activity associated with the asset."
+    },
+    {
+      "fieldKey": "asset_tag",
+      "label": "Asset Tag #",
+      "requirement": "Optional",
+      "dataType": "Text / unique when populated",
+      "storageTarget": "assets.asset_tag",
+      "definition": "Organization-issued asset identifier. Blank allowed; populated values unique."
+    },
+    {
+      "fieldKey": "owner",
+      "label": "Owner / Assignee",
+      "requirement": "Required",
+      "dataType": "Entity",
+      "storageTarget": "assets.owner_user_id",
+      "definition": "Foreign key to the selected application user responsible for the asset."
+    },
+    {
+      "fieldKey": "notes",
+      "label": "Notes",
+      "requirement": "Optional",
+      "dataType": "Long text",
+      "storageTarget": "assets.notes",
+      "definition": "Free text up to the configured limit. Never treated as a controlled value."
+    },
+    {
+      "fieldKey": "vendor",
+      "label": "Vendor",
+      "requirement": "Required",
+      "dataType": "Entity",
+      "storageTarget": "assets.vendor_id",
+      "definition": "Foreign key to the approved vendor record."
+    }
+  ],
+  "lifecycleStatuses": [
+    "IN_USE",
+    "REWORK",
+    "E_WASTE",
+    "ARCHIVE",
+    "GPU_READY",
+    "AVAILABLE"
+  ],
+  "approvedViewports": [
+    "1920x1080",
+    "1366x768",
+    "1280x720",
+    "768x1024",
+    "390x844"
+  ]
+}

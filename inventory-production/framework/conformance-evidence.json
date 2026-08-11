@@ -1,0 +1,973 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateTag": "inventory-framework-v1.0-candidate",
+  "releaseDecision": "FROZEN_PENDING_CONFORMANCE",
+  "requirements": [
+    {
+      "requirementId": "GOV-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "GOV-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "GOV-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "GOV-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "GOV-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "GOV-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "GOV-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "GOV-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ARCH-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ARCH-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ARCH-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ARCH-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ARCH-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ARCH-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ARCH-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ARCH-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ARCH-009",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ARCH-010",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-009",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-010",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-011",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-012",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-013",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-014",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "DATA-015",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "PROF-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "PROF-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "PROF-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "PROF-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "PROF-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "PROF-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "PROF-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "PROF-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "PROF-009",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "PROF-010",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "AUTH-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "AUTH-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "AUTH-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "AUTH-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "AUTH-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "AUTH-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "AUTH-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "AUTH-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ASSET-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ASSET-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ASSET-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ASSET-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ASSET-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ASSET-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ASSET-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ASSET-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ASSET-009",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ASSET-010",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-009",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-010",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-011",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-012",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-013",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-014",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "IMPORT-015",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "RPT-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "RPT-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "RPT-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "RPT-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "RPT-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "RPT-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "RPT-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "RPT-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "RPT-009",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "RPT-010",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ACT-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ACT-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ACT-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ACT-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ACT-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ACT-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ACT-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "ACT-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "API-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "API-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "API-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "API-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "API-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "API-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "API-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "API-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "API-009",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "API-010",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-009",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-010",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-011",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "UX-012",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-009",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-010",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-011",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "OPS-012",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "TEST-001",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "TEST-002",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "TEST-003",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "TEST-004",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "TEST-005",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "TEST-006",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "TEST-007",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "TEST-008",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "TEST-009",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "requirementId": "TEST-010",
+      "applicability": "APPLICABLE",
+      "status": "NOT_ASSESSED",
+      "evidence": [],
+      "notes": ""
+    }
+  ]
+}

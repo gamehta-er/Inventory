@@ -7,6 +7,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ConformanceGate = Join-Path $PSScriptRoot 'Test-FrameworkConformance.ps1'
+& $ConformanceGate -ReleaseGate
+if ($LASTEXITCODE -ne 0) { throw 'Framework release gate failed. No baseline package was created.' }
 if (-not $OutputRoot) { $OutputRoot = Join-Path $ProjectRoot 'artifacts' }
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 $OutputRoot = (Resolve-Path -LiteralPath $OutputRoot).Path
