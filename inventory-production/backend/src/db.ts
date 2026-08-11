@@ -5,6 +5,7 @@ const { Pool } = pg;
 
 export const pool = new Pool({
   connectionString: config.DATABASE_URL,
+  options: '-c search_path=invmgmt,public',
   max: 12,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
@@ -30,8 +31,13 @@ export async function withTransaction<T>(work: (client: DbClient) => Promise<T>)
 
 export async function ready(): Promise<boolean> {
   try {
-    const result = await pool.query("SELECT to_regclass('public.assets') AS assets, to_regclass('public.profile_fields') AS fields");
-    return Boolean(result.rows[0]?.assets && result.rows[0]?.fields);
+    const result = await pool.query(`
+      SELECT
+        to_regclass('invmgmt.assets') AS assets,
+        to_regclass('invmgmt.profile_fields') AS fields,
+        to_regclass('invmgmt.schema_migrations') AS migrations
+    `);
+    return Boolean(result.rows[0]?.assets && result.rows[0]?.fields && result.rows[0]?.migrations);
   } catch {
     return false;
   }

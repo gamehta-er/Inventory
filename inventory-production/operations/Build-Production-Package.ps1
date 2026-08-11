@@ -66,6 +66,7 @@ Copy-DirectoryContents (Join-Path $ProjectRoot 'frontend\dist') $Web
 Copy-Item (Join-Path $ProjectRoot 'deployment\web.config') (Join-Path $Web 'web.config')
 Copy-Item (Join-Path $ProjectRoot 'deployment\maintenance.html') (Join-Path $Web 'maintenance.html')
 Copy-Item (Join-Path $ProjectRoot 'database\001-production-baseline.sql') $Database
+Copy-Item (Join-Path $ProjectRoot 'database\Test-DatabaseContract.sql') $Database
 $MigrationDestination = Join-Path $Database 'Migrations'
 New-Item -ItemType Directory -Force -Path $MigrationDestination | Out-Null
 $MigrationSources = @(

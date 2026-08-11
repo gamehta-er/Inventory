@@ -31,7 +31,7 @@ export async function buildApp() {
   app.get('/api/v1/health/live',async()=>({status:'live',service:'inventory-api'}));
   app.get('/api/v1/health/ready',async(_request,reply)=>{const database=await ready();if(!database)reply.code(503);return{status:database?'ready':'not-ready',database};});
   app.get('/api/v1/version', async () => {
-    const migrations = await pool.query<{ migration_key:string }>('SELECT migration_key FROM schema_migrations ORDER BY applied_at DESC, migration_key DESC');
+    const migrations = await pool.query<{ migration_key:string }>('SELECT migration_key FROM invmgmt.schema_migrations ORDER BY applied_at DESC, migration_key DESC');
     const keys = migrations.rows.map((row) => row.migration_key);
     const importCompatible = keys.includes(requiredImportContract);
     return {

@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { describe, it } from 'node:test';
+
+const projectFile = (path: string) => fileURLToPath(new URL(`../../${path}`, import.meta.url));
+const baseline = await readFile(projectFile('database/001-production-baseline.sql'), 'utf8');
+const schemaMigration = await readFile(projectFile('database/Migrations/006-invmgmt-schema.sql'), 'utf8');
+const dbSource = await readFile(projectFile('backend/src/db.ts'), 'utf8');
+const appSource = await readFile(projectFile('backend/src/app.ts'), 'utf8');
+const installer = await readFile(projectFile('installer/Install-InventoryProject.ps1'), 'utf8');
+const packageBuilder = await readFile(projectFile('operations/Build-Production-Package.ps1'), 'utf8');
+const migrationRunner = await readFile(projectFile('operations/Apply-Migrations.ps1'), 'utf8');
+
+const baselineTables = [...baseline.matchAll(/^CREATE TABLE ([a-z][a-z0-9_]*)/gm)].map((match) => match[1]);
+const migrationTableBlock = schemaMigration.match(/application_tables constant text\[\] := ARRAY\[([\s\S]*?)\];/);
+const migratedTables = migrationTableBlock
+  ? [...migrationTableBlock[1].matchAll(/'([a-z][a-z0-9_]*)'/g)].map((match) => match[1])
+  : [];
+
+describe('Framework v1.0 PostgreSQL boundary', () => {
+  it('DATA-001 moves every baseline application table to invmgmt', () => {
+    assert.equal(baselineTables.length, 37);
+    assert.deepEqual(migratedTables, baselineTables);
+    assert.match(schemaMigration, /CREATE SCHEMA IF NOT EXISTS invmgmt AUTHORIZATION inventory_owner/);
+    assert.match(schemaMigration, /public_inventory_count <> 0/);
+  });
+
+  it('DATA-014 keeps the schema migration transactional and uniquely journaled', () => {
+    assert.match(schemaMigration, /^\\set ON_ERROR_STOP on\s+\s*BEGIN;/);
+    assert.match(schemaMigration, /pg_advisory_xact_lock/);
+    assert.match(schemaMigration, /'006-invmgmt-schema'/);
+    assert.match(schemaMigration, /ON CONFLICT \(migration_key\) DO NOTHING/);
+    assert.match(schemaMigration, /COMMIT;\s*$/);
+  });
+
+  it('DATA-015 separates owner and runtime privileges', () => {
+    assert.match(schemaMigration, /CREATE ROLE inventory_owner NOLOGIN NOINHERIT/);
+    assert.match(schemaMigration, /ALTER TABLE invmgmt\.%I OWNER TO inventory_owner/);
+    assert.match(schemaMigration, /REVOKE CREATE ON SCHEMA invmgmt FROM inventory_app/);
+    assert.match(schemaMigration, /GRANT USAGE ON SCHEMA invmgmt TO inventory_app/);
+    assert.doesNotMatch(schemaMigration, /GRANT CREATE ON SCHEMA invmgmt TO inventory_app/);
+  });
+
+  it('ARCH-005 pins API queries to invmgmt without runtime schema creation', () => {
+    assert.match(dbSource, /search_path=invmgmt,public/);
+    assert.match(dbSource, /to_regclass\('invmgmt\.assets'\)/);
+    assert.match(appSource, /FROM invmgmt\.schema_migrations/);
+    assert.doesNotMatch(dbSource, /CREATE (TABLE|SCHEMA)/i);
+    assert.doesNotMatch(appSource, /CREATE (TABLE|SCHEMA)/i);
+  });
+
+  it('OPS-003 packages and installs the complete ordered migration chain', () => {
+    assert.match(packageBuilder, /database\\005-complete-import-workflow\.sql/);
+    assert.match(packageBuilder, /Sort-Object Name/);
+    assert.match(installer, /Get-ChildItem -LiteralPath \$MigrationDirectory -Filter '\*\.sql'/);
+    assert.match(installer, /006-invmgmt-schema\.sql/);
+    assert.match(installer, /Applying database migration/);
+  });
+
+  it('DATA-014 supports the public-to-invmgmt transition and owner-run future migrations', () => {
+    assert.match(migrationRunner, /public\.schema_migrations/);
+    assert.match(migrationRunner, /invmgmt\.schema_migrations/);
+    assert.match(migrationRunner, /SET ROLE inventory_owner/);
+    assert.match(migrationRunner, /MigrationId -eq '006-invmgmt-schema'/);
+  });
+});

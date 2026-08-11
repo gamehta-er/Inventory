@@ -5,12 +5,23 @@ param(
     [string]$PostgreSqlAdminUser = 'postgres',
     [string]$DatabaseName = 'inventory_project',
     [string]$ApplicationRole = 'inventory_app',
+    [string]$OwnerRole = 'inventory_owner',
     [string]$SiteName = 'Inventory Project',
     [string]$ApiServiceName = 'InventoryProjectApi',
     [switch]$Confirmed
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+foreach ($Identifier in @{
+    DatabaseName = $DatabaseName
+    ApplicationRole = $ApplicationRole
+    OwnerRole = $OwnerRole
+}.GetEnumerator()) {
+    if ([string]$Identifier.Value -notmatch '^[a-z][a-z0-9_]{0,62}$') {
+        throw "$($Identifier.Key) must be a lowercase PostgreSQL identifier containing only letters, numbers, and underscores."
+    }
+}
 
 $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $Principal = [Security.Principal.WindowsPrincipal]::new($Identity)
@@ -45,6 +56,7 @@ try {
     & $Psql -h 127.0.0.1 -p 5432 -U $PostgreSqlAdminUser -d postgres -w -X -v ON_ERROR_STOP=1 -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$DatabaseName' AND pid <> pg_backend_pid();"
     & $Psql -h 127.0.0.1 -p 5432 -U $PostgreSqlAdminUser -d postgres -w -X -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $DatabaseName;"
     & $Psql -h 127.0.0.1 -p 5432 -U $PostgreSqlAdminUser -d postgres -w -X -v ON_ERROR_STOP=1 -c "DROP ROLE IF EXISTS $ApplicationRole;"
+    & $Psql -h 127.0.0.1 -p 5432 -U $PostgreSqlAdminUser -d postgres -w -X -v ON_ERROR_STOP=1 -c "DROP ROLE IF EXISTS $OwnerRole;"
 } finally {
     Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($PasswordPointer)

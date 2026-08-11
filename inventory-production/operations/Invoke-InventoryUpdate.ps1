@@ -309,17 +309,32 @@ try {
         if (-not (Test-Path -LiteralPath $Psql -PathType Leaf)) { throw "psql.exe not found: $Psql" }
         if (-not $PostgreSqlAdminPassword) { $PostgreSqlAdminPassword = Read-Host "PostgreSQL password for $PostgreSqlAdminUser" -AsSecureString }
         $AdminPassword = ConvertFrom-SecureValue $PostgreSqlAdminPassword
+        $LedgerResult = Invoke-ProcessCapture $Psql @(
+            '-h','127.0.0.1','-p','5432','-U',$PostgreSqlAdminUser,'-d',$DatabaseName,'-w','-X','-tAc',
+            "SELECT CASE WHEN to_regclass('invmgmt.schema_migrations') IS NOT NULL THEN 'invmgmt.schema_migrations' WHEN to_regclass('public.schema_migrations') IS NOT NULL THEN 'public.schema_migrations' ELSE '' END;"
+        ) $AdminPassword
+        $LedgerTable = $LedgerResult.Output.Trim()
+        if (-not $LedgerTable) { throw 'Inventory migration ledger was not found.' }
+
         foreach ($Migration in @($Manifest.migrations)) {
             $EscapedId = ([string]$Migration.id).Replace("'", "''")
-            $ExistsResult = Invoke-ProcessCapture $Psql @('-h','127.0.0.1','-p','5432','-U',$PostgreSqlAdminUser,'-d',$DatabaseName,'-w','-X','-tAc',"SELECT 1 FROM schema_migrations WHERE migration_key='$EscapedId';") $AdminPassword
+            $ExistsResult = Invoke-ProcessCapture $Psql @('-h','127.0.0.1','-p','5432','-U',$PostgreSqlAdminUser,'-d',$DatabaseName,'-w','-X','-tAc',"SELECT 1 FROM $LedgerTable WHERE migration_key='$EscapedId';") $AdminPassword
             if ($ExistsResult.Output.Trim() -eq '1') {
                 Write-Host "Skipping previously applied migration: $($Migration.id)"
                 continue
             }
             $MigrationPath = Join-Path $PackageRoot ([string]$Migration.path).Replace('/','\')
             Write-Host "Applying migration: $($Migration.id)" -ForegroundColor Cyan
-            [void](Invoke-ProcessCapture $Psql @('-h','127.0.0.1','-p','5432','-U',$PostgreSqlAdminUser,'-d',$DatabaseName,'-w','-X','-v','ON_ERROR_STOP=1','-f',$MigrationPath) $AdminPassword)
+            $MigrationArguments = @('-h','127.0.0.1','-p','5432','-U',$PostgreSqlAdminUser,'-d',$DatabaseName,'-w','-X','-v','ON_ERROR_STOP=1')
+            if ($LedgerTable -eq 'invmgmt.schema_migrations') {
+                $MigrationArguments += @('-c','SET ROLE inventory_owner; SET search_path=invmgmt,public;')
+            }
+            $MigrationArguments += @('-f',$MigrationPath)
+            [void](Invoke-ProcessCapture $Psql $MigrationArguments $AdminPassword)
             $AppliedMigrations.Add([string]$Migration.id)
+            if ([string]$Migration.id -eq '006-invmgmt-schema') {
+                $LedgerTable = 'invmgmt.schema_migrations'
+            }
         }
     }
 

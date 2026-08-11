@@ -7,6 +7,7 @@ param(
     [string]$PostgreSqlAdminUser = 'postgres',
     [string]$DatabaseName = 'inventory_project',
     [string]$ApplicationRole = 'inventory_app',
+    [string]$OwnerRole = 'inventory_owner',
     [string]$SiteName = 'Inventory Project',
     [string]$ApiServiceName = 'InventoryProjectApi',
     [switch]$ReplaceDefaultWebsite,
@@ -15,6 +16,20 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+foreach ($Identifier in @{
+    DatabaseName = $DatabaseName
+    ApplicationRole = $ApplicationRole
+    OwnerRole = $OwnerRole
+}.GetEnumerator()) {
+    if ([string]$Identifier.Value -notmatch '^[a-z][a-z0-9_]{0,62}$') {
+        throw "$($Identifier.Key) must be a lowercase PostgreSQL identifier containing only letters, numbers, and underscores."
+    }
+}
+
+if ($DatabaseName -ne 'inventory_project' -or $ApplicationRole -ne 'inventory_app' -or $OwnerRole -ne 'inventory_owner') {
+    throw 'Framework v1.0 requires database inventory_project, runtime role inventory_app, and owner role inventory_owner.'
+}
 
 $PackageRoot = $PSScriptRoot
 $PayloadRoot = Join-Path $PackageRoot 'Payload'
@@ -96,10 +111,14 @@ $SqlApplicationPassword = $ApplicationPassword.Replace("'", "''")
 
 $DatabaseExists = (Invoke-Psql $Psql $AdminPassword $PostgreSqlAdminUser 'postgres' @('-tAc', "SELECT 1 FROM pg_database WHERE datname='$DatabaseName';") | Out-String).Trim()
 $RoleExists = (Invoke-Psql $Psql $AdminPassword $PostgreSqlAdminUser 'postgres' @('-tAc', "SELECT 1 FROM pg_roles WHERE rolname='$ApplicationRole';") | Out-String).Trim()
-if ($DatabaseExists -eq '1' -or $RoleExists -eq '1') { throw 'Fresh database or application role already exists. Run the reset command before installation.' }
+$OwnerRoleExists = (Invoke-Psql $Psql $AdminPassword $PostgreSqlAdminUser 'postgres' @('-tAc', "SELECT 1 FROM pg_roles WHERE rolname='$OwnerRole';") | Out-String).Trim()
+if ($DatabaseExists -eq '1' -or $RoleExists -eq '1' -or $OwnerRoleExists -eq '1') {
+    throw 'Fresh database, application role, or owner role already exists. Run the reset command before installation.'
+}
 
 try {
     Invoke-Psql $Psql $AdminPassword $PostgreSqlAdminUser 'postgres' @('-c', "CREATE ROLE $ApplicationRole LOGIN PASSWORD '$SqlApplicationPassword';")
+    Invoke-Psql $Psql $AdminPassword $PostgreSqlAdminUser 'postgres' @('-c', "CREATE ROLE $OwnerRole NOLOGIN NOINHERIT;")
     Invoke-Psql $Psql $AdminPassword $PostgreSqlAdminUser 'postgres' @('-c', "CREATE DATABASE $DatabaseName OWNER $ApplicationRole ENCODING 'UTF8' TEMPLATE template0;")
 
     New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
@@ -107,6 +126,27 @@ try {
 
     $Baseline = Join-Path $InstallRoot 'Database\001-production-baseline.sql'
     Invoke-Psql $Psql $ApplicationPassword $ApplicationRole $DatabaseName @('-f', $Baseline)
+
+    $MigrationDirectory = Join-Path $InstallRoot 'Database\Migrations'
+    $Migrations = @(Get-ChildItem -LiteralPath $MigrationDirectory -Filter '*.sql' -File | Sort-Object Name)
+    if (-not ($Migrations.Name -contains '006-invmgmt-schema.sql')) {
+        throw 'The required invmgmt schema migration is missing from the installation package.'
+    }
+    foreach ($Migration in $Migrations) {
+        Write-Host "Applying database migration: $($Migration.Name)" -ForegroundColor Cyan
+        Invoke-Psql $Psql $AdminPassword $PostgreSqlAdminUser $DatabaseName @('-f', $Migration.FullName)
+    }
+    $SchemaReady = (Invoke-Psql $Psql $AdminPassword $PostgreSqlAdminUser $DatabaseName @(
+        '-tAc',
+        "SELECT CASE WHEN to_regclass('invmgmt.assets') IS NOT NULL AND to_regclass('invmgmt.schema_migrations') IS NOT NULL THEN 1 ELSE 0 END;"
+    ) | Out-String).Trim()
+    if ($SchemaReady -ne '1') { throw 'The invmgmt production schema was not created successfully.' }
+    $DatabaseContract = Join-Path $InstallRoot 'Database\Test-DatabaseContract.sql'
+    if (-not (Test-Path -LiteralPath $DatabaseContract -PathType Leaf)) {
+        throw 'The Framework v1.0 database contract test is missing from the installation package.'
+    }
+    Write-Host 'Validating the Framework v1.0 database contract.' -ForegroundColor Cyan
+    Invoke-Psql $Psql $AdminPassword $PostgreSqlAdminUser $DatabaseName @('-f', $DatabaseContract)
 
     $ConfigDirectory = Join-Path $InstallRoot 'Config'
     $LogDirectory = Join-Path $InstallRoot 'Logs\Service'
@@ -127,7 +167,7 @@ try {
     ) | Set-Content -LiteralPath (Join-Path $ConfigDirectory 'inventory.env') -Encoding UTF8
     @{
         Product='Inventory Project'; Version=[string]$ReleaseManifest.version; UpdaterVersion=if ($ReleaseManifest.updaterVersion) { [string]$ReleaseManifest.updaterVersion } else { '1.0.0' }; PublicUrl="http://$PublicHost/"; ApiServiceName=$ApiServiceName;
-        IisSiteName=$SiteName; PostgreSqlServiceName=$PostgreSqlServiceName; PostgreSqlPsql=$Psql; DatabaseName=$DatabaseName; InstalledAt=(Get-Date).ToString('o')
+        IisSiteName=$SiteName; PostgreSqlServiceName=$PostgreSqlServiceName; PostgreSqlPsql=$Psql; DatabaseName=$DatabaseName; ApplicationRole=$ApplicationRole; OwnerRole=$OwnerRole; InstalledAt=(Get-Date).ToString('o')
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $ConfigDirectory 'deployment.json') -Encoding UTF8
 
     & icacls.exe (Join-Path $ConfigDirectory 'inventory.env') /inheritance:r /grant:r 'SYSTEM:(R)' 'BUILTIN\Administrators:(R)' | Out-Null
