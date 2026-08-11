@@ -4,7 +4,7 @@
     "version": "1.0",
     "productOwner": "Gaurav Mehta",
     "approvalAuthority": "Gaurav Mehta",
-    "status": "PENDING_APPROVAL",
+    "status": "APPROVED",
     "sourcePdf": "output/pdf/Inventory-Project-Product-and-Engineering-Framework-v1.0.pdf",
     "pdfSha256": "3d4c67e9e501fc3725f9410b03fc8b9b4ec3c35ac7c51c58173420d0c8825be3",
     "requirementCount": 138

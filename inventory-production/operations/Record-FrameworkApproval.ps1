@@ -44,7 +44,12 @@ $Record = [ordered]@{
     approvalEvidence = "Recorded by $env:USERDOMAIN\$env:USERNAME using Record-FrameworkApproval.ps1"
     comments = $Comments
 }
-$Record | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ApprovalPath -Encoding UTF8
+$ApprovalJson = ($Record | ConvertTo-Json -Depth 5) + [Environment]::NewLine
+[System.IO.File]::WriteAllText(
+    $ApprovalPath,
+    $ApprovalJson,
+    [System.Text.UTF8Encoding]::new($false)
+)
 
 Write-Host "Framework v1.0 decision recorded: $Decision" -ForegroundColor Green
 Write-Host "PDF SHA-256: $PdfHash"

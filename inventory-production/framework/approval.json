@@ -1,11 +1,11 @@
 {
   "frameworkVersion": "1.0",
   "productOwner": "Gaurav Mehta",
-  "status": "PENDING_APPROVAL",
-  "decision": null,
-  "approvedAt": null,
-  "approvedPdfSha256": null,
-  "approvedCommit": null,
-  "approvalEvidence": null,
-  "comments": "Framework approval must be recorded before implementation changes or release packaging resume."
+  "status": "APPROVED",
+  "decision": "APPROVED",
+  "approvedAt": "2026-08-11T17:34:30.2382699Z",
+  "approvedPdfSha256": "3d4c67e9e501fc3725f9410b03fc8b9b4ec3c35ac7c51c58173420d0c8825be3",
+  "approvedCommit": "fa71661d528d2329a88364cfed8521699d0dee58",
+  "approvalEvidence": "Recorded by NVIDIA.COM\\gamehta using Record-FrameworkApproval.ps1",
+  "comments": "Approved explicitly by Product Owner in the Inventory Project recovery task on 2026-08-11."
 }

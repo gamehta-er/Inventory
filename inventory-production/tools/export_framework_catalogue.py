@@ -86,13 +86,15 @@ def main() -> None:
 
     FRAMEWORK_DIR.mkdir(parents=True, exist_ok=True)
     pdf_hash = sha256(PDF_PATH) if PDF_PATH.exists() else None
+    approval = json.loads(APPROVAL_PATH.read_text(encoding="utf-8-sig")) if APPROVAL_PATH.exists() else {}
+    approval_status = approval.get("status", "PENDING_APPROVAL")
     catalogue = {
         "document": {
             "title": "Inventory Project Product and Engineering Framework",
             "version": "1.0",
             "productOwner": "Gaurav Mehta",
             "approvalAuthority": "Gaurav Mehta",
-            "status": "PENDING_APPROVAL",
+            "status": approval_status,
             "sourcePdf": str(PDF_PATH.relative_to(ROOT)).replace("\\", "/"),
             "pdfSha256": pdf_hash,
             "requirementCount": len(requirements),
@@ -133,8 +135,6 @@ def main() -> None:
         "requirements": evidence_rows,
     })
 
-    approval = json.loads(APPROVAL_PATH.read_text(encoding="utf-8-sig")) if APPROVAL_PATH.exists() else {}
-    approval_status = approval.get("status", "PENDING_APPROVAL")
     status_counts = Counter(item["status"] for item in evidence_rows)
     lines = [
         "# Framework v1.0 Conformance Backlog",
