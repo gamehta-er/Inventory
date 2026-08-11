@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+coverage/
+packages/
+uploads/
+*.log
+artifacts/
+tmp/
+tools/__pycache__/
+*.pyc
+*.tsbuildinfo
+*.zip
+*.bak
+*.tmp

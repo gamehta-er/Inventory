@@ -1,0 +1,27 @@
+{
+  "name": "inventory-project-production",
+  "version": "1.3.2",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n API,WEB -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm --workspace backend run dev",
+    "dev:web": "npm --workspace frontend run dev",
+    "check": "npm --workspace backend run check && npm --workspace frontend run check",
+    "test": "npm --workspace backend run test && npm --workspace frontend run test",
+    "build": "npm --workspace backend run build && npm --workspace frontend run build",
+    "package:baseline": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File operations/Build-Production-Package.ps1",
+    "package:delta": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File operations/Build-Delta-Package.ps1",
+    "package:release-tools": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File operations/Build-Release-Tools-Package.ps1"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

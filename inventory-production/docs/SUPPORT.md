@@ -1,0 +1,44 @@
+# Inventory Project Support
+
+## First response
+
+1. Run `Operations\Status-Inventory.ps1` as Administrator.
+2. If readiness fails, run `Operations\Show-InventoryLogs.ps1`.
+3. Use maintenance mode before disruptive repair.
+4. Restart only with `Operations\Restart-Inventory.ps1`; it stops IIS traffic before gracefully stopping the API.
+
+## Service order
+
+PostgreSQL must be running before the Inventory Project API. IIS is started last. The API Windows service declares its PostgreSQL service dependency and automatically restarts after transient failures.
+
+## Health endpoints
+
+- `/api/v1/health/live`: API process is running.
+- `/api/v1/health/ready`: API can use the required PostgreSQL schema.
+
+## Logs
+
+- `Logs\Service`: Windows service output and errors.
+- `Logs\Operations\operations.jsonl`: support actions with operator and timestamp.
+- `Logs\Releases\release-ledger.jsonl`: compact release result, operator, package hash, components, migrations, and health checks.
+
+The Activity page is the business audit ledger. Service logs are for operational diagnostics and do not replace activity records.
+
+## Import support
+
+1. Open the saved import session; unfinished sessions are revalidated against the current profile and controlled values.
+2. Review Mapping before row-level validation. Duplicate headers, duplicate field mappings, and unmapped required fields must be resolved there.
+3. Use the linked row and field issue to select an approved value, edit the staged row, exclude the row, or add an authorized controlled value with a reason.
+4. Configuration errors link to the affected Admin profile field. Fix the mapping, then return to the session and revalidate.
+5. Download the validation report when issues need to be corrected in the source CSV.
+6. Do not retry a failed commit by creating another session. Reopen the existing session; commit retries are idempotent.
+
+Completed sessions contain direct links to created or updated assets. Import commits also refresh Search, Inventory, Reports, Activity, history, and category totals in the active browser session.
+
+## Routine updates
+
+Routine releases are delta packages. Run only `Operations\Invoke-InventoryUpdate.ps1`; do not use the full baseline installer. The updater validates the installed version and all affected files before switching components. A frontend-only update does not restart the API or PostgreSQL.
+
+The previous component is retained only inside the active update workspace while health checks run. It is restored automatically on failure and deleted immediately after success. No persistent application or database backup is created.
+
+Use `Operations\Remove-InventoryUpdateCache.ps1` to remove extracted Inventory packages, successfully applied update ZIPs, and abandoned update workspaces. The cleanup command cannot target the live application, PostgreSQL data, uploads, configuration, activity data, IIS, or Windows services.
