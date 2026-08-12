@@ -12,6 +12,15 @@
       ]
     },
     {
+      "requirementId": "ARCH-009",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/vite.config.ts: generates version.json from the frontend package version during every production build",
+        "operations/Build-Production-Package.ps1: rejects a built or packaged web version contract that differs from the release version",
+        "operations/Build-Delta-Package.ps1: rejects a target release whose published web contract differs from the delta target version"
+      ]
+    },
+    {
       "requirementId": "DATA-014",
       "status": "PASSED",
       "evidence": [

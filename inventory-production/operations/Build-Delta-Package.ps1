@@ -92,6 +92,15 @@ if ($From.Manifest.product -ne 'Inventory Project' -or $To.Manifest.product -ne 
 $FromVersion = [string]$From.Manifest.version
 $ToVersion = [string]$To.Manifest.version
 if ([version]$ToVersion -le [version]$FromVersion) { throw 'The target release must be newer than the source release.' }
+
+$TargetWebVersionPath = Join-Path $To.Root 'Payload\Application\web\version.json'
+if (-not (Test-Path -LiteralPath $TargetWebVersionPath -PathType Leaf)) {
+    throw 'Target release is missing Payload/Application/web/version.json.'
+}
+$TargetWebVersion = Get-Content -LiteralPath $TargetWebVersionPath -Raw | ConvertFrom-Json
+if ([string]$TargetWebVersion.packageVersion -cne $ToVersion -or [string]$TargetWebVersion.webVersion -cne $ToVersion) {
+    throw "Target web version contract does not match target release $ToVersion."
+}
 & $ConformanceGate -ReleaseGate -ExpectedProductVersion $ToVersion -ReleaseEvidencePath $ReleaseEvidencePath
 if (-not $?) { throw 'Framework release gate failed. No delta package was created.' }
 $ReleaseEvidencePath = (Resolve-Path -LiteralPath $ReleaseEvidencePath).Path

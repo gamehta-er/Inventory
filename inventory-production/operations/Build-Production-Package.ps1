@@ -39,6 +39,15 @@ Invoke-Npm @('run','check') $ProjectRoot
 Invoke-Npm @('run','test') $ProjectRoot
 Invoke-Npm @('run','build') $ProjectRoot
 
+$BuiltWebVersionPath = Join-Path $ProjectRoot 'frontend\dist\version.json'
+if (-not (Test-Path -LiteralPath $BuiltWebVersionPath -PathType Leaf)) {
+    throw 'Frontend build did not produce version.json.'
+}
+$BuiltWebVersion = Get-Content -LiteralPath $BuiltWebVersionPath -Raw | ConvertFrom-Json
+if ([string]$BuiltWebVersion.packageVersion -cne $Version -or [string]$BuiltWebVersion.webVersion -cne $Version) {
+    throw "Frontend build version contract does not match package version $Version."
+}
+
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
@@ -65,6 +74,10 @@ $ApiPackageDefinition | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Api
 Invoke-Npm @('install','--omit=dev','--ignore-scripts','--no-audit','--no-fund') $Api
 
 Copy-DirectoryContents (Join-Path $ProjectRoot 'frontend\dist') $Web
+$PackagedWebVersion = Get-Content -LiteralPath (Join-Path $Web 'version.json') -Raw | ConvertFrom-Json
+if ([string]$PackagedWebVersion.packageVersion -cne $Version -or [string]$PackagedWebVersion.webVersion -cne $Version) {
+    throw "Packaged web version contract does not match package version $Version."
+}
 Copy-Item (Join-Path $ProjectRoot 'deployment\web.config') (Join-Path $Web 'web.config')
 Copy-Item (Join-Path $ProjectRoot 'deployment\maintenance.html') (Join-Path $Web 'maintenance.html')
 Copy-Item (Join-Path $ProjectRoot 'database\001-production-baseline.sql') $Database
