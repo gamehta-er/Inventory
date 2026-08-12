@@ -1,0 +1,31 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.4",
+  "changeId": "IMPORT-UPLOAD-JSONB-1.3.4",
+  "scope": "Correct CSV header persistence during Import upload without changing the approved architecture, database schema, profile contract, or user workflow.",
+  "requirements": [
+    {
+      "requirementId": "IMPORT-001",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts: uploaded CSV headers are serialized explicitly as JSON before persistence in the resumable import session"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-004",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts: all 19 approved CSV headers round-trip through the PostgreSQL JSON representation",
+        "backend/test/importWorkflow.test.ts: UTF-8 BOM, quoted commas, Windows line endings, blank rows, and multiple rows remain supported"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-014",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts: file staging, row persistence, mappings, session update, and activity remain inside one PostgreSQL transaction",
+        "backend/test/transaction.test.ts: failed work rolls back without committing"
+      ]
+    }
+  ]
+}

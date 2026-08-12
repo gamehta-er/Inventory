@@ -82,6 +82,35 @@ describe('complete import workflow contract', () => {
     assert.deepEqual(result.rows, [['9000001', 'SYN-001', 'Lab, validation']]);
   });
 
+  it('serializes all 19 CSV headers as JSON before writing the import session', () => {
+    const headers = [
+      'MRS order #',
+      'NVBugs #',
+      'Capacity Request #',
+      'Date Received',
+      'Board SKU',
+      'GPU SKU',
+      'Model #',
+      'Serial #',
+      'Milestone',
+      'Product Name',
+      'Location',
+      'Status',
+      'Board Architecture',
+      'Pool/Team',
+      'Project',
+      'Asset Tag #',
+      'Owner / Assignee',
+      'Notes',
+      'Vendor',
+    ];
+
+    const serialized = importInternals.serializeImportHeaders(headers);
+
+    assert.equal(serialized.startsWith('['), true);
+    assert.deepEqual(JSON.parse(serialized), headers);
+  });
+
   it('automatically maps labels, field keys, configured aliases, and an administrator-added field', () => {
     const fields = [
       ...standardFields,

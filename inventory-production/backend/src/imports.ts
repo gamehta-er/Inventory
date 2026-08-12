@@ -86,6 +86,10 @@ function buildImportTemplate(fields: FieldDefinition[]): string {
   return `\uFEFF${fields.map((field) => csvCell(field.label)).join(',')}\r\n`;
 }
 
+function serializeImportHeaders(headers: string[]): string {
+  return JSON.stringify(headers);
+}
+
 function parseCsv(contents: Buffer): ParsedCsv {
   let records: string[][];
   try {
@@ -845,8 +849,8 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
         );
       }
       await client.query(
-        `UPDATE import_batches SET file_name=$2,file_sha256=$3,original_csv=$4,original_headers=$5,status='MAPPING',total_rows=$6,valid_rows=0,warning_rows=0,invalid_rows=0,validated_at=NULL,updated_at=now(),failure_message=NULL WHERE id=$1`,
-        [batchId, fileName, createHash('sha256').update(contents).digest('hex'), contents, parsed.headers, parsed.rows.length],
+        `UPDATE import_batches SET file_name=$2,file_sha256=$3,original_csv=$4,original_headers=$5::jsonb,status='MAPPING',total_rows=$6,valid_rows=0,warning_rows=0,invalid_rows=0,validated_at=NULL,updated_at=now(),failure_message=NULL WHERE id=$1`,
+        [batchId, fileName, createHash('sha256').update(contents).digest('hex'), contents, serializeImportHeaders(parsed.headers), parsed.rows.length],
       );
       await recordActivity(client, { user, actionKey: 'IMPORT_FILE_UPLOADED', source: 'csv-import', reason: 'CSV uploaded and staged for column mapping.', recordType: 'import', recordId: batchId, recordLabel: fileName, routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { rows: parsed.rows.length, columns: parsed.headers.length } });
       return { session: await sessionDetail(client, batchId) };
@@ -1100,6 +1104,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
 
 export const importInternals = {
   parseCsv,
+  serializeImportHeaders,
   autoMappings,
   mappingAssessment,
   normalizeDate,
