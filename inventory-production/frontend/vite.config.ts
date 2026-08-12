@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   define: {
-    __INVENTORY_WEB_VERSION__: JSON.stringify('1.3.2'),
+    __INVENTORY_WEB_VERSION__: JSON.stringify('1.3.3'),
   },
   plugins: [react()],
   server: {

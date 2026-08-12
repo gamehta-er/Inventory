@@ -82,6 +82,7 @@ export function ImportIssueCard({
   onBulkCorrect,
   onApprove,
   onRepair,
+  anchorId,
 }: {
   issue: ImportIssue;
   canApproveLookups: boolean;
@@ -90,6 +91,7 @@ export function ImportIssueCard({
   onBulkCorrect?: (value: string) => void;
   onApprove?: (reason: string) => void;
   onRepair?: () => void;
+  anchorId?: string;
 }) {
   const approvedValues = issue.approvedValues ?? [];
   const suggested = issue.suggestedValues ?? [];
@@ -104,7 +106,7 @@ export function ImportIssueCard({
     && Boolean(sourceValue)
     && canApproveLookups;
 
-  return <li className={`import-issue import-issue--${issue.severity.toLowerCase()}`}>
+  return <li className={`import-issue import-issue--${issue.severity.toLowerCase()}`} id={anchorId} tabIndex={-1}>
     {issue.severity === 'WARNING' ? <TriangleAlert aria-hidden size={18}/> : <XCircle aria-hidden size={18}/>}
     <div className="import-issue__content">
       <div className="import-issue__heading">
@@ -212,6 +214,7 @@ function ReviewPanel({ session, canApproveLookups, busy, busyIssue, onEdit, onTo
       {session.mode === 'UPDATE' && row.before_values && <div className="import-diff"><strong>Proposed changes</strong><div>{session.fields.filter((field) => row.before_values?.[field.fieldKey] !== row.after_values?.[field.fieldKey]).map((field) => <span key={field.id}><b>{field.label}</b><s>{displayFieldValue(field, row.before_values?.[field.fieldKey])}</s><i aria-hidden>to</i><em className={row.after_values?.[field.fieldKey] == null ? 'will-clear' : ''}>{row.after_values?.[field.fieldKey] == null ? 'Will clear existing value' : displayFieldValue(field, row.after_values?.[field.fieldKey])}</em></span>)}</div></div>}
       <dl className="import-row__fields">{session.fields.map((field) => <div key={field.id}><dt>{field.label}{field.required ? ' *' : ''}</dt><dd>{displayFieldValue(field, row.normalized_values[field.fieldKey] ?? rawRowValues(session, row)[field.fieldKey])}</dd></div>)}</dl>
       {row.issues.length > 0 && <ul className="issue-list">{row.issues.map((issue, index) => <ImportIssueCard
+        anchorId={`import-row-${row.id}-field-${issue.fieldKey ?? issue.code}`}
         issue={issue}
         canApproveLookups={canApproveLookups}
         busy={busyIssue === `${row.id}:${issue.fieldKey}`}
@@ -232,6 +235,8 @@ export function ImportPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSessionId = searchParams.get('session');
+  const requestedRowId = searchParams.get('row');
+  const requestedFieldKey = searchParams.get('field');
   const [profileId, setProfileId] = useState(appSession?.categories[0]?.profileId ?? 0);
   const [mode, setMode] = useState<ImportMode>('CREATE');
   const [file, setFile] = useState<File>();
@@ -262,6 +267,14 @@ export function ImportPage() {
     setBusy(true);
     api.importSession(requestedSessionId).then((next) => { setImportSession(next); setProfileId(next.profileId); setMode(next.mode); }).catch((failure: Error) => setError(failure.message)).finally(() => setBusy(false));
   }, [requestedSessionId]);
+  useEffect(() => {
+    if (!importSession || !requestedRowId) return;
+    const issueId = requestedFieldKey ? `import-row-${requestedRowId}-field-${requestedFieldKey}` : `import-row-${requestedRowId}`;
+    const target = document.getElementById(issueId) ?? document.getElementById(`import-row-${requestedRowId}`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.focus({ preventScroll: true });
+  }, [importSession, requestedRowId, requestedFieldKey]);
 
   function useSession(next?: ImportSession) {
     setImportSession(next);
@@ -332,6 +345,7 @@ export function ImportPage() {
   }
 
   const includedRows = importSession?.rows.filter((row) => row.included).length ?? 0;
+  const firstIssue = importSession?.rows.flatMap((row) => row.issues.map((issue) => ({ row, issue })))[0];
   const currentStep = !importSession ? 0 : importSession.status === 'DRAFT' ? 1 : importSession.status === 'MAPPING' ? 2 : 3;
 
   return <>
@@ -372,7 +386,7 @@ export function ImportPage() {
             <div className="batch-kpis"><span><strong>{importSession.validRows}</strong>Valid</span><span><strong>{importSession.warningRows}</strong>Warnings</span><span><strong>{importSession.invalidRows}</strong>Blocked</span><span><strong>{importSession.rows.filter((row) => !row.included).length}</strong>Excluded</span></div>
             {importSession.failureMessage && <p className="form-alert">{importSession.failureMessage}</p>}
             {importSession.status === 'COMPLETED' ? <div className="import-complete"><CheckCircle2 size={34}/><div><h3>Import completed</h3><p>{importSession.results.length} asset{importSession.results.length === 1 ? '' : 's'} committed. Inventory, reports, activity, and category totals have refreshed.</p></div><div className="import-result-links">{importSession.results.map((result) => <button className="button" key={result.import_row_id} onClick={() => navigate(`/assets/${Number(result.asset_id)}`, { state: { backgroundLocation: location } })} type="button"><Link2 size={15}/>{result.product_name} - {result.serial_number}</button>)}</div></div> : <>
-              {importSession.invalidRows > 0 && <div className="import-correction-summary"><TriangleAlert size={21}/><div><strong>{importSession.invalidRows} included row{importSession.invalidRows === 1 ? '' : 's'} need attention</strong><p>Each issue below links to its field and offers the corrections permitted by your role.</p></div></div>}
+            {importSession.invalidRows > 0 && <div className="import-correction-summary"><TriangleAlert size={21}/><div><strong>{importSession.invalidRows} included row{importSession.invalidRows === 1 ? '' : 's'} need attention</strong><p>Each issue below links to its field and offers the corrections permitted by your role.</p></div>{firstIssue && <button className="button" onClick={() => setSearchParams({ session: importSession.id, row: firstIssue.row.id, field: firstIssue.issue.fieldKey ?? firstIssue.issue.code })} type="button">Review First Issue</button>}</div>}
               <div className="import-review-actions"><button className="button" disabled={busy} onClick={() => void run(() => api.validateImport(importSession.id), 'Session revalidated against the current profile and controlled values.')} type="button"><RefreshCw size={16}/>Revalidate</button><button className="button" onClick={() => download(api.importValidationUrl(importSession.id), `${importSession.fileName ?? 'import'}-validation.csv`)} type="button"><Download size={16}/>Validation Report</button><button className="button button--danger" disabled={busy} onClick={() => void run(() => api.cancelImport(importSession.id), 'Import session cancelled.')} type="button">Cancel Session</button></div>
               <ReviewPanel
                 session={importSession}

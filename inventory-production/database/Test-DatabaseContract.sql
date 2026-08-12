@@ -100,6 +100,24 @@ BEGIN
         RAISE EXCEPTION 'DATA-015: runtime role cannot use invmgmt';
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+        FROM unnest(ARRAY[
+            'import_batches',
+            'import_column_mappings',
+            'import_batch_rows',
+            'import_validation_issues',
+            'import_commit_results'
+        ]) AS import_table(table_name)
+        WHERE NOT has_table_privilege(
+            'inventory_app',
+            format('invmgmt.%I', import_table.table_name),
+            'SELECT,INSERT,UPDATE,DELETE'
+        )
+    ) THEN
+        RAISE EXCEPTION 'IMPORT-014: runtime role cannot operate every Import workflow table';
+    END IF;
+
     IF (SELECT count(*) FROM invmgmt.field_definitions WHERE active) <> 19 THEN
         RAISE EXCEPTION 'DATA-009: active field definition count is not 19';
     END IF;

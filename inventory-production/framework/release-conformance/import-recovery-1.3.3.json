@@ -1,0 +1,151 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.3",
+  "changeId": "IMPORT-RECOVERY-1.3.3",
+  "scope": "Complete profile-driven Import workflow and PostgreSQL runtime readiness repair without an architecture or UI framework change.",
+  "requirements": [
+    {
+      "requirementId": "ARCH-005",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/databaseContract.test.ts: ARCH-005 pins API queries to invmgmt without runtime schema creation"
+      ]
+    },
+    {
+      "requirementId": "DATA-014",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/databaseContract.test.ts: DATA-014 keeps migration 006 transactional and uniquely journaled"
+      ]
+    },
+    {
+      "requirementId": "DATA-015",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/databaseContract.test.ts: DATA-015 separates owner and runtime privileges",
+        "database/Test-DatabaseContract.sql: verifies runtime DML grants for every persistent Import table"
+      ]
+    },
+    {
+      "requirementId": "API-003",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/app.ts: PostgreSQL permission failures return the structured DATABASE_PERMISSION_INCOMPLETE envelope"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-001",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/databaseContract.test.ts: persistent sessions retain source CSV, mappings, staged rows, issues, idempotency, and a resume index",
+        "backend/test/importWorkflow.test.ts: creator and administrator session access is enforced",
+        "frontend/src/pages/ImportPage.test.tsx: a saved session resumes from its direct URL"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-002",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts: create and update modes use separate permissions and exact Serial matching",
+        "backend/test/importWorkflow.test.ts: validates PostgreSQL bigint update targets and revisions"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-003",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts: profile-generated template and automatic mapping include an administrator-added field"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-004",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts: parses UTF-8 BOM, quoted commas, Windows line endings, blank rows, and multiple rows"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-005",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts: maps labels, field keys, configured aliases, and rejects ambiguous columns"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-006",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts: blocks duplicate headers, duplicate mappings, and unmapped required fields"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-007",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts: classifies Valid, Warning, Blocking Error, and Configuration Error rows consistently"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-008",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts: required blanks block while optional lookup, relationship, Location, Asset Tag, and Notes blanks do not"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-009",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts: unknown Owner and Vendor block while unknown optional Location warns"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-010",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/ImportPage.test.tsx: keeps Notes as optional free text instead of a controlled-list issue"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-011",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/lookupMatching.test.ts: exact, normalized, and active alias matching",
+        "backend/test/importWorkflow.test.ts: controlled values are resolved and stored through profile mappings"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-012",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts: exact row and field navigation is emitted for browser and validation export",
+        "frontend/src/pages/ImportPage.test.tsx: approved-value correction and authorized controlled-value creation"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-013",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts: row edit, exclude, restore, bulk correction, and validation CSV routes",
+        "frontend/src/pages/ImportPage.test.tsx: staged corrections are applied without another upload"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-014",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts: commit runs in one PostgreSQL transaction, validates revisions, and returns idempotently for a completed session",
+        "backend/test/transaction.test.ts: successful work commits and a failed row rolls back without committing",
+        "backend/test/databaseContract.test.ts: runtime access is verified for every persistent Import workflow table"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-015",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts: declares all required post-commit refresh targets",
+        "frontend/src/pages/ImportPage.test.tsx: complete workflow invalidates Search, Inventory, Reports, Activity, import history, and category data"
+      ]
+    }
+  ]
+}

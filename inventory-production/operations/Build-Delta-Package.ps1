@@ -5,7 +5,8 @@ param(
     [string]$OutputRoot,
     [string]$RequiredUpdaterVersion = '1.2.0',
     [string[]]$CompleteComponents = @(),
-    [switch]$VerifySourcePackages
+    [switch]$VerifySourcePackages,
+    [Parameter(Mandatory)][string]$ReleaseEvidencePath
 )
 
 Set-StrictMode -Version Latest
@@ -13,8 +14,6 @@ $ErrorActionPreference = 'Stop'
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $ConformanceGate = Join-Path $PSScriptRoot 'Test-FrameworkConformance.ps1'
-& $ConformanceGate -ReleaseGate
-if ($LASTEXITCODE -ne 0) { throw 'Framework release gate failed. No delta package was created.' }
 if (-not $OutputRoot) { $OutputRoot = Join-Path $ProjectRoot 'artifacts' }
 $FullVerifier = Join-Path $ProjectRoot 'installer\Test-Production-Package.ps1'
 $DeltaVerifier = Join-Path $PSScriptRoot 'Test-Delta-Package.ps1'
@@ -36,6 +35,16 @@ function Get-Component([string]$Path) {
     if ($Normalized.StartsWith('Payload/Database/Migrations/', [StringComparison]::OrdinalIgnoreCase)) { return 'database' }
     if ($Normalized.StartsWith('Payload/Operations/', [StringComparison]::OrdinalIgnoreCase)) { return 'operations' }
     return $null
+}
+
+function Test-BaselineOnlyPath([string]$Path) {
+    $Normalized = $Path.Replace('\','/')
+    return $Normalized -in @(
+        'Install-InventoryProject.ps1',
+        'Reset-InventoryProject.ps1',
+        'Payload/Database/Test-DatabaseContract.sql',
+        'Payload/RELEASES.md'
+    )
 }
 
 function Test-VersionOnlyApiMetadata([string]$Path, [string]$OldFile, [string]$NewFile) {
@@ -83,6 +92,10 @@ if ($From.Manifest.product -ne 'Inventory Project' -or $To.Manifest.product -ne 
 $FromVersion = [string]$From.Manifest.version
 $ToVersion = [string]$To.Manifest.version
 if ([version]$ToVersion -le [version]$FromVersion) { throw 'The target release must be newer than the source release.' }
+& $ConformanceGate -ReleaseGate -ExpectedProductVersion $ToVersion -ReleaseEvidencePath $ReleaseEvidencePath
+if (-not $?) { throw 'Framework release gate failed. No delta package was created.' }
+$ReleaseEvidencePath = (Resolve-Path -LiteralPath $ReleaseEvidencePath).Path
+$ReleaseEvidence = Get-Content -LiteralPath $ReleaseEvidencePath -Raw | ConvertFrom-Json
 
 $FromMap = @{}
 foreach ($File in $From.Manifest.files) { $FromMap[[string]$File.path] = $File }
@@ -95,6 +108,7 @@ foreach ($Path in $ToMap.Keys) {
     if (-not $Action) { continue }
     if ($Action -eq 'replaced' -and (Test-VersionOnlyApiMetadata $Path (Join-Path $From.Root $Path) (Join-Path $To.Root $Path))) { continue }
     $Component = Get-Component $Path
+    if (-not $Component -and (Test-BaselineOnlyPath $Path)) { continue }
     if (-not $Component) { throw "A changed baseline file cannot be delivered as a delta: $Path. Promote a new baseline or publish an explicit operations update." }
     if ($Component -eq 'database' -and $Action -ne 'added') { throw "Existing migrations are immutable and cannot be $Action`: $Path" }
     $Changes.Add([pscustomobject]@{ path=$Path; action=$Action; component=$Component; source=$ToMap[$Path] })
@@ -102,6 +116,7 @@ foreach ($Path in $ToMap.Keys) {
 foreach ($Path in $FromMap.Keys) {
     if ($ToMap.ContainsKey($Path)) { continue }
     $Component = Get-Component $Path
+    if (-not $Component -and (Test-BaselineOnlyPath $Path)) { continue }
     if (-not $Component) { throw "A removed baseline file cannot be delivered as a delta: $Path" }
     if ($Component -eq 'database') { throw "Database migrations cannot be removed: $Path" }
     $Changes.Add([pscustomobject]@{ path=$Path; action='removed'; component=$Component; source=$null })
@@ -146,6 +161,15 @@ foreach ($CompleteComponent in $CompleteComponents) {
     }
 }
 if (-not $Changes.Count) { throw 'The releases contain no deployable component changes.' }
+
+$EvidenceRelativePath = "Payload/Operations/Conformance/$([IO.Path]::GetFileName($ReleaseEvidencePath))"
+if (-not $ToMap.ContainsKey($EvidenceRelativePath)) {
+    throw "Target release does not contain the governed release evidence: $EvidenceRelativePath"
+}
+$EvidenceHash = (Get-FileHash -LiteralPath $ReleaseEvidencePath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($EvidenceHash -ne ([string]$ToMap[$EvidenceRelativePath].sha256).ToLowerInvariant()) {
+    throw 'Target release conformance evidence differs from the approved source artifact.'
+}
 
 $Components = @($Changes.component | Sort-Object -Unique)
 $DeclaredCompleteComponents = [Collections.Generic.List[string]]::new()
@@ -213,7 +237,15 @@ $Manifest = [ordered]@{
         api = $ToVersion
     }
     requiredImportContractVersion = '005-complete-import-workflow'
-    requiredSchemaMigrations = @('005-complete-import-workflow')
+    requiredSchemaMigrations = @('005-complete-import-workflow','006-invmgmt-schema')
+    conformance = [ordered]@{
+        frameworkVersion = [string]$ReleaseEvidence.frameworkVersion
+        candidateVersion = [string]$ReleaseEvidence.candidateVersion
+        changeId = [string]$ReleaseEvidence.changeId
+        path = $EvidenceRelativePath
+        sha256 = $EvidenceHash
+        requirementIds = @($ReleaseEvidence.requirements.requirementId)
+    }
     createdAt = (Get-Date).ToUniversalTime().ToString('o')
     components = $Components
     completeComponents = @($DeclaredCompleteComponents)

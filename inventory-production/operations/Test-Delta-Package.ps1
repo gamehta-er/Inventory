@@ -58,6 +58,39 @@ if (-not [string]$Manifest.requiredImportContractVersion) { throw 'Delta manifes
 if (@($Manifest.requiredSchemaMigrations) -notcontains [string]$Manifest.requiredImportContractVersion) {
     throw 'The required import contract must also be declared as a required schema migration.'
 }
+foreach ($RequiredMigration in @('005-complete-import-workflow','006-invmgmt-schema')) {
+    if (@($Manifest.requiredSchemaMigrations) -notcontains $RequiredMigration) {
+        throw "Delta manifest is missing required schema migration: $RequiredMigration"
+    }
+}
+if (-not $Manifest.PSObject.Properties['conformance']) { throw 'Delta manifest is missing release conformance metadata.' }
+$Conformance = $Manifest.conformance
+foreach ($Required in @('frameworkVersion','candidateVersion','changeId','path','sha256')) {
+    if ([string]::IsNullOrWhiteSpace([string]$Conformance.$Required)) { throw "Delta conformance metadata is missing $Required." }
+}
+if ([string]$Conformance.frameworkVersion -cne '1.0') { throw 'Delta does not target approved Framework v1.0.' }
+if ([string]$Conformance.candidateVersion -cne [string]$Manifest.toVersion) { throw 'Delta conformance candidate does not match toVersion.' }
+$ConformancePath = ([string]$Conformance.path).Replace('\','/')
+Assert-SafeRelativePath $ConformancePath
+Assert-ComponentPath $ConformancePath 'operations'
+$ConformanceFile = Join-Path $PackageRoot $ConformancePath
+if (-not (Test-Path -LiteralPath $ConformanceFile -PathType Leaf)) { throw "Delta conformance artifact is missing: $ConformancePath" }
+$ConformanceHash = (Get-FileHash -LiteralPath $ConformanceFile -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($ConformanceHash -ne ([string]$Conformance.sha256).ToLowerInvariant()) { throw 'Delta conformance artifact hash mismatch.' }
+$ConformanceReport = Get-Content -LiteralPath $ConformanceFile -Raw | ConvertFrom-Json
+$ConformanceRows = @($ConformanceReport.requirements)
+$ConformanceIds = @($ConformanceRows.requirementId)
+if ([string]$ConformanceReport.frameworkVersion -cne '1.0' -or [string]$ConformanceReport.candidateVersion -cne [string]$Manifest.toVersion) {
+    throw 'Embedded release conformance contract is incompatible with the delta.'
+}
+if ([string]$ConformanceReport.changeId -cne [string]$Conformance.changeId) { throw 'Embedded release conformance change ID mismatch.' }
+if (-not $ConformanceRows.Count -or @($ConformanceRows | Where-Object { [string]$_.status -cne 'PASSED' }).Count) {
+    throw 'Every declared release conformance requirement must be PASSED.'
+}
+if (@($ConformanceIds | Sort-Object -Unique).Count -ne $ConformanceIds.Count) { throw 'Release conformance contains duplicate requirement IDs.' }
+if (@(Compare-Object @($Conformance.requirementIds | Sort-Object) @($ConformanceIds | Sort-Object)).Count) {
+    throw 'Delta conformance requirement IDs do not match the embedded report.'
+}
 if ([version]$Manifest.toVersion -le [version]$Manifest.fromVersion) {
     throw 'Delta toVersion must be newer than fromVersion.'
 }
@@ -108,6 +141,7 @@ foreach ($Entry in $PayloadEntries) {
         Write-Host "Verified $VerifiedPayloadFiles of $($PayloadEntries.Count) payload files."
     }
 }
+if (-not $Expected.Contains($ConformancePath)) { throw 'Release conformance artifact is not declared as a verified delta payload file.' }
 
 foreach ($Entry in @($Manifest.removedFiles)) {
     $Path = ([string]$Entry.path).Replace('\','/')

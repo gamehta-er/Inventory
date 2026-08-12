@@ -259,6 +259,7 @@ function normalizeImportIssue(value: unknown): ImportIssue {
     lookupName: nullableText(data.lookupName ?? data.lookup_name) ?? undefined,
     approvedValues: list(data.approvedValues ?? data.approved_values).map(normalizeLookupOption),
     adminRoute: nullableText(data.adminRoute ?? data.admin_route) ?? undefined,
+    routePath: nullableText(data.routePath ?? data.route_path) ?? undefined,
   };
 }
 

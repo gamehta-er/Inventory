@@ -163,6 +163,7 @@ DECLARE
     table_count integer;
     wrong_owner_count integer;
     public_inventory_count integer;
+    missing_import_privilege_count integer;
 BEGIN
     SELECT count(*)
     INTO table_count
@@ -200,12 +201,31 @@ BEGIN
           'export_definitions', 'activity_events', 'activity_field_changes'
       ]);
 
-    IF table_count <> 37 OR wrong_owner_count <> 0 OR public_inventory_count <> 0 THEN
+    SELECT count(*)
+    INTO missing_import_privilege_count
+    FROM unnest(ARRAY[
+        'import_batches',
+        'import_column_mappings',
+        'import_batch_rows',
+        'import_validation_issues',
+        'import_commit_results'
+    ]) AS import_table(table_name)
+    WHERE NOT has_table_privilege(
+        'inventory_app',
+        format('invmgmt.%I', import_table.table_name),
+        'SELECT,INSERT,UPDATE,DELETE'
+    );
+
+    IF table_count <> 37
+       OR wrong_owner_count <> 0
+       OR public_inventory_count <> 0
+       OR missing_import_privilege_count <> 0 THEN
         RAISE EXCEPTION
-            'Schema migration verification failed: tables %, wrong owners %, public Inventory tables %',
+            'Schema migration verification failed: tables %, wrong owners %, public Inventory tables %, Import tables missing runtime DML %',
             table_count,
             wrong_owner_count,
-            public_inventory_count;
+            public_inventory_count,
+            missing_import_privilege_count;
     END IF;
 END;
 $$;

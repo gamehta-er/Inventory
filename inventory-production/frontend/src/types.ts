@@ -227,6 +227,7 @@ export interface ImportIssue {
   lookupName?: string;
   approvedValues?: LookupOption[];
   adminRoute?: string;
+  routePath?: string;
 }
 
 export interface ImportHeader {

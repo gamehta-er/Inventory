@@ -283,7 +283,7 @@ button.button,
 .import-row__fields div { padding: 9px; border-radius: 6px; background: var(--surface-soft); }
 .import-row dd { margin: 4px 0 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
 .issue-list { display: grid; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
-.import-correction-summary { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 11px; margin: 0 0 16px; padding: 13px 14px; border: 1px solid #efaaa2; border-radius: 7px; background: #fff6f4; color: #8c2f24; }
+.import-correction-summary { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 11px; margin: 0 0 16px; padding: 13px 14px; border: 1px solid #efaaa2; border-radius: 7px; background: #fff6f4; color: #8c2f24; }
 .import-correction-summary > svg { margin-top: 1px; }
 .import-correction-summary strong { display: block; }
 .import-correction-summary p { margin: 4px 0 0; color: #72443d; font-size: 12px; line-height: 1.5; }
@@ -315,6 +315,8 @@ button.button,
 .import-issue__approval-form { display: grid; gap: 9px; margin-top: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); }
 .import-issue__approval-form > p { margin: 0; color: var(--muted); font-size: 12px; }
 .import-issue__approval-form .button { width: fit-content; }
+.import-row, .import-issue { scroll-margin-top: 96px; }
+.import-issue:focus { outline: 2px solid var(--green); outline-offset: 2px; }
 .lookup-correction-context { padding: 13px; border: 1px solid #b8d6ad; border-radius: 7px; background: #f4faef; }
 .lookup-correction-context strong { display: block; margin-top: 4px; color: var(--ink); }
 .lookup-correction-context p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }

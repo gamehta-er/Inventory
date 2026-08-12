@@ -191,6 +191,14 @@ function Write-ReleaseLedger([string]$Result, [string]$Detail, [object[]]$Health
         packageHash = $PackageHash
         changedComponents = @($Manifest.components)
         migrationIds = @($AppliedMigrations)
+        conformance = if ($Manifest.PSObject.Properties['conformance']) {
+            [ordered]@{
+                frameworkVersion = [string]$Manifest.conformance.frameworkVersion
+                changeId = [string]$Manifest.conformance.changeId
+                artifactHash = [string]$Manifest.conformance.sha256
+                requirementIds = @($Manifest.conformance.requirementIds)
+            }
+        } else { $null }
         result = $Result
         healthChecks = @($HealthChecks)
         detail = $Detail
@@ -336,6 +344,18 @@ try {
                 $LedgerTable = 'invmgmt.schema_migrations'
             }
         }
+
+        foreach ($RequiredMigration in @($Manifest.requiredSchemaMigrations)) {
+            $EscapedRequiredMigration = ([string]$RequiredMigration).Replace("'", "''")
+            $RequiredResult = Invoke-ProcessCapture $Psql @(
+                '-h','127.0.0.1','-p','5432','-U',$PostgreSqlAdminUser,'-d',$DatabaseName,'-w','-X','-tAc',
+                "SELECT 1 FROM $LedgerTable WHERE migration_key='$EscapedRequiredMigration';"
+            ) $AdminPassword
+            if ($RequiredResult.Output.Trim() -ne '1') {
+                throw "Required database migration is not installed: $RequiredMigration"
+            }
+        }
+        Write-Host 'PASS: Required database migrations are installed.' -ForegroundColor Green
     }
 
     foreach ($Component in @($Components | Where-Object { $_ -ne 'database' })) {

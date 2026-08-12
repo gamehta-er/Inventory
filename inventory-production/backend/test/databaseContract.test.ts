@@ -45,9 +45,31 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
   it('ARCH-005 pins API queries to invmgmt without runtime schema creation', () => {
     assert.match(dbSource, /search_path=invmgmt,public/);
     assert.match(dbSource, /to_regclass\('invmgmt\.assets'\)/);
+    assert.match(dbSource, /to_regclass\('invmgmt\.import_column_mappings'\)/);
+    assert.match(dbSource, /has_table_privilege/);
+    assert.match(dbSource, /SELECT,INSERT,UPDATE,DELETE/);
     assert.match(appSource, /FROM invmgmt\.schema_migrations/);
     assert.doesNotMatch(dbSource, /CREATE (TABLE|SCHEMA)/i);
     assert.doesNotMatch(appSource, /CREATE (TABLE|SCHEMA)/i);
+  });
+
+  it('IMPORT-014 verifies runtime access to every persistent Import workflow table', async () => {
+    const databaseContract = await readFile(projectFile('database/Test-DatabaseContract.sql'), 'utf8');
+    for (const table of ['import_batches', 'import_column_mappings', 'import_batch_rows', 'import_validation_issues', 'import_commit_results']) {
+      assert.match(databaseContract, new RegExp(`'${table}'`));
+    }
+    assert.match(databaseContract, /has_table_privilege/);
+    assert.match(databaseContract, /IMPORT-014/);
+  });
+
+  it('IMPORT-001 persists resumable sessions, source files, mappings, rows, issues, and idempotent results', () => {
+    for (const table of ['import_batches', 'import_column_mappings', 'import_batch_rows', 'import_validation_issues', 'import_commit_results']) {
+      assert.match(baseline, new RegExp(`CREATE TABLE ${table}`));
+    }
+    assert.match(baseline, /profile_version integer NOT NULL/);
+    assert.match(baseline, /original_csv bytea/);
+    assert.match(baseline, /idempotency_key uuid NOT NULL DEFAULT gen_random_uuid\(\) UNIQUE/);
+    assert.match(baseline, /CREATE INDEX import_batches_resume_idx ON import_batches\(created_by_user_id, status, updated_at DESC\)/);
   });
 
   it('OPS-003 packages and installs the complete ordered migration chain', () => {

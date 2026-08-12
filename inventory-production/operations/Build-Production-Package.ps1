@@ -1,15 +1,17 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.3.2',
-    [string]$OutputRoot
+    [string]$Version = '1.3.3',
+    [string]$OutputRoot,
+    [Parameter(Mandatory)][string]$ReleaseEvidencePath
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $ConformanceGate = Join-Path $PSScriptRoot 'Test-FrameworkConformance.ps1'
-& $ConformanceGate -ReleaseGate
-if ($LASTEXITCODE -ne 0) { throw 'Framework release gate failed. No baseline package was created.' }
+& $ConformanceGate -ReleaseGate -ExpectedProductVersion $Version -ReleaseEvidencePath $ReleaseEvidencePath
+if (-not $?) { throw 'Framework release gate failed. No baseline package was created.' }
+$ReleaseEvidencePath = (Resolve-Path -LiteralPath $ReleaseEvidencePath).Path
 if (-not $OutputRoot) { $OutputRoot = Join-Path $ProjectRoot 'artifacts' }
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 $OutputRoot = (Resolve-Path -LiteralPath $OutputRoot).Path
@@ -82,6 +84,9 @@ Copy-Item (Join-Path $ProjectRoot 'deployment\Run-Api.ps1') (Join-Path $Runtime 
 Get-ChildItem (Join-Path $ProjectRoot 'operations') -File | Where-Object Name -notin @('Build-Production-Package.ps1','Build-Delta-Package.ps1','Build-Release-Tools-Package.ps1') | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination $Operations
 }
+$ConformanceDestination = Join-Path $Operations 'Conformance'
+New-Item -ItemType Directory -Force -Path $ConformanceDestination | Out-Null
+Copy-Item -LiteralPath $ReleaseEvidencePath -Destination $ConformanceDestination -Force
 Copy-Item (Join-Path $ProjectRoot 'docs\README.md') (Join-Path $Payload 'README.md')
 Copy-Item (Join-Path $ProjectRoot 'docs\SUPPORT.md') (Join-Path $Payload 'SUPPORT.md')
 Copy-Item (Join-Path $ProjectRoot 'docs\IMPORT-WORKFLOW.md') (Join-Path $Payload 'IMPORT-WORKFLOW.md')

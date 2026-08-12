@@ -18,7 +18,7 @@ import { registerReportRoutes } from './reports.js';
 import { registerActivityRoutes } from './activityRoutes.js';
 import { registerLabelRoutes } from './labels.js';
 import { registerAdminRoutes } from './admin.js';
-import { releaseVersion, requiredImportContract } from './version.js';
+import { releaseVersion, requiredImportContract, requiredSchemaContract } from './version.js';
 
 export async function buildApp() {
   const app=Fastify({logger:{level:config.isProduction?'info':'debug'},requestIdHeader:'x-request-id',trustProxy:true});
@@ -34,19 +34,31 @@ export async function buildApp() {
     const migrations = await pool.query<{ migration_key:string }>('SELECT migration_key FROM invmgmt.schema_migrations ORDER BY applied_at DESC, migration_key DESC');
     const keys = migrations.rows.map((row) => row.migration_key);
     const importCompatible = keys.includes(requiredImportContract);
+    const schemaCompatible = keys.includes(requiredSchemaContract);
     return {
       packageVersion: releaseVersion,
       webVersion: releaseVersion,
       apiVersion: releaseVersion,
       schemaVersion: keys[0] ?? 'uninitialized',
       importContractVersion: importCompatible ? requiredImportContract : 'missing',
-      compatible: importCompatible,
+      compatible: importCompatible && schemaCompatible,
     };
   });
   app.get('/uploads/*',async(request,reply)=>{const wildcard=(request.params as {'*':string})['*'];const root=resolve(config.UPLOAD_ROOT);const path=resolve(root,wildcard);if(path!==root&&!path.startsWith(root+sep))throw new AppError(404,'FILE_NOT_FOUND','File not found.');reply.header('cache-control','public, max-age=3600').type(path.endsWith('.png')?'image/png':path.endsWith('.webp')?'image/webp':'image/jpeg');return reply.send(createReadStream(path));});
   await registerAuthRoutes(app); await registerSessionRoutes(app); await registerRegistryRoutes(app); await registerAssetRoutes(app);
   await registerImportRoutes(app); await registerReportRoutes(app); await registerActivityRoutes(app); await registerLabelRoutes(app); await registerAdminRoutes(app);
   app.setNotFoundHandler((request)=>{throw new AppError(404,'ROUTE_NOT_FOUND',`Route not found: ${request.method} ${request.url}`);});
-  app.setErrorHandler((error,request,reply)=>{const known=error instanceof AppError;const status=known?error.statusCode:500;if(!known)request.log.error(error);reply.code(status).send({code:known?error.code:'INTERNAL_ERROR',message:known?error.message:'An unexpected server error occurred.',details:known?error.details:undefined,requestId:request.id});});
+  app.setErrorHandler((error,request,reply)=>{
+    const known=error instanceof AppError;
+    const databasePermissionError=!known&&typeof error==='object'&&error!==null&&'code' in error&&error.code==='42501';
+    const status=known?error.statusCode:databasePermissionError?503:500;
+    if(!known)request.log.error(error);
+    reply.code(status).send({
+      code:known?error.code:databasePermissionError?'DATABASE_PERMISSION_INCOMPLETE':'INTERNAL_ERROR',
+      message:known?error.message:databasePermissionError?'Inventory database permissions are incomplete. Contact an administrator and provide the request ID.':'An unexpected server error occurred.',
+      details:known?error.details:undefined,
+      requestId:request.id,
+    });
+  });
   return app;
 }

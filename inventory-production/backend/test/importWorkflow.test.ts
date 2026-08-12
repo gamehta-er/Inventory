@@ -51,6 +51,29 @@ const standardFields = [
 ];
 
 describe('complete import workflow contract', () => {
+  it('generates the template from every enabled profile field, including administrator-added fields', () => {
+    const template = importInternals.buildImportTemplate([
+      ...standardFields,
+      field(20, 'rack_zone', 'Rack Zone', false),
+    ]);
+
+    assert.equal(template, '\uFEFFNVBugs #,Serial #,Notes,Rack Zone\r\n');
+  });
+
+  it('allows an owner or administrator to resume a session and rejects other users', () => {
+    const owner = { id: 7, permissions: [] } as never;
+    const administrator = { id: 8, permissions: ['admin.profile'] } as never;
+    const otherUser = { id: 9, permissions: [] } as never;
+    const batch = { created_by_user_id: '7' };
+
+    assert.doesNotThrow(() => importInternals.requireSessionAccess(owner, batch));
+    assert.doesNotThrow(() => importInternals.requireSessionAccess(administrator, batch));
+    assert.throws(
+      () => importInternals.requireSessionAccess(otherUser, batch),
+      (error: unknown) => Boolean(error && typeof error === 'object' && 'statusCode' in error && error.statusCode === 403),
+    );
+  });
+
   it('parses UTF-8 BOM, quoted commas, Windows line endings, and blank rows', () => {
     const csv = Buffer.from('\ufeffNVBugs #,Serial #,Notes\r\n9000001,SYN-001,"Lab, validation"\r\n\r\n', 'utf8');
     const result = importInternals.parseCsv(csv);
@@ -202,5 +225,55 @@ describe('complete import workflow contract', () => {
 
     assert.equal(result.issues[0]?.severity, 'CONFIGURATION');
     assert.equal(result.issues[0]?.code, 'PROFILE_VALIDATION_PATTERN_INVALID');
+  });
+
+  it('accepts PostgreSQL bigint text values for a revalidated update target', () => {
+    assert.deepEqual(importInternals.parseValidatedTarget('42', '7'), { assetId: 42, revision: 7 });
+    assert.deepEqual(importInternals.parseValidatedTarget(42, 7), { assetId: 42, revision: 7 });
+  });
+
+  it('rejects missing, invalid, zero, and unsafe update targets', () => {
+    assert.equal(importInternals.parseValidatedTarget(null, '7'), null);
+    assert.equal(importInternals.parseValidatedTarget('42', null), null);
+    assert.equal(importInternals.parseValidatedTarget('0', '7'), null);
+    assert.equal(importInternals.parseValidatedTarget('42', '0'), null);
+    assert.equal(importInternals.parseValidatedTarget('not-an-id', '7'), null);
+    assert.equal(importInternals.parseValidatedTarget(String(Number.MAX_SAFE_INTEGER + 1), '7'), null);
+  });
+
+  it('classifies valid, warning, blocking, and configuration rows consistently', () => {
+    assert.equal(importInternals.classifyImportRow([]), 'VALID');
+    assert.equal(importInternals.classifyImportRow([{ severity: 'WARNING', code: 'LOCATION_NOT_RECOGNIZED', message: 'Location warning.' }]), 'WARNING');
+    assert.equal(importInternals.classifyImportRow([{ severity: 'ERROR', code: 'REQUIRED_VALUE_MISSING', message: 'Required value missing.' }]), 'BLOCKED');
+    assert.equal(importInternals.classifyImportRow([
+      { severity: 'WARNING', code: 'LOCATION_NOT_RECOGNIZED', message: 'Location warning.' },
+      { severity: 'CONFIGURATION', code: 'PROFILE_LOOKUP_MISSING', message: 'Profile mapping missing.' },
+    ]), 'CONFIGURATION_ERROR');
+  });
+
+  it('provides exact row and field navigation in the browser and validation export', () => {
+    assert.equal(
+      importInternals.importIssueRoute('batch 12', 'row/7', 'pool_team'),
+      '/import?session=batch+12&row=row%2F7&field=pool_team',
+    );
+  });
+
+  it('declares every view that must refresh after an atomic commit', () => {
+    assert.deepEqual(importInternals.importRefreshTargets, ['search', 'inventory', 'reports', 'activity', 'imports', 'categories']);
+  });
+
+  it('blocks unknown required owners and vendors while offering approved matches', async () => {
+    const client = queryClient((text) => {
+      if (/FROM application_users/.test(text)) return { rows: [{ id: 1, label: 'Gaurav Mehta' }] };
+      if (/FROM vendors/.test(text)) return { rows: [{ id: 2, label: 'NVIDIA Lab Supply' }] };
+      return { rows: [] };
+    });
+    const owner = await importInternals.normalizeField(client, field(22, 'owner', 'Owner / Assignee', true, [], { dataType: 'entity' }), 'Gaurav M');
+    const vendor = await importInternals.normalizeField(client, field(23, 'vendor', 'Vendor', true, [], { dataType: 'entity' }), 'NVIDIA Supply');
+
+    assert.equal(owner.issues[0]?.code, 'OWNER_NOT_RECOGNIZED');
+    assert.deepEqual(owner.issues[0]?.suggestedValues, ['Gaurav Mehta']);
+    assert.equal(vendor.issues[0]?.code, 'VENDOR_NOT_RECOGNIZED');
+    assert.deepEqual(vendor.issues[0]?.suggestedValues, ['NVIDIA Lab Supply']);
   });
 });
