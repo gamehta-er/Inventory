@@ -94,7 +94,15 @@ CREATE TABLE categories (
     display_order integer NOT NULL DEFAULT 0,
     active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT categories_asset_family_key_check CHECK (
+        NOT active OR (
+            upper(regexp_replace(category_key,'[^A-Za-z0-9]+','_','g'))
+                <> ALL (ARRAY['IN_USE','REWORK','E_WASTE','ARCHIVE','GPU_READY','AVAILABLE']::text[])
+            AND upper(regexp_replace(category_name,'[^A-Za-z0-9]+','_','g'))
+                <> ALL (ARRAY['IN_USE','REWORK','E_WASTE','ARCHIVE','GPU_READY','AVAILABLE']::text[])
+        )
+    )
 );
 
 CREATE TABLE asset_profiles (
@@ -184,6 +192,10 @@ CREATE TABLE asset_models (
     board_sku text,
     gpu_sku text,
     board_architecture text,
+    gpu_class text,
+    gpu_chip text,
+    gpu_name_vrl text,
+    gpu_name_market text,
     image_path text,
     active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now(),
@@ -535,6 +547,7 @@ WHERE u.display_name IN ('Igor Margulis','Monica Martin','Gaurav Mehta')
 INSERT INTO lookup_lists(lookup_key, lookup_name, description) VALUES
 ('ASSET_STATUS','Asset Status','Controlled inventory lifecycle values.'),
 ('BOARD_ARCHITECTURE','Board Architecture','Approved board architecture values.'),
+('GPU_CLASS','GPU Class','Approved GPU product classes.'),
 ('POOL_TEAM','Pool / Team','Operational ownership pools and teams.');
 INSERT INTO lookup_values(lookup_list_id,value_key,display_value,description,display_order)
 SELECT l.id, v.value_key, v.display_value, v.description, v.display_order
@@ -549,6 +562,48 @@ CROSS JOIN (VALUES
 ) AS v(value_key,display_value,description,display_order)
 WHERE l.lookup_key='ASSET_STATUS';
 
+INSERT INTO lookup_values(lookup_list_id,value_key,display_value,description,display_order)
+SELECT l.id, v.value_key, v.display_value, 'Approved Board Architecture value.', v.display_order
+FROM lookup_lists l
+CROSS JOIN (VALUES
+('ADA','ADA',10),
+('AMPERE','AMPERE',20),
+('BLACKWELL','BLACKWELL',30),
+('CONCORD','Concord',40),
+('DGX_SPARK','DGX-Spark',50),
+('FERRIX','Ferrix',60),
+('FIRESPRAY','Firespray',70),
+('HOPPER','HOPPER',80),
+('JEDHA','Jedha',90),
+('NA','NA',100),
+('ORIN','Orin',110),
+('OSG','OSG',120),
+('RUBIN','RUBIN',130),
+('SDEV','SDEV',140),
+('TH500','TH500',150),
+('TURING','TURING',160),
+('VOLTA','VOLTA',170),
+('XAVIER','Xavier',180),
+('PASCAL','PASCAL',190),
+('MAXWELL','MAXWELL',200),
+('KEPLER','KEPLER',210),
+('N1X','N1X',220),
+('N1C','N1C',230)
+) AS v(value_key,display_value,display_order)
+WHERE l.lookup_key='BOARD_ARCHITECTURE';
+
+INSERT INTO lookup_values(lookup_list_id,value_key,display_value,description,display_order)
+SELECT l.id, v.value_key, v.display_value, 'Approved GPU Class value.', v.display_order
+FROM lookup_lists l
+CROSS JOIN (VALUES
+('TESLA','Tesla',10),
+('GEFORCE','GeForce',20),
+('QUADRO','Quadro',30),
+('TITAN','Titan',40),
+('NONE','None',50)
+) AS v(value_key,display_value,display_order)
+WHERE l.lookup_key='GPU_CLASS';
+
 INSERT INTO categories(category_key,category_name,description,icon_key,display_order) VALUES
 ('GPU','GPU','Graphics processing units and accelerator boards.','gpu',10),
 ('SERVER','Server','Lab servers and shared compute systems.','server',20),
@@ -559,9 +614,6 @@ INSERT INTO categories(category_key,category_name,description,icon_key,display_o
 ('M2_DRIVE','M.2 Drive','M.2 storage devices.','drive',70),
 ('MISCELLANEOUS','Miscellaneous','Other tracked hardware.','box',80),
 ('NVLINK','NVLink','NVLink bridges and interconnect hardware.','link',90),
-('E_WASTE','E-Waste','Disposition-tracked electronic waste.','recycle',100),
-('REWORK','Rework','Hardware awaiting corrective work.','wrench',110),
-('AVAILABLE','Available','General available stock profile.','check',120),
 ('LOW_PRICE_CONSUMABLES','Low-price Consumables','Quantity-oriented consumable inventory.','package',130),
 ('RASPBERRY_PI','Raspberry Pi','Raspberry Pi systems and accessories.','cpu',140),
 ('NEW_HIRE_KITS','New Hire Kits','Prepared employee equipment kits.','briefcase',150);
@@ -583,6 +635,10 @@ INSERT INTO field_definitions(field_key,field_label,definition,help_text,data_ty
 ('location','Location','Optional physical placement in the location hierarchy.','Select the most specific known Building, Lab, Rack, RU, Cabinet, or Storage location.','entity',NULL,'assets.location_id',ARRAY['Location','Asset Location'], '{}'::jsonb,false),
 ('asset_status','Status','Controlled inventory lifecycle status.','Status controls availability and lifecycle reporting.','lookup',(SELECT id FROM lookup_lists WHERE lookup_key='ASSET_STATUS'),'assets.status_value_id',ARRAY['Status','Asset Status'], '{}'::jsonb,false),
 ('board_architecture','Board Architecture','GPU or board architecture family.','Shared model-level architecture when applicable.','lookup',(SELECT id FROM lookup_lists WHERE lookup_key='BOARD_ARCHITECTURE'),'asset_models.board_architecture',ARRAY['Board Architecture','Architecture'], '{}'::jsonb,false),
+('gpu_class','GPU Class','Product class used to position a GPU offering.','Optional shared model-level class such as Tesla, GeForce, Quadro, or Titan.','lookup',(SELECT id FROM lookup_lists WHERE lookup_key='GPU_CLASS'),'asset_models.gpu_class',ARRAY['GPU Class','Class'], '{}'::jsonb,false),
+('gpu_chip','GPU Chip','Internal GPU chip identifier.','Optional shared model-level chip value such as GB200 or TH500.','text',NULL,'asset_models.gpu_chip',ARRAY['GPU Chip','Chip'], '{}'::jsonb,false),
+('gpu_name_vrl','GPU Name - VRL','Internal VRL GPU name.','Optional internal GPU name used by VRL and engineering references.','text',NULL,'asset_models.gpu_name_vrl',ARRAY['GPU Name - VRL','GPU Name VRL','VRL GPU Name'], '{}'::jsonb,false),
+('gpu_name_market','GPU Name - Market','External or market-facing GPU name.','Optional shared market name for the GPU model.','text',NULL,'asset_models.gpu_name_market',ARRAY['GPU Name - Market','GPU Name Market','Market GPU Name'], '{}'::jsonb,false),
 ('pool_team','Pool/Team','Operational team or inventory pool.','Use a controlled team value when available.','lookup',(SELECT id FROM lookup_lists WHERE lookup_key='POOL_TEAM'),'assets.pool_team',ARRAY['Pool/Team','Pool','Team'], '{}'::jsonb,false),
 ('project','Project','Operational project or activity using the asset.','Optional free-text project reference.','text',NULL,'assets.project',ARRAY['Project'], '{}'::jsonb,false),
 ('asset_tag','Asset Tag #','Organization-managed identifier applied to one asset.','Must be unique when provided.','text',NULL,'assets.asset_tag',ARRAY['Asset Tag #','Asset Tag','Tag'], '{}'::jsonb,true),
@@ -594,7 +650,16 @@ INSERT INTO profile_fields(profile_id,field_definition_id,required,display_order
 SELECT p.id, f.id,
        f.field_key IN ('nvbugs','date_received','model_number','serial_number','product_name','asset_status','owner','vendor'),
        array_position(ARRAY['mrs_order','nvbugs','capacity_request','date_received','board_sku','gpu_sku','model_number','serial_number','milestone','product_name','location','asset_status','board_architecture','pool_team','project','asset_tag','owner','notes','vendor'], f.field_key)
-FROM asset_profiles p CROSS JOIN field_definitions f;
+FROM asset_profiles p CROSS JOIN field_definitions f
+WHERE f.field_key = ANY(ARRAY['mrs_order','nvbugs','capacity_request','date_received','board_sku','gpu_sku','model_number','serial_number','milestone','product_name','location','asset_status','board_architecture','pool_team','project','asset_tag','owner','notes','vendor']);
+
+INSERT INTO profile_fields(profile_id,field_definition_id,required,display_order)
+SELECT p.id, f.id, false,
+       array_position(ARRAY['gpu_class','gpu_chip','gpu_name_vrl','gpu_name_market'], f.field_key) + 19
+FROM asset_profiles p
+JOIN categories c ON c.id=p.category_id AND c.category_key='GPU'
+CROSS JOIN field_definitions f
+WHERE f.field_key = ANY(ARRAY['gpu_class','gpu_chip','gpu_name_vrl','gpu_name_market']);
 
 INSERT INTO import_profiles(profile_id,import_profile_key,import_profile_name)
 SELECT id, profile_key || '_CSV', profile_name || ' CSV' FROM asset_profiles;
@@ -614,14 +679,24 @@ INSERT INTO schema_migrations(migration_key,description)
 VALUES ('001-production-baseline','Fresh normalized production baseline for Inventory Project 1.0.');
 
 DO $$
-DECLARE required_count integer; optional_count integer; total_count integer;
+DECLARE required_count integer; optional_count integer; standard_count integer; gpu_extension_count integer;
 BEGIN
   SELECT count(*), count(*) FILTER (WHERE required), count(*) FILTER (WHERE NOT required)
-  INTO total_count, required_count, optional_count
-  FROM profile_fields pf JOIN asset_profiles ap ON ap.id=pf.profile_id
-  WHERE ap.profile_key='GPU_ASSET';
-  IF total_count <> 19 OR required_count <> 8 OR optional_count <> 11 THEN
-    RAISE EXCEPTION 'Invalid standard contract: total %, required %, optional %', total_count, required_count, optional_count;
+  INTO standard_count, required_count, optional_count
+  FROM profile_fields pf
+  JOIN asset_profiles ap ON ap.id=pf.profile_id
+  JOIN field_definitions fd ON fd.id=pf.field_definition_id
+  WHERE ap.profile_key='GPU_ASSET'
+    AND fd.field_key = ANY(ARRAY['mrs_order','nvbugs','capacity_request','date_received','board_sku','gpu_sku','model_number','serial_number','milestone','product_name','location','asset_status','board_architecture','pool_team','project','asset_tag','owner','notes','vendor']);
+  SELECT count(*) INTO gpu_extension_count
+  FROM profile_fields pf
+  JOIN asset_profiles ap ON ap.id=pf.profile_id
+  JOIN field_definitions fd ON fd.id=pf.field_definition_id
+  WHERE ap.profile_key='GPU_ASSET'
+    AND NOT pf.required
+    AND fd.field_key = ANY(ARRAY['gpu_class','gpu_chip','gpu_name_vrl','gpu_name_market']);
+  IF standard_count <> 19 OR required_count <> 8 OR optional_count <> 11 OR gpu_extension_count <> 4 THEN
+    RAISE EXCEPTION 'Invalid contract: standard %, required %, optional %, GPU extensions %', standard_count, required_count, optional_count, gpu_extension_count;
   END IF;
 END $$;
 

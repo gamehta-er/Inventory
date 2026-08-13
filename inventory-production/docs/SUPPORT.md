@@ -4,7 +4,7 @@
 
 1. Run `Operations\Status-Inventory.ps1` as Administrator.
 2. If readiness fails, run `Operations\Show-InventoryLogs.ps1`.
-3. Use maintenance mode before disruptive repair.
+3. A Privileged Administrator enables maintenance from **Admin > Health > Enable maintenance** before disruptive repair. A reason and confirmation are required.
 4. Restart only with `Operations\Restart-Inventory.ps1`; it stops IIS traffic before gracefully stopping the API.
 
 ## Service order
@@ -15,6 +15,14 @@ PostgreSQL must be running before the Inventory Project API. IIS is started last
 
 - `/api/v1/health/live`: API process is running.
 - `/api/v1/health/ready`: API can use the required PostgreSQL schema.
+
+## Maintenance mode
+
+- **Normal control:** Privileged Administrators use **Admin > Health** to enable maintenance or resume service. The change is recorded in Activity with the operator, reason, time, and before/after state.
+- **Recovery access:** The maintenance page links to **Privileged Administrator access**, so an administrator can sign in and resume service without using the server console.
+- **Emergency console control:** `Operations\Maintenance-On.ps1 -Reason "..."` and `Operations\Maintenance-Off.ps1 -Reason "..."` use the same state file and record the operation in `operations.jsonl`.
+- **Updates:** The delta updater may enable maintenance only while switching affected components. It restores the exact state that existed before the update; it cannot silently disable administrator-requested maintenance.
+- **Visibility:** `Operations\Status-Inventory.ps1` reports whether maintenance is active, who enabled it, and the recorded reason.
 
 ## Logs
 

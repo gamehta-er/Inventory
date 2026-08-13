@@ -1,0 +1,56 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.6",
+  "changeId": "GPU-IMPORT-MODEL-FIELDS-1.3.6",
+  "scope": "Correct controlled-value import revalidation, seed approved Board Architecture values, and add four optional GPU model fields through the profile registry.",
+  "requirements": [
+    {
+      "requirementId": "DATA-002",
+      "status": "PASSED",
+      "evidence": [
+        "database/Migrations/007-gpu-model-reference-data.sql: adds normalized model columns and profile definitions in one transactional migration",
+        "backend/src/assets.ts: persists and returns GPU Class, Chip, VRL name, and Market name through asset models"
+      ]
+    },
+    {
+      "requirementId": "PROF-001",
+      "status": "PASSED",
+      "evidence": [
+        "database/Migrations/007-gpu-model-reference-data.sql: registers all four optional GPU fields on every enabled profile-driven surface",
+        "backend/test/contract.test.ts: preserves the approved 19-field standard while validating four GPU-only extensions"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-004",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts: serializes suggested values as valid JSON before PostgreSQL jsonb insertion",
+        "backend/test/importWorkflow.test.ts: verifies suggestion serialization and complete profile-driven import behavior"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-007",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/lookupMatching.ts: normalizes Unicode, whitespace, and capitalization for controlled-value matching",
+        "database/Migrations/007-gpu-model-reference-data.sql: seeds approved Board Architecture and GPU Class values"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-008",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts: Super User and Privileged Administrator lookup additions reuse or reactivate values and revalidate the session",
+        "backend/test/importWorkflow.test.ts: validates blank optional fields, lookup resolution, and configuration errors"
+      ]
+    },
+    {
+      "requirementId": "RPT-003",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/reports.ts: exposes registered GPU model fields through report validation and CSV export",
+        "backend/src/filtering.ts: supports profile-driven filtering for all four GPU model fields"
+      ]
+    }
+  ]
+}

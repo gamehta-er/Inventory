@@ -1,6 +1,15 @@
 import type { DbClient } from './db.js';
 import { AppError } from './errors.js';
 
+export const lifecycleStatusKeys = [
+  'IN_USE',
+  'REWORK',
+  'E_WASTE',
+  'ARCHIVE',
+  'GPU_READY',
+  'AVAILABLE',
+] as const;
+
 export const lifecycleGroups = {
   available: ['AVAILABLE', 'GPU_READY'],
   unavailable: ['IN_USE', 'REWORK', 'E_WASTE'],
@@ -8,6 +17,7 @@ export const lifecycleGroups = {
 } as const;
 
 export type LifecycleGroup = keyof typeof lifecycleGroups;
+export type LifecycleStatusKey = typeof lifecycleStatusKeys[number];
 export type AssetOperation = 'ASSIGN' | 'RETURN' | 'TRANSFER' | 'CHANGE_STATUS' | 'ARCHIVE' | 'RESTORE';
 
 export const lifecycleOperations: Record<AssetOperation, {
@@ -26,6 +36,12 @@ export const lifecycleOperations: Record<AssetOperation, {
 
 export function isLifecycleGroup(value: unknown): value is LifecycleGroup {
   return typeof value === 'string' && Object.hasOwn(lifecycleGroups, value);
+}
+
+export function isLifecycleStatusKey(value: unknown): value is LifecycleStatusKey {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return lifecycleStatusKeys.some((status) => status === normalized);
 }
 
 export function appendLifecycleFilter(

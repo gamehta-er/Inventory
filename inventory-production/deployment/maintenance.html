@@ -12,6 +12,8 @@
     .mark { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 8px; background: #76b900; color: #fff; font-weight: 800; }
     h1 { margin: 24px 0 10px; font-size: clamp(30px, 6vw, 44px); line-height: 1.05; letter-spacing: 0; }
     p { margin: 0; color: #5d6875; font-size: 17px; line-height: 1.6; }
+    a { display: inline-flex; margin-top: 24px; color: #315b00; font-weight: 700; text-decoration: none; }
+    a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -19,6 +21,7 @@
     <div class="mark" aria-hidden="true">N</div>
     <h1>Inventory is under maintenance.</h1>
     <p>The service is temporarily unavailable while scheduled work is completed. Please try again shortly.</p>
+    <a href="/admin?tab=health">Privileged Administrator access</a>
   </main>
 </body>
 </html>

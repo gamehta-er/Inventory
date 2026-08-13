@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { resolve } from 'node:path';
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -10,6 +11,7 @@ const schema = z.object({
   SESSION_HOURS: z.coerce.number().positive().max(24).default(8),
   ALLOWED_ORIGIN: z.string().default('http://127.0.0.1:3021'),
   UPLOAD_ROOT: z.string().default('./uploads'),
+  MAINTENANCE_FLAG_PATH: z.string().optional(),
   MAX_IMAGE_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
 });
 
@@ -22,4 +24,7 @@ export const config = {
   ...parsed.data,
   isProduction: parsed.data.NODE_ENV === 'production',
   cookieSecure: parsed.data.COOKIE_SECURE === 'true',
+  maintenanceFlagPath: parsed.data.MAINTENANCE_FLAG_PATH
+    ? resolve(parsed.data.MAINTENANCE_FLAG_PATH)
+    : resolve(parsed.data.UPLOAD_ROOT, '..', 'Application', 'web', 'maintenance.flag'),
 };

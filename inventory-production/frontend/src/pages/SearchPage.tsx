@@ -1,9 +1,10 @@
-import { Download, Filter, Plus, Printer, Search, XCircle } from 'lucide-react';
+import { Filter, Plus, Search, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { AddAsset } from '../components/AddAsset';
 import { AssetCard } from '../components/AssetCard';
+import { AssetSelectionActions, AssetSelectionToggle } from '../components/AssetSelectionActions';
 import { FilterDrawer, filterCount, type AssetFilters } from '../components/FilterDrawer';
 import { KpiStrip } from '../components/KpiStrip';
 import { LabelPrint } from '../components/LabelPrint';
@@ -71,8 +72,8 @@ export function SearchPage() {
       void load(query, filters, quickCategory, availability);
     }}/>
     <section className="results-section">
-      <div className="results-heading"><div><span className="eyebrow">Results</span><h2>{total} {quickCategory ? `${quickCategory} ` : ''}{total === 1 ? 'asset' : 'assets'} found</h2></div><div className="results-actions"><button className="button" onClick={() => setSelected(selected.length === assets.length ? [] : assets.map((asset) => asset.id))}>{selected.length === assets.length && assets.length ? 'Clear Selection' : 'Select All'}</button><button className="button" onClick={() => setFiltersOpen(true)}><Filter size={17}/>Filters</button></div></div>
-      {selected.length > 0 && <div className="bulk-bar"><strong>{selected.length} selected</strong><span/><button className="button" onClick={exportSelected}><Download size={17}/>Export Selected</button><button className="button" onClick={() => setLabelsOpen(true)}><Printer size={17}/>Print Labels</button><button className="icon-button" onClick={() => setSelected([])} aria-label="Clear selection"><XCircle size={19}/></button></div>}
+      <div className="results-heading"><div><span className="eyebrow">Results</span><h2>{total} {quickCategory ? `${quickCategory} ` : ''}{total === 1 ? 'asset' : 'assets'} found</h2></div><div className="results-actions"><AssetSelectionToggle selectedCount={selected.length} visibleCount={assets.length} disabled={loading} onToggle={() => setSelected(selected.length === assets.length && assets.length ? [] : assets.map((asset) => asset.id))}/><button className="button" onClick={() => setFiltersOpen(true)}><Filter size={17}/>Filters</button></div></div>
+      <AssetSelectionActions selectedCount={selected.length} canExport={Boolean(session?.permissions['report.export'])} canPrint={Boolean(session?.permissions['label.print'])} onExport={() => void exportSelected()} onPrint={() => setLabelsOpen(true)} onClear={() => setSelected([])}/>
       {error ? <div className="empty-state"><XCircle/><h3>Search could not be completed</h3><p>{error}</p><button className="button" onClick={() => load()}>Try Again</button></div> : loading ? <LoadingState rows={5}/> : assets.length ? <div className="asset-list">{assets.map((asset) => <AssetCard key={asset.id} asset={asset} selected={selected.includes(asset.id)} onSelect={(checked) => setSelected((current) => checked ? [...current, asset.id] : current.filter((id) => id !== asset.id))} onOpen={() => openAsset(asset.id)}/>)}</div> : <div className="empty-state"><Search/><h3>No matching assets</h3><p>The search completed successfully. Adjust the text or remove an applied filter.</p><div><button className="button" onClick={clearSearch}>Clear Search</button><button className="button" onClick={clearFilters}>Clear Filters</button></div></div>}
     </section>
     {filtersOpen && <FilterDrawer value={filters} onApply={applyFilters} onClear={clearFilters} onClose={() => setFiltersOpen(false)}/>} 

@@ -1,0 +1,13 @@
+{
+  "document": "Inventory Project Design System v1.0",
+  "status": "APPROVED",
+  "approvedBy": "Gaurav Mehta",
+  "approvedAt": "2026-08-12T18:15:37-07:00",
+  "baselineProductVersion": "1.3.10",
+  "approvalScope": "The verified 1.3.10 visual design, shared component system, responsive behavior, overlays, feedback states, and label-print contract are locked for future changes.",
+  "designDocumentSha256": "2537a574e8528a3f64311d269345a89fd12f66cd41d34aaefe85a47d951b7072",
+  "designLockSha256": "6832caf127ee6e3193cbf2fe7065ebc5226c25167d60d5ee41015a0a2134b7de",
+  "governingFrameworkVersion": "1.0",
+  "changeRule": "A design change requires a Design Change Request approved by Gaurav Mehta. Ordinary product corrections must compose the locked system.",
+  "releaseCondition": "These artifacts and their automated gate must be committed before the next release candidate is packaged."
+}

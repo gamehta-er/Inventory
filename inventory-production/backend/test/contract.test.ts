@@ -14,13 +14,23 @@ const requiredFields = [
   'nvbugs', 'date_received', 'model_number', 'serial_number',
   'product_name', 'asset_status', 'owner', 'vendor',
 ];
+const gpuExtensionFields = ['gpu_class', 'gpu_chip', 'gpu_name_vrl', 'gpu_name_market'];
 
 describe('frozen production data contract', () => {
   it('defines exactly the approved 19 standard fields in display order', () => {
     const match = sql.match(/INSERT INTO field_definitions[\s\S]*?VALUES\s*([\s\S]*?);\s*\n\s*INSERT INTO profile_fields/);
     assert.ok(match, 'field definition seed block is present');
     const keys = [...match[1].matchAll(/^\('([a-z][a-z0-9_]*)'/gm)].map((item) => item[1]);
-    assert.deepEqual(keys, expectedFields);
+    assert.deepEqual(keys.filter((key) => expectedFields.includes(key)), expectedFields);
+  });
+
+  it('adds four optional GPU model fields without changing the standard contract', () => {
+    const match = sql.match(/INSERT INTO field_definitions[\s\S]*?VALUES\s*([\s\S]*?);\s*\n\s*INSERT INTO profile_fields/);
+    assert.ok(match, 'field definition seed block is present');
+    const keys = [...match[1].matchAll(/^\('([a-z][a-z0-9_]*)'/gm)].map((item) => item[1]);
+    assert.deepEqual(keys.filter((key) => gpuExtensionFields.includes(key)), gpuExtensionFields);
+    assert.match(sql, /category_key='GPU'/);
+    assert.match(sql, /SELECT p\.id, f\.id, false/);
   });
 
   it('defines eight required and eleven optional fields', () => {
@@ -41,6 +51,15 @@ describe('frozen production data contract', () => {
     for (const status of ['IN_USE', 'REWORK', 'E_WASTE', 'ARCHIVE', 'GPU_READY', 'AVAILABLE']) {
       assert.match(sql, new RegExp(`\\('${status}','${status}'`));
     }
+  });
+
+  it('keeps lifecycle statuses out of the asset-family catalogue', () => {
+    const match = sql.match(/INSERT INTO categories[\s\S]*?VALUES\s*([\s\S]*?);\s*\n\s*INSERT INTO asset_profiles/);
+    assert.ok(match, 'category seed block is present');
+    for (const status of ['IN_USE', 'REWORK', 'E_WASTE', 'ARCHIVE', 'GPU_READY', 'AVAILABLE']) {
+      assert.doesNotMatch(match[1], new RegExp(`\\('${status}'`));
+    }
+    assert.match(sql, /CREATE TABLE categories \([\s\S]*?CONSTRAINT categories_asset_family_key_check/);
   });
 
   it('enforces serial uniqueness and conditional asset-tag uniqueness', () => {

@@ -15,7 +15,7 @@ import { SearchPage } from './pages/SearchPage';
 import { useAppState } from './state/AppState';
 
 export function App() {
-  const { auth, loading, fatalError } = useAppState();
+  const { auth, loading, fatalError, session } = useAppState();
   const location = useLocation();
   const backgroundLocation = (location.state as { backgroundLocation?: Location } | null)?.backgroundLocation;
   if (loading) return <LoadingState label="Starting Inventory Project"/>;
@@ -24,7 +24,8 @@ export function App() {
   return <AppShell>
     <RouteErrorBoundary>
       <Routes location={backgroundLocation ?? location}>
-        <Route path="/" element={<SearchPage/>}/>
+        <Route path="/" element={<Navigate to={session?.permissions['report.view'] ? '/reports' : '/search'} replace/>}/>
+        <Route path="/search" element={<SearchPage/>}/>
         <Route path="/assets/:assetId" element={<AssetRoutePage/>}/>
         <Route path="/inventory" element={<InventoryPage/>}/>
         <Route path="/import" element={<ImportPage/>}/>

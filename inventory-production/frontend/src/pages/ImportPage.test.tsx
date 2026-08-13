@@ -249,41 +249,49 @@ describe('ImportPage workflow', () => {
 
     const view = render(<MemoryRouter initialEntries={['/import?session=saved-session-42']}><ImportPage /></MemoryRouter>);
 
-    expect(await view.findByText('Choose completed CSV')).toBeTruthy();
-    expect(view.getByText(/server stores the original CSV with this session/i)).toBeTruthy();
+    expect(await view.findByText('Choose a CSV to analyze')).toBeTruthy();
+    expect(view.getByText(/original CSV is stored with this session/i)).toBeTruthy();
     expect(loadSession).toHaveBeenCalledWith('saved-session-42');
   });
 
-  it('creates a persistent session and exposes the CSV upload step', async () => {
+  it('creates and uploads a persistent session from one smart-import action', async () => {
     const draftSession = importSession();
-    vi.spyOn(api, 'imports').mockResolvedValue([]);
-    const createSession = vi.spyOn(api, 'createImportSession').mockResolvedValue(draftSession);
-
-    const view = render(<MemoryRouter initialEntries={['/import']}><ImportPage /></MemoryRouter>);
-    expect(await view.findByRole('button', { name: /create import session/i })).toBeTruthy();
-    fireEvent.click(view.getByRole('button', { name: /create import session/i }));
-
-    await waitFor(() => expect(createSession).toHaveBeenCalledWith(10, 'CREATE'));
-    expect(await view.findByText('Choose completed CSV')).toBeTruthy();
-    expect(view.getByRole('button', { name: /upload and map columns/i })).toBeTruthy();
-    expect(view.getByRole('button', { name: /download current csv template/i })).toBeTruthy();
-  });
-
-  it('runs upload, mapping, atomic commit, and every required post-commit refresh', async () => {
-    const draft = importSession();
-    const mapping = importSession({
-      fileName: 'gpu-assets.csv',
-      status: 'MAPPING',
-      totalRows: 1,
-      headers: [{ sourceIndex: 0, header: 'Serial #', fieldKey: 'serial_number', ignored: false }],
-    });
-    const ready = importSession({
+    const readySession = importSession({
       fileName: 'gpu-assets.csv',
       status: 'READY',
       totalRows: 1,
       validRows: 1,
-      validatedAt: '2026-08-11T00:01:00Z',
-      headers: mapping.headers,
+      headers: [{ sourceIndex: 0, header: 'Serial #', fieldKey: 'serial_number', ignored: false }],
+      rows: [{
+        id: 'import-row-1', row_number: 2, source_values: { '0': 'SYN-GPU-000001' }, corrected_values: {},
+        normalized_values: { serial_number: 'SYN-GPU-000001' }, included: true, operation: 'CREATE',
+        target_asset_id: null, target_asset_revision: null, before_values: null,
+        after_values: { serial_number: 'SYN-GPU-000001' }, status: 'VALID', committed_asset_id: null, issues: [],
+      }],
+    });
+    vi.spyOn(api, 'imports').mockResolvedValue([]);
+    const createSession = vi.spyOn(api, 'createImportSession').mockResolvedValue(draftSession);
+    const uploadFile = vi.spyOn(api, 'uploadImportFile').mockResolvedValue(readySession);
+
+    const view = render(<MemoryRouter initialEntries={['/import']}><ImportPage /></MemoryRouter>);
+    const input = await waitFor(() => view.container.querySelector('input[type="file"]') as HTMLInputElement);
+    fireEvent.change(input, { target: { files: [new File(['Serial #\r\nSYN-GPU-000001\r\n'], 'gpu-assets.csv', { type: 'text/csv' })] } });
+    fireEvent.click(view.getByRole('button', { name: /analyze csv/i }));
+
+    await waitFor(() => expect(createSession).toHaveBeenCalledWith(10, 'CREATE'));
+    await waitFor(() => expect(uploadFile).toHaveBeenCalledWith('import-session-1', expect.any(File)));
+    expect(await view.findByText(/1 source row, 1 included/i)).toBeTruthy();
+    expect(view.queryByRole('button', { name: /save mapping and validate/i })).toBeNull();
+  });
+
+  it('runs automatic mapping, atomic commit, and every required post-commit refresh', async () => {
+    const draft = importSession();
+    const mapping = importSession({
+      fileName: 'gpu-assets.csv',
+      status: 'READY',
+      totalRows: 1,
+      validRows: 1,
+      headers: [{ sourceIndex: 0, header: 'Serial #', fieldKey: 'serial_number', ignored: false }],
       rows: [{
         id: 'import-row-1',
         row_number: 2,
@@ -300,7 +308,9 @@ describe('ImportPage workflow', () => {
         committed_asset_id: null,
         issues: [],
       }],
+      validatedAt: '2026-08-11T00:01:00Z',
     });
+    const ready = mapping;
     const completed = importSession({
       ...ready,
       status: 'COMPLETED',
@@ -318,7 +328,6 @@ describe('ImportPage workflow', () => {
     vi.spyOn(api, 'imports').mockResolvedValue([]);
     vi.spyOn(api, 'createImportSession').mockResolvedValue(draft);
     vi.spyOn(api, 'uploadImportFile').mockResolvedValue(mapping);
-    vi.spyOn(api, 'saveImportMappings').mockResolvedValue(ready);
     const commitImport = vi.spyOn(api, 'commitImport').mockResolvedValue({
       session: completed,
       idempotent: false,
@@ -326,8 +335,6 @@ describe('ImportPage workflow', () => {
     });
 
     const view = render(<MemoryRouter initialEntries={['/import']}><ImportPage /></MemoryRouter>);
-    fireEvent.click(await view.findByRole('button', { name: /create import session/i }));
-
     const fileInput = await waitFor(() => {
       const input = view.container.querySelector('input[type="file"]');
       expect(input).toBeTruthy();
@@ -335,13 +342,12 @@ describe('ImportPage workflow', () => {
     });
     fireEvent.change(fileInput, { target: { files: [new File(['Serial #\r\nSYN-GPU-000001\r\n'], 'gpu-assets.csv', { type: 'text/csv' })] } });
     const uploadButton = await waitFor(() => {
-      const button = view.getByRole('button', { name: /upload and map columns/i }) as HTMLButtonElement;
+      const button = view.getByRole('button', { name: /analyze csv/i }) as HTMLButtonElement;
       expect(button.disabled).toBe(false);
       return button;
     });
     fireEvent.click(uploadButton);
 
-    fireEvent.click(await view.findByRole('button', { name: /save mapping and validate/i }));
     expect(await view.findByText(/1 source row, 1 included/i)).toBeTruthy();
     fireEvent.click(view.getByRole('button', { name: /commit 1 new assets/i }));
 

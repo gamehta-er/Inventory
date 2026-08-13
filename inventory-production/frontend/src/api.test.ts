@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizeActivityResponse,
   normalizeAssetListResponse,
+  normalizeCommandCenterResponse,
   normalizeImportSessionListResponse,
   normalizeImportSessionResponse,
   normalizeReportResponse,
@@ -91,8 +92,22 @@ describe('route response normalization', () => {
     expect(result.kpis).toEqual({});
     expect(result.dimensions).toEqual({});
     expect(result.trends).toEqual([]);
+    expect(result.quality).toEqual({ complete: 0, missing: 0, issues: [] });
     expect(result.rows).toEqual([]);
     expect(result.total).toBe(0);
+  });
+
+  it('initializes every command-center collection when the response is incomplete', () => {
+    const result = normalizeCommandCenterResponse({ generatedAt: '2026-08-12T20:00:00Z' });
+
+    expect(result.inventory.rows).toEqual([]);
+    expect(result.inventory.dimensions).toEqual({});
+    expect(result.imports.recent).toEqual([]);
+    expect(result.recentActivity).toEqual([]);
+    expect(result.actionQueues).toEqual({
+      rework: 0, eWaste: 0, metadataGaps: 0, unassignedOwner: 0,
+      unassignedLocation: 0, importsNeedingAttention: 0,
+    });
   });
 
   it('normalizes the deployable version contract', () => {

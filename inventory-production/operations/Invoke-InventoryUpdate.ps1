@@ -13,7 +13,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$UpdaterVersion = '1.2.0'
+$UpdaterVersion = '1.2.2'
 
 function Assert-Administrator {
     $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -61,30 +61,22 @@ function Stop-InventoryApi {
         $Service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, [TimeSpan]::FromSeconds(20))
     }
 
-    $ExpectedServer = [IO.Path]::GetFullPath((Join-Path $InstallRoot 'Application\api\dist\server.js'))
-    $ExpectedRunner = [IO.Path]::GetFullPath((Join-Path $InstallRoot 'Runtime\Run-Api.ps1'))
     $Deadline = (Get-Date).AddSeconds(20)
     do {
-        $OwnedProcesses = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-            $CommandLine = ([string]$_.CommandLine).Replace('/','\')
-            $CommandLine.IndexOf($ExpectedServer, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-            $CommandLine.IndexOf($ExpectedRunner, [StringComparison]::OrdinalIgnoreCase) -ge 0
-        })
         $Listeners = @(Get-NetTCPConnection -State Listen -LocalPort 3020 -ErrorAction SilentlyContinue)
-        if (-not $OwnedProcesses.Count -and -not $Listeners.Count) { return }
+        if (-not $Listeners.Count) { return }
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $Deadline)
 
-    foreach ($Process in @($OwnedProcesses | Sort-Object { if ($_.Name -ieq 'node.exe') { 0 } else { 1 } })) {
-        Write-Host "Stopping remaining Inventory API process $($Process.ProcessId) ($($Process.Name))." -ForegroundColor Yellow
-        Stop-Process -Id $Process.ProcessId -ErrorAction SilentlyContinue
-    }
-    Start-Sleep -Seconds 2
-    foreach ($Process in @($OwnedProcesses)) {
-        if (Get-Process -Id $Process.ProcessId -ErrorAction SilentlyContinue) {
-            Stop-Process -Id $Process.ProcessId -Force -ErrorAction Stop
+    $Owners = @($Listeners.OwningProcess | Sort-Object -Unique)
+    foreach ($ProcessId in $Owners) {
+        $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+        if ($Process) {
+            Write-Host "Stopping remaining port 3020 process $ProcessId ($($Process.ProcessName))." -ForegroundColor Yellow
+            Stop-Process -Id $ProcessId -Force -ErrorAction Stop
         }
     }
+    Start-Sleep -Seconds 2
 
     $UnexpectedListeners = @(Get-NetTCPConnection -State Listen -LocalPort 3020 -ErrorAction SilentlyContinue)
     if ($UnexpectedListeners.Count) {
@@ -238,11 +230,25 @@ $HealthChecks = [Collections.Generic.List[object]]::new()
 $Switched = [Collections.Generic.List[string]]::new()
 $SwitchingComponent = $null
 $MaintenanceFlag = Join-Path $InstallRoot 'Application\web\maintenance.flag'
+$MaintenanceWasActive = Test-Path -LiteralPath $MaintenanceFlag -PathType Leaf
+$OriginalMaintenanceContent = if ($MaintenanceWasActive) { Get-Content -LiteralPath $MaintenanceFlag -Raw } else { $null }
 $ApiWasStopped = $false
 $SiteWasStopped = $false
 $Published = $false
 $NeedsApiStop = $false
 $AdminPassword = $null
+
+function Restore-OriginalMaintenanceState {
+    if ($MaintenanceWasActive) {
+        if ([string]::IsNullOrEmpty($OriginalMaintenanceContent)) {
+            New-Item -ItemType File -Force -Path $MaintenanceFlag | Out-Null
+        } else {
+            [IO.File]::WriteAllText($MaintenanceFlag, $OriginalMaintenanceContent, [Text.UTF8Encoding]::new($false))
+        }
+    } else {
+        Remove-Item -LiteralPath $MaintenanceFlag -Force -ErrorAction SilentlyContinue
+    }
+}
 
 try {
     if ($SourceIsArchive) {
@@ -304,6 +310,18 @@ try {
         Write-Host "PASS: Staged $Component component matches its complete target manifest." -ForegroundColor Green
     }
 
+    # Collect database credentials while the current application is still online.
+    $Psql = $null
+    if ($Components -contains 'database') {
+        $Psql = Join-Path $PostgreSqlBin 'psql.exe'
+        if (-not (Test-Path -LiteralPath $Psql -PathType Leaf)) { throw "psql.exe not found: $Psql" }
+        if (-not $PostgreSqlAdminPassword) {
+            $PostgreSqlAdminPassword = Read-Host "PostgreSQL password for $PostgreSqlAdminUser" -AsSecureString
+        }
+        $AdminPassword = ConvertFrom-SecureValue $PostgreSqlAdminPassword
+        Write-Host 'PASS: Database credential received. Beginning the controlled update window.' -ForegroundColor Green
+    }
+
     $NeedsApiStop = $Components -contains 'api' -or $Components -contains 'database'
     $NeedsMaintenance = $Components -contains 'web' -or $NeedsApiStop
     if ($NeedsMaintenance) { New-Item -ItemType File -Force -Path $MaintenanceFlag | Out-Null }
@@ -313,10 +331,6 @@ try {
     }
 
     if ($Components -contains 'database') {
-        $Psql = Join-Path $PostgreSqlBin 'psql.exe'
-        if (-not (Test-Path -LiteralPath $Psql -PathType Leaf)) { throw "psql.exe not found: $Psql" }
-        if (-not $PostgreSqlAdminPassword) { $PostgreSqlAdminPassword = Read-Host "PostgreSQL password for $PostgreSqlAdminUser" -AsSecureString }
-        $AdminPassword = ConvertFrom-SecureValue $PostgreSqlAdminPassword
         $LedgerResult = Invoke-ProcessCapture $Psql @(
             '-h','127.0.0.1','-p','5432','-U',$PostgreSqlAdminUser,'-d',$DatabaseName,'-w','-X','-tAc',
             "SELECT CASE WHEN to_regclass('invmgmt.schema_migrations') IS NOT NULL THEN 'invmgmt.schema_migrations' WHEN to_regclass('public.schema_migrations') IS NOT NULL THEN 'public.schema_migrations' ELSE '' END;"
@@ -373,6 +387,9 @@ try {
         $Switched.Add([string]$Component)
         $SwitchingComponent = $null
         if ($Component -eq 'web') {
+            $AppPoolName = [string](Get-Website -Name $SiteName).applicationPool
+            & icacls.exe $Live /grant 'SYSTEM:(OI)(CI)(M)' "IIS AppPool\${AppPoolName}:(OI)(CI)(RX)" /T /C | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Maintenance control and IIS application pool permissions could not be applied.' }
             Start-Website -Name $SiteName
             $SiteWasStopped = $false
         }
@@ -385,7 +402,7 @@ try {
         Start-Sleep -Seconds 3
     }
     $HealthChecks.Add((Invoke-HealthCheck 'Direct API readiness' 'http://127.0.0.1:3020/api/v1/health/ready'))
-    Remove-Item -LiteralPath $MaintenanceFlag -Force -ErrorAction SilentlyContinue
+    Restore-OriginalMaintenanceState
     $HealthChecks.Add((Invoke-HealthCheck 'IIS API readiness' 'http://127.0.0.1/api/v1/health/ready'))
     $HealthChecks.Add((Invoke-HealthCheck 'IIS application' 'http://127.0.0.1/'))
     $DirectVersion = Invoke-JsonContract 'Direct API version contract' 'http://127.0.0.1:3020/api/v1/version'
@@ -438,12 +455,12 @@ catch {
             }
             if ($NeedsApiStop) { Start-Service -Name $ApiServiceName -ErrorAction SilentlyContinue }
             Start-Website -Name $SiteName -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath $MaintenanceFlag -Force -ErrorAction SilentlyContinue
+            Restore-OriginalMaintenanceState
         } catch { $Failure = "$Failure Rollback also reported: $($_.Exception.Message)" }
     } else {
         if ($ApiWasStopped) { Start-Service -Name $ApiServiceName -ErrorAction SilentlyContinue }
         if ($SiteWasStopped) { Start-Website -Name $SiteName -ErrorAction SilentlyContinue }
-        Remove-Item -LiteralPath $MaintenanceFlag -Force -ErrorAction SilentlyContinue
+        Restore-OriginalMaintenanceState
     }
     if ($Manifest) { Write-ReleaseLedger 'FAILED' $Failure @($HealthChecks) @($AppliedMigrations) }
     throw $Failure

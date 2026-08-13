@@ -4,6 +4,7 @@ import { AppError } from './errors.js';
 import type { FieldDefinition } from './types.js';
 import { authenticate } from './auth.js';
 import { matchLookupOption } from './lookupMatching.js';
+import { lifecycleStatusKeys } from './lifecycle.js';
 
 export function lookupOptionForValue(field: FieldDefinition, value: unknown) {
   return field.options.find((option) => String(option.id) === String(value))
@@ -117,7 +118,11 @@ export async function registerRegistryRoutes(app: import('fastify').FastifyInsta
               count(a.id)::int asset_count
        FROM categories c JOIN asset_profiles ap ON ap.category_id=c.id AND ap.active
        LEFT JOIN asset_models am ON am.category_id=c.id LEFT JOIN assets a ON a.asset_model_id=am.id AND a.archived_at IS NULL
-       WHERE c.active GROUP BY c.id,ap.id ORDER BY c.display_order`,
+       WHERE c.active
+         AND NOT (upper(regexp_replace(c.category_key,'[^A-Za-z0-9]+','_','g'))=ANY($1::text[])
+           OR upper(regexp_replace(c.category_name,'[^A-Za-z0-9]+','_','g'))=ANY($1::text[]))
+       GROUP BY c.id,ap.id ORDER BY c.display_order`,
+      [[...lifecycleStatusKeys]],
     );
     return { categories: result.rows.map((r) => ({ id:Number(r.id), key:r.category_key, name:r.category_name, description:r.description, icon:r.icon_key, profileId:Number(r.profile_id), profileKey:r.profile_key, profileName:r.profile_name, version:r.version, assetCount:r.asset_count })) };
   });
@@ -132,7 +137,10 @@ export async function registerRegistryRoutes(app: import('fastify').FastifyInsta
   app.get('/api/v1/lookups', { preHandler: authenticate }, async () => {
     const [lookups, locations, users, vendors] = await Promise.all([
       pool.query(`SELECT ll.id, ll.lookup_key,ll.lookup_name,jsonb_agg(jsonb_build_object('id',lv.id,'value',lv.value_key,'label',lv.display_value,'description',lv.description,'aliases',lv.aliases) ORDER BY lv.display_order) values FROM lookup_lists ll JOIN lookup_values lv ON lv.lookup_list_id=ll.id AND lv.active WHERE ll.active GROUP BY ll.id ORDER BY ll.lookup_name`),
-      pool.query(`SELECT id,parent_id,location_key,location_name,full_path FROM locations WHERE active ORDER BY full_path`),
+      pool.query(`SELECT l.id,l.parent_id,l.location_key,l.location_name,l.full_path,
+        lt.type_key,lt.type_name,lt.level_order
+        FROM locations l JOIN location_types lt ON lt.id=l.location_type_id
+        WHERE l.active ORDER BY l.full_path`),
       pool.query(`SELECT id,display_name,initials FROM application_users WHERE active ORDER BY display_name`),
       pool.query(`SELECT id,vendor_name FROM vendors WHERE active ORDER BY vendor_name`),
     ]);

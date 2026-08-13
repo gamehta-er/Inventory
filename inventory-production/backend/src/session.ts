@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { authenticate } from './auth.js';
 import { pool } from './db.js';
 import type { AuthenticatedRequest } from './types.js';
-import { lifecycleGroups, lifecycleOperations } from './lifecycle.js';
+import { lifecycleGroups, lifecycleOperations, lifecycleStatusKeys } from './lifecycle.js';
 
 export async function registerSessionRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/session', { preHandler: authenticate }, async (request) => {
@@ -12,16 +12,22 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         ap.id profile_id,ap.profile_key,ap.profile_name,ap.version,count(a.id)::int asset_count
         FROM categories c JOIN asset_profiles ap ON ap.category_id=c.id AND ap.active
         LEFT JOIN asset_models am ON am.category_id=c.id LEFT JOIN assets a ON a.asset_model_id=am.id AND a.archived_at IS NULL
-        WHERE c.active GROUP BY c.id,ap.id ORDER BY c.display_order`),
+        WHERE c.active
+          AND NOT (upper(regexp_replace(c.category_key,'[^A-Za-z0-9]+','_','g'))=ANY($1::text[])
+            OR upper(regexp_replace(c.category_name,'[^A-Za-z0-9]+','_','g'))=ANY($1::text[]))
+        GROUP BY c.id,ap.id ORDER BY c.display_order`, [[...lifecycleStatusKeys]]),
       pool.query(`SELECT lv.id,lv.value_key,lv.display_value,lv.description,lv.display_order
         FROM lookup_values lv JOIN lookup_lists ll ON ll.id=lv.lookup_list_id
         WHERE ll.lookup_key='ASSET_STATUS' AND lv.active ORDER BY lv.display_order`),
       pool.query(`SELECT
         (SELECT count(*)::int FROM assets WHERE archived_at IS NULL) assets,
-        (SELECT count(*)::int FROM categories WHERE active) categories,
+        (SELECT count(*)::int FROM categories
+          WHERE active
+            AND NOT (upper(regexp_replace(category_key,'[^A-Za-z0-9]+','_','g'))=ANY($1::text[])
+              OR upper(regexp_replace(category_name,'[^A-Za-z0-9]+','_','g'))=ANY($1::text[]))) categories,
         (SELECT count(*)::int FROM application_users WHERE active) users,
         (SELECT count(*)::int FROM import_batches WHERE status='FAILED') failed_imports,
-        (SELECT count(*)::int FROM assets WHERE location_id IS NULL) missing_locations`),
+        (SELECT count(*)::int FROM assets WHERE location_id IS NULL) missing_locations`, [[...lifecycleStatusKeys]]),
     ]);
     return {
       user,

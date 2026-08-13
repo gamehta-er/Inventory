@@ -111,6 +111,14 @@ describe('complete import workflow contract', () => {
     assert.deepEqual(JSON.parse(serialized), headers);
   });
 
+  it('serializes controlled-value suggestions as JSON for PostgreSQL jsonb', () => {
+    const serialized = importInternals.serializeImportIssueSuggestions(['AMPERE', 'HOPPER']);
+
+    assert.equal(serialized, '["AMPERE","HOPPER"]');
+    assert.deepEqual(JSON.parse(serialized), ['AMPERE', 'HOPPER']);
+    assert.equal(importInternals.serializeImportIssueSuggestions(undefined), '[]');
+  });
+
   it('automatically maps labels, field keys, configured aliases, and an administrator-added field', () => {
     const fields = [
       ...standardFields,
@@ -159,6 +167,20 @@ describe('complete import workflow contract', () => {
       issues.filter((issue) => issue.code === 'COLUMN_DECISION_REQUIRED').map((issue) => issue.sourceIndex),
       [2],
     );
+  });
+
+  it('skips mapping review only when every CSV column has one safe automatic match', () => {
+    const completeMappings = importInternals.autoMappings(
+      ['NVBugs #', 'Serial #', 'Notes'],
+      standardFields,
+    );
+    const uncertainMappings = importInternals.autoMappings(
+      ['NVBugs #', 'Serial #', 'Temporary Comment'],
+      standardFields,
+    );
+
+    assert.equal(importInternals.canAutoValidateMappings(['NVBugs #', 'Serial #', 'Notes'], standardFields, completeMappings), true);
+    assert.equal(importInternals.canAutoValidateMappings(['NVBugs #', 'Serial #', 'Temporary Comment'], standardFields, uncertainMappings), false);
   });
 
   it('normalizes valid dates and rejects invalid dates', () => {

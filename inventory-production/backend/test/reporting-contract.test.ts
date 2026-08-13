@@ -32,4 +32,39 @@ describe('reporting registry contract', () => {
     assert.match(source, /WHERE \$\{scopedWhere\}/);
     assert.match(source, /GROUP BY \$\{expression\.key\},\$\{expression\.label\}/);
   });
+
+  it('uses an unambiguous trend alias and chronological expression', () => {
+    assert.match(source, /AS report_month/);
+    assert.match(source, /ORDER BY date_trunc\('month',a\.date_received\)/);
+    assert.doesNotMatch(source, /\) month,count/);
+    assert.match(source, /month: row\.report_month/);
+    assert.match(source, /query\.receivedMonth/);
+    assert.match(source, /date_trunc\('month',a\.date_received\)=\?::date/);
+  });
+
+  it('exposes real lifecycle, quality, and field-level drilldown data', () => {
+    for (const lifecycleKpi of ['available_now', 'gpu_ready', 'in_use', 'rework', 'e_waste', 'archive']) {
+      assert.match(source, new RegExp(`\\b${lifecycleKpi}\\b`));
+    }
+    assert.match(source, /query\.missingField/);
+    assert.match(source, /quality_fd\.field_key/);
+    assert.match(source, /issues: qualityIssues\.rows/);
+    assert.match(source, /complete: Math\.max/);
+  });
+
+  it('keeps missing owners and vendors visible in reporting and drilldowns', () => {
+    assert.match(source, /LEFT JOIN application_users/);
+    assert.match(source, /LEFT JOIN vendors/);
+    assert.match(source, /query\.vendorId === '__UNASSIGNED__'/);
+  });
+
+  it('builds the management command center from one consistent database snapshot', () => {
+    assert.match(source, /\/api\/v1\/reports\/command-center/);
+    assert.match(source, /SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY/);
+    assert.match(source, /buildReportResult\(client, 'inventory'/);
+    assert.match(source, /importsNeedingAttention/);
+    assert.match(source, /recentActivity/);
+    assert.match(source, /user\.permissions\.includes\('import\.execute'\)/);
+    assert.match(source, /user\.permissions\.includes\('activity\.view'\)/);
+  });
 });

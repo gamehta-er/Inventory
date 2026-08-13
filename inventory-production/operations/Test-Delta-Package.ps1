@@ -58,7 +58,12 @@ if (-not [string]$Manifest.requiredImportContractVersion) { throw 'Delta manifes
 if (@($Manifest.requiredSchemaMigrations) -notcontains [string]$Manifest.requiredImportContractVersion) {
     throw 'The required import contract must also be declared as a required schema migration.'
 }
-foreach ($RequiredMigration in @('005-complete-import-workflow','006-invmgmt-schema')) {
+foreach ($RequiredMigration in @(
+    '005-complete-import-workflow',
+    '006-invmgmt-schema',
+    '007-gpu-model-reference-data',
+    '008-separate-lifecycle-from-categories'
+)) {
     if (@($Manifest.requiredSchemaMigrations) -notcontains $RequiredMigration) {
         throw "Delta manifest is missing required schema migration: $RequiredMigration"
     }

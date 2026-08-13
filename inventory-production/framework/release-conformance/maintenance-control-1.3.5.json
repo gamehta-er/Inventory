@@ -1,0 +1,63 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.5",
+  "changeId": "ADMIN-MAINTENANCE-CONTROL-1.3.5",
+  "scope": "Add a permission-controlled, audited maintenance-mode control to Admin Health while preserving administrator recovery access and the pre-update maintenance state.",
+  "requirements": [
+    {
+      "requirementId": "AUTH-006",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/admin.ts: maintenance mutation requires the admin.system permission and resolves the actor from the authenticated session",
+        "frontend/src/pages/AdminPage.tsx: maintenance controls are hosted on the privileged Admin Health surface"
+      ]
+    },
+    {
+      "requirementId": "DATA-013",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/admin.ts: maintenance state changes are serialized with a PostgreSQL advisory lock and restored if Activity recording fails",
+        "backend/src/admin.ts: every state change records structured before and after values"
+      ]
+    },
+    {
+      "requirementId": "ACT-001",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/admin.ts: MAINTENANCE_ENABLED and MAINTENANCE_DISABLED events record actor, time, source, reason, system record ID, and route"
+      ]
+    },
+    {
+      "requirementId": "OPS-003",
+      "status": "PASSED",
+      "evidence": [
+        "operations/Maintenance-On.ps1 and Maintenance-Off.ps1: emergency console controls require confirmation and reason",
+        "operations/Status-Inventory.ps1: status output reports maintenance state, operator, and reason",
+        "frontend/src/pages/AdminPage.test.tsx: privileged UI control requires reason and invokes the maintenance API"
+      ]
+    },
+    {
+      "requirementId": "OPS-007",
+      "status": "PASSED",
+      "evidence": [
+        "operations/Invoke-InventoryUpdate.ps1: updater restores the exact maintenance state that existed before the update",
+        "deployment/web.config: maintenance preserves authentication, Admin recovery, API health, and static assets",
+        "backend/test/app.test.ts: health and authentication remain available while protected non-admin workflows return structured maintenance status"
+      ]
+    },
+    {
+      "requirementId": "UX-003",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/AdminPage.tsx: Health shows Operational or Maintenance active state with operator, time, reason, busy state, and failure feedback"
+      ]
+    },
+    {
+      "requirementId": "UX-005",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/AdminPage.tsx: maintenance confirmation uses the shared Overlay with backdrop, Escape, close, fixed actions, and focus behavior"
+      ]
+    }
+  ]
+}

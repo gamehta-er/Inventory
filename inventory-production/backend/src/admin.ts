@@ -5,14 +5,32 @@ import { AppError } from './errors.js';
 import { recordActivity } from './activity.js';
 import { loadProfileFields } from './registry.js';
 import type { AuthenticatedRequest, SessionUser } from './types.js';
+import { readMaintenanceState, writeMaintenanceState, type MaintenanceState } from './maintenance.js';
+import { isLifecycleStatusKey } from './lifecycle.js';
 
 const keyPattern = /^[A-Z][A-Z0-9_]{1,63}$/;
 const fieldKeyPattern = /^[a-z][a-z0-9_]{1,63}$/;
+const locationPathTypes = ['BUILDING', 'LAB_ROOM', 'RACK', 'RU', 'CABINET_STORAGE'] as const;
 const requiredReason = (value: unknown) => {
   const reason = String(value ?? '').trim();
   if (reason.length < 3) throw new AppError(422, 'REASON_REQUIRED', 'A reason of at least 3 characters is required.');
   return reason;
 };
+
+function requiredLocationPart(value: unknown, label: string): string {
+  const part = String(value ?? '').trim();
+  if (!part) throw new AppError(422, 'LOCATION_PATH_INCOMPLETE', `${label} is required.`);
+  return part;
+}
+
+function locationKey(parts: string[]): string {
+  const normalized = parts.join('_').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return normalized.slice(0, 64).replace(/_+$/g, '');
+}
+
+function labelledLocation(prefix: string, value: string): string {
+  return value.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase()) ? value : `${prefix} ${value}`;
+}
 
 async function profileSnapshot(client: DbClient, profileId: number, user: SessionUser, reason: string): Promise<void> {
   const profile = await client.query('SELECT * FROM asset_profiles WHERE id=$1 FOR UPDATE', [profileId]);
@@ -36,7 +54,7 @@ async function adminEvent(client: DbClient, user: SessionUser, input: { action: 
 
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/admin/health', { preHandler: requirePermission('admin.system') }, async () => {
-    const [counts, incomplete, dependencies] = await Promise.all([
+    const [counts, incomplete, dependencies, maintenance] = await Promise.all([
       pool.query(`SELECT
         (SELECT count(*)::int FROM categories WHERE active) categories,
         (SELECT count(*)::int FROM asset_profiles WHERE active) profiles,
@@ -50,8 +68,47 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       pool.query(`SELECT fd.id,fd.field_key,fd.field_label,count(pf.id)::int profile_count
         FROM field_definitions fd LEFT JOIN profile_fields pf ON pf.field_definition_id=fd.id
         GROUP BY fd.id ORDER BY fd.field_key`),
+      readMaintenanceState(),
     ]);
-    return { counts: counts.rows[0], incompleteProfiles: incomplete.rows, fieldUsage: dependencies.rows };
+    return { counts: counts.rows[0], incompleteProfiles: incomplete.rows, fieldUsage: dependencies.rows, maintenance };
+  });
+
+  app.post('/api/v1/admin/maintenance', { preHandler: requirePermission('admin.system') }, async (request) => {
+    await verifyCsrf(request);
+    const user = (request as AuthenticatedRequest).inventoryUser;
+    const body = request.body as { enabled?: unknown; reason?: unknown };
+    if (typeof body.enabled !== 'boolean') throw new AppError(422, 'MAINTENANCE_STATE_REQUIRED', 'Choose whether maintenance mode should be enabled or disabled.');
+    const reason = requiredReason(body.reason);
+
+    const before = await readMaintenanceState();
+    try {
+      return await withTransaction(async (client) => {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext('inventory-project-maintenance'))");
+        const current = await readMaintenanceState();
+        if (current.enabled !== before.enabled) throw new AppError(409, 'MAINTENANCE_STATE_CHANGED', 'Maintenance mode changed in another session. Refresh System Health and try again.');
+        if (before.enabled === body.enabled) return { maintenance: before, changed: false };
+        const after: MaintenanceState = body.enabled
+          ? { enabled: true, enabledAt: new Date().toISOString(), enabledBy: user.displayName, reason, source: 'application' }
+          : { enabled: false, enabledAt: null, enabledBy: null, reason: null, source: null };
+
+        await writeMaintenanceState(after);
+        await recordActivity(client, {
+          user,
+          actionKey: body.enabled ? 'MAINTENANCE_ENABLED' : 'MAINTENANCE_DISABLED',
+          source: 'admin',
+          reason,
+          recordType: 'system',
+          recordId: 'maintenance',
+          recordLabel: 'Maintenance mode',
+          routePath: '/admin?tab=health',
+          changes: [{ fieldKey: 'maintenance', fieldLabel: 'Maintenance mode', before, after }],
+        });
+        return { maintenance: after, changed: true };
+      });
+    } catch (error) {
+      await writeMaintenanceState(before);
+      throw error;
+    }
   });
 
   app.get('/api/v1/admin/profiles', { preHandler: requirePermission('admin.profile') }, async () => {
@@ -69,6 +126,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     const body=request.body as Record<string,unknown>; const key=String(body.key??'').trim().toUpperCase();
     const name=String(body.name??'').trim(); const description=String(body.description??'').trim(); const reason=requiredReason(body.reason);
     if(!keyPattern.test(key)||!name||!description) throw new AppError(422,'CATEGORY_INVALID','Category key, name, and definition are required.');
+    if(isLifecycleStatusKey(key)||isLifecycleStatusKey(name)) throw new AppError(422,'CATEGORY_LIFECYCLE_RESERVED','Lifecycle statuses cannot be created as asset categories. Add or update the value under the Status dropdown instead.');
     return withTransaction(async(client)=>{
       const category=await client.query(`INSERT INTO categories(category_key,category_name,description,icon_key,display_order)
         VALUES($1,$2,$3,$4,COALESCE((SELECT max(display_order)+10 FROM categories),10)) RETURNING *`,[key,name,description,String(body.icon??'box')]);
@@ -128,6 +186,83 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     return withTransaction(async(client)=>{const type=await client.query('SELECT id FROM location_types WHERE type_key=$1',[body.typeKey]);if(!type.rows[0])throw new AppError(422,'LOCATION_TYPE_INVALID','Select a valid location type.'); const parentId=body.parentId?Number(body.parentId):null;
       const parent=parentId?await client.query('SELECT full_path FROM locations WHERE id=$1 AND active',[parentId]):null;if(parentId&&!parent?.rows[0])throw new AppError(422,'LOCATION_PARENT_INVALID','Select an active parent location.'); const fullPath=parent?.rows[0]?`${parent.rows[0].full_path} / ${name}`:name;
       const result=await client.query('INSERT INTO locations(parent_id,location_type_id,location_key,location_name,full_path) VALUES($1,$2,$3,$4,$5) RETURNING *',[parentId,type.rows[0].id,key,name,fullPath]);await adminEvent(client,user,{action:'LOCATION_CREATED',type:'location',id:result.rows[0].id,label:fullPath,reason,after:result.rows[0]});return{location:result.rows[0]};});
+  });
+
+  app.post('/api/v1/admin/location-paths', { preHandler: requirePermission('admin.location') }, async (request) => {
+    await verifyCsrf(request);
+    const user = (request as AuthenticatedRequest).inventoryUser;
+    const body = request.body as Record<string, unknown>;
+    const reason = requiredReason(body.reason);
+    const building = requiredLocationPart(body.building, 'Building');
+    const roomName = requiredLocationPart(body.roomName, 'Room name');
+    const roomNumber = requiredLocationPart(body.roomNumber, 'Room number');
+    const binRow = requiredLocationPart(body.binRow, 'Bin row');
+    const rackLocation = requiredLocationPart(body.rackLocation, 'Rack location');
+    const binLocation = requiredLocationPart(body.binLocation, 'Bin location');
+    const binId = requiredLocationPart(body.binId, 'Bin ID').toUpperCase();
+    if (!keyPattern.test(binId)) throw new AppError(422, 'BIN_ID_INVALID', 'Bin ID must begin with a letter and use only letters, numbers, or underscores.');
+
+    return withTransaction(async (client) => {
+      const typeRows = await client.query(
+        'SELECT id,type_key,level_order FROM location_types WHERE type_key=ANY($1::text[]) ORDER BY level_order',
+        [locationPathTypes],
+      );
+      const typeIds = new Map(typeRows.rows.map((row) => [String(row.type_key), Number(row.id)]));
+      if (locationPathTypes.some((typeKey) => !typeIds.has(typeKey))) {
+        throw new AppError(500, 'LOCATION_TYPES_INCOMPLETE', 'The location hierarchy is incomplete. Contact an administrator.');
+      }
+
+      const created: Array<Record<string, unknown>> = [];
+      const findOrCreate = async (typeKey: typeof locationPathTypes[number], parentId: number | null, name: string, preferredKey?: string) => {
+        const existing = await client.query(
+          `SELECT l.* FROM locations l
+           WHERE l.location_type_id=$1 AND l.parent_id IS NOT DISTINCT FROM $2
+             AND lower(l.location_name)=lower($3) AND l.active
+           LIMIT 1`,
+          [typeIds.get(typeKey), parentId, name],
+        );
+        if (existing.rows[0]) {
+          if (preferredKey && existing.rows[0].location_key !== preferredKey) {
+            throw new AppError(409, 'LOCATION_ID_CONFLICT', `${name} already exists with Bin ID ${existing.rows[0].location_key}.`);
+          }
+          return existing.rows[0];
+        }
+
+        const parent = parentId
+          ? await client.query('SELECT full_path FROM locations WHERE id=$1 AND active', [parentId])
+          : null;
+        if (parentId && !parent?.rows[0]) throw new AppError(409, 'LOCATION_PARENT_CHANGED', 'A parent location changed while this path was being created.');
+        const key = preferredKey ?? locationKey([typeKey, String(parentId ?? 'ROOT'), name]);
+        const keyOwner = await client.query('SELECT id,full_path FROM locations WHERE location_key=$1', [key]);
+        if (keyOwner.rows[0]) throw new AppError(409, 'LOCATION_KEY_CONFLICT', `Location key ${key} is already used by ${keyOwner.rows[0].full_path}.`);
+        const fullPath = parent?.rows[0] ? `${parent.rows[0].full_path} / ${name}` : name;
+        const inserted = await client.query(
+          `INSERT INTO locations(parent_id,location_type_id,location_key,location_name,full_path)
+           VALUES($1,$2,$3,$4,$5) RETURNING *`,
+          [parentId, typeIds.get(typeKey), key, name, fullPath],
+        );
+        created.push(inserted.rows[0]);
+        return inserted.rows[0];
+      };
+
+      const buildingNode = await findOrCreate('BUILDING', null, building);
+      const roomNode = await findOrCreate('LAB_ROOM', Number(buildingNode.id), `${roomName} (Room ${roomNumber})`);
+      const rowNode = await findOrCreate('RACK', Number(roomNode.id), labelledLocation('Row', binRow));
+      const rackNode = await findOrCreate('RU', Number(rowNode.id), labelledLocation('Rack', rackLocation));
+      const binNode = await findOrCreate('CABINET_STORAGE', Number(rackNode.id), labelledLocation('Bin', binLocation), binId);
+
+      if (created.length) {
+        await adminEvent(client, user, {
+          action: 'LOCATION_PATH_CREATED',
+          type: 'location',
+          id: binNode.id,
+          label: binNode.full_path,
+          reason,
+          after: { path: binNode.full_path, binId, createdNodes: created },
+        });
+      }
+      return { location: binNode, createdCount: created.length, path: binNode.full_path };
+    });
   });
 
   app.get('/api/v1/admin/users', { preHandler: requirePermission('admin.identity') }, async () => {

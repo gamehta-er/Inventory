@@ -1,0 +1,33 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.8",
+  "changeId": "LABEL-PRINTING-1.3.8",
+  "scope": "Correct browser print pagination and add permission-aware label row and field selection without changing the approved architecture, database schema, or physical label format.",
+  "requirements": [
+    {
+      "requirementId": "AUTH-004",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/components/LabelPrint.tsx: retains label printing for users while exposing custom row and field controls only to Super Users and Privileged Administrators",
+        "frontend/src/components/LabelPrint.test.tsx: verifies elevated customization and fixed regular-user controls"
+      ]
+    },
+    {
+      "requirementId": "ACT-007",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/labels.ts: records the submitted print job and one navigable activity event for every included asset",
+        "backend/test/labels-contract.test.ts: verifies preview and audited print endpoints remain separate"
+      ]
+    },
+    {
+      "requirementId": "UX-012",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/components/LabelPrint.tsx: renders printable labels in a dedicated body-level print surface",
+        "frontend/src/styles.css: removes the application from print layout and fixes each label to a 2.125 inch by 1 inch page",
+        "Chrome PDF acceptance: two included labels generated exactly two 153.12 by 72 point pages despite an 80-inch hidden application fixture"
+      ]
+    }
+  ]
+}

@@ -4,10 +4,12 @@ import {
   CheckCircle2,
   CirclePlus,
   Download,
+  Eye,
   FilePenLine,
   FileSpreadsheet,
   FileUp,
   Link2,
+  ListFilter,
   Pencil,
   RefreshCw,
   RotateCcw,
@@ -21,6 +23,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, download } from '../api';
 import { PageHeader } from '../components/PageHeader';
+import { Overlay } from '../components/Overlay';
 import { useAppState } from '../state/AppState';
 import type {
   FieldDefinition,
@@ -157,7 +160,7 @@ function MappingPanel({ session, busy, onSave }: { session: ImportSession; busy:
   const undecided = session.headers.filter((header) => !choices[header.sourceIndex]);
 
   return <section className="import-mapping">
-    <div className="import-step-heading"><div><span className="eyebrow">Column mapping</span><h2>Confirm where every CSV column belongs</h2><p>Automatic matches are preselected. Unknown columns must be mapped or explicitly ignored.</p></div><span className="step-number">2 of 3</span></div>
+    <div className="import-step-heading"><div><span className="eyebrow">Column decisions</span><h2>Review only the columns that need your judgment</h2><p>Confident matches are already selected. Unknown columns must be mapped or explicitly ignored.</p></div><span className="step-number">Only when needed</span></div>
     {session.mappingIssues.length > 0 && <div className="mapping-issues">{session.mappingIssues.map((issue, index) => <p className={`mapping-issue mapping-issue--${issue.severity.toLowerCase()}`} key={`${issue.code}-${index}`}><TriangleAlert size={16}/>{issue.message}</p>)}</div>}
     <div className="mapping-grid">
       {session.headers.map((header) => <label className="mapping-row" key={header.sourceIndex}>
@@ -194,11 +197,52 @@ function RowEditor({ session, row, busy, onSave, onCancel }: { session: ImportSe
   </div>;
 }
 
-function ReviewPanel({ session, canApproveLookups, busy, busyIssue, onEdit, onToggle, onCorrect, onBulkCorrect, onApprove, onRepair }: {
+function CsvFilePicker({ file, onChange }: { file?: File; onChange(file?: File): void }) {
+  const [dragging, setDragging] = useState(false);
+  function choose(candidate?: File) {
+    if (!candidate || !/\.csv$/i.test(candidate.name)) return onChange(undefined);
+    onChange(candidate);
+  }
+  return <label
+    className={`file-picker file-picker--smart ${dragging ? 'is-dragging' : ''}`}
+    onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+    onDragLeave={() => setDragging(false)}
+    onDragOver={(event) => event.preventDefault()}
+    onDrop={(event) => { event.preventDefault(); setDragging(false); choose(event.dataTransfer.files[0]); }}
+  >
+    <FileUp aria-hidden/>
+    <span><strong>{file?.name ?? 'Drop a completed CSV here'}</strong><small>{file ? `${Math.ceil(file.size / 1024)} KB ready to analyze` : 'or choose a file - one or many rows, up to 10 MB'}</small></span>
+    <b>{file ? 'Change file' : 'Choose CSV'}</b>
+    <input type="file" accept=".csv,text/csv" onChange={(event) => choose(event.target.files?.[0])}/>
+  </label>;
+}
+
+type ReviewFilter = 'ALL' | 'ACTION' | 'WARNING' | 'READY' | 'EXCLUDED';
+
+function reviewFilterLabel(filter: ReviewFilter): string {
+  return ({ ALL: 'All rows', ACTION: 'Needs action', WARNING: 'Warnings', READY: 'Ready', EXCLUDED: 'Excluded' })[filter];
+}
+
+function rowMatchesFilter(row: ImportRow, filter: ReviewFilter): boolean {
+  if (filter === 'ACTION') return row.included && ['BLOCKED', 'CONFIGURATION_ERROR'].includes(row.status);
+  if (filter === 'WARNING') return row.included && row.status === 'WARNING';
+  if (filter === 'READY') return row.included && ['VALID', 'COMMITTED'].includes(row.status);
+  if (filter === 'EXCLUDED') return !row.included || row.status === 'EXCLUDED';
+  return true;
+}
+
+function issueGroupKey(issue: ImportIssue): string {
+  return [issue.severity, issue.code, issue.fieldKey ?? '', issue.sourceValue?.trim().toLocaleLowerCase() ?? ''].join('|');
+}
+
+function ReviewPanel({ session, canApproveLookups, busy, busyIssue, selectedRowId, onOpenRow, onCloseRow, onEdit, onToggle, onCorrect, onBulkCorrect, onApprove, onRepair }: {
   session: ImportSession;
   canApproveLookups: boolean;
   busy: boolean;
   busyIssue: string;
+  selectedRowId?: string | null;
+  onOpenRow(row: ImportRow): void;
+  onCloseRow(): void;
   onEdit(row: ImportRow, values: Record<string, unknown>): void;
   onToggle(row: ImportRow, included: boolean): void;
   onCorrect(row: ImportRow, issue: ImportIssue, value: string): void;
@@ -206,27 +250,77 @@ function ReviewPanel({ session, canApproveLookups, busy, busyIssue, onEdit, onTo
   onApprove(issue: ImportIssue, reason: string): void;
   onRepair(issue: ImportIssue): void;
 }) {
-  const [editing, setEditing] = useState<string>();
-  return <div className="import-rows">
-    {session.rows.map((row) => <article className={`import-row import-row--${row.status.toLowerCase()} ${!row.included ? 'import-row--excluded' : ''}`} id={`import-row-${row.id}`} key={row.id}>
-      <header><div><span className="eyebrow">CSV row {row.row_number}</span><h3>{displayValue(row.normalized_values.product_name ?? rawRowValues(session, row).product_name)}</h3></div><div className="import-row__header-actions"><span className={`status status--${row.status.toLowerCase()}`}>{humanStatus(row.status)}</span>{!closedStatuses.has(session.status) && <button className="button" onClick={() => setEditing(editing === row.id ? undefined : row.id)} type="button"><Pencil size={15}/>{editing === row.id ? 'Close Editor' : 'Edit Row'}</button>}</div></header>
-      {editing === row.id && <RowEditor session={session} row={row} busy={busy} onSave={(values) => { onEdit(row, values); setEditing(undefined); }} onCancel={() => setEditing(undefined)}/>} 
-      {session.mode === 'UPDATE' && row.before_values && <div className="import-diff"><strong>Proposed changes</strong><div>{session.fields.filter((field) => row.before_values?.[field.fieldKey] !== row.after_values?.[field.fieldKey]).map((field) => <span key={field.id}><b>{field.label}</b><s>{displayFieldValue(field, row.before_values?.[field.fieldKey])}</s><i aria-hidden>to</i><em className={row.after_values?.[field.fieldKey] == null ? 'will-clear' : ''}>{row.after_values?.[field.fieldKey] == null ? 'Will clear existing value' : displayFieldValue(field, row.after_values?.[field.fieldKey])}</em></span>)}</div></div>}
-      <dl className="import-row__fields">{session.fields.map((field) => <div key={field.id}><dt>{field.label}{field.required ? ' *' : ''}</dt><dd>{displayFieldValue(field, row.normalized_values[field.fieldKey] ?? rawRowValues(session, row)[field.fieldKey])}</dd></div>)}</dl>
-      {row.issues.length > 0 && <ul className="issue-list">{row.issues.map((issue, index) => <ImportIssueCard
-        anchorId={`import-row-${row.id}-field-${issue.fieldKey ?? issue.code}`}
-        issue={issue}
-        canApproveLookups={canApproveLookups}
-        busy={busyIssue === `${row.id}:${issue.fieldKey}`}
-        onCorrect={(value) => onCorrect(row, issue, value)}
-        onBulkCorrect={issue.sourceValue ? (value) => onBulkCorrect(issue, value) : undefined}
-        onApprove={(reason) => onApprove(issue, reason)}
-        onRepair={() => onRepair(issue)}
-        key={`${issue.fieldKey ?? issue.code}-${index}`}
-      />)}</ul>}
-      {!closedStatuses.has(session.status) && <footer className="import-row__footer"><button className="button button--quiet" disabled={busy} onClick={() => onToggle(row, !row.included)} type="button">{row.included ? <><Trash2 size={15}/>Exclude Row</> : <><RotateCcw size={15}/>Restore Row</>}</button></footer>}
-    </article>)}
-  </div>;
+  const [filter, setFilter] = useState<ReviewFilter>(session.invalidRows > 0 ? 'ACTION' : 'ALL');
+  const [editing, setEditing] = useState(false);
+  const selectedRow = session.rows.find((row) => row.id === selectedRowId);
+  const rows = session.rows.filter((row) => rowMatchesFilter(row, filter));
+  const issueGroups = useMemo(() => {
+    const groups = new Map<string, { issue: ImportIssue; rows: ImportRow[] }>();
+    for (const row of session.rows.filter((item) => item.included)) {
+      for (const issue of row.issues) {
+        const key = issueGroupKey(issue);
+        const current = groups.get(key);
+        if (current) current.rows.push(row);
+        else groups.set(key, { issue, rows: [row] });
+      }
+    }
+    return [...groups.values()].sort((left, right) => {
+      const priority = { CONFIGURATION: 0, ERROR: 1, WARNING: 2 };
+      return priority[left.issue.severity] - priority[right.issue.severity] || right.rows.length - left.rows.length;
+    });
+  }, [session.rows]);
+  const counts: Record<ReviewFilter, number> = {
+    ALL: session.rows.length,
+    ACTION: session.rows.filter((row) => rowMatchesFilter(row, 'ACTION')).length,
+    WARNING: session.rows.filter((row) => rowMatchesFilter(row, 'WARNING')).length,
+    READY: session.rows.filter((row) => rowMatchesFilter(row, 'READY')).length,
+    EXCLUDED: session.rows.filter((row) => rowMatchesFilter(row, 'EXCLUDED')).length,
+  };
+
+  return <>
+    {issueGroups.length > 0 && <section className="import-exception-center" aria-labelledby="exception-center-title">
+      <header><div><span className="eyebrow">Exception center</span><h3 id="exception-center-title">Resolve repeated issues once</h3><p>Identical source values are grouped across the batch. Approved corrections can be applied to every matching row.</p></div><span className="status status--needs_attention">{issueGroups.length} issue group{issueGroups.length === 1 ? '' : 's'}</span></header>
+      <div className="import-exception-groups">{issueGroups.map((group) => <article className="import-exception-group" key={issueGroupKey(group.issue)}>
+        <div className="import-exception-group__meta"><span>{group.rows.length} affected row{group.rows.length === 1 ? '' : 's'}</span><button className="text-button" onClick={() => onOpenRow(group.rows[0]!)} type="button">View first row</button></div>
+        <ul className="issue-list"><ImportIssueCard
+          issue={group.issue}
+          canApproveLookups={canApproveLookups}
+          busy={busyIssue === `bulk:${group.issue.fieldKey}` || busyIssue === `lookup:${group.issue.fieldKey}`}
+          onCorrect={(value) => group.rows.length > 1 ? onBulkCorrect(group.issue, value) : onCorrect(group.rows[0]!, group.issue, value)}
+          onBulkCorrect={group.rows.length > 1 && group.issue.sourceValue ? (value) => onBulkCorrect(group.issue, value) : undefined}
+          onApprove={(reason) => onApprove(group.issue, reason)}
+          onRepair={() => onRepair(group.issue)}
+        /></ul>
+      </article>)}</div>
+    </section>}
+
+    <section className="import-row-review" aria-labelledby="row-review-title">
+      <header><div><span className="eyebrow">Row review</span><h3 id="row-review-title">Confirm the staged inventory</h3></div><ListFilter aria-hidden size={18}/></header>
+      <div className="import-review-filters" role="tablist" aria-label="Filter import rows">{(['ALL', 'ACTION', 'WARNING', 'READY', 'EXCLUDED'] as ReviewFilter[]).map((item) => <button aria-selected={filter === item} className={filter === item ? 'is-active' : ''} key={item} onClick={() => setFilter(item)} role="tab" type="button"><span>{reviewFilterLabel(item)}</span><b>{counts[item]}</b></button>)}</div>
+      <div className="import-table-wrap"><table className="import-table">
+        <thead><tr><th>CSV row</th><th>Product</th><th>Serial #</th><th>Model #</th><th>Asset status</th><th>Review result</th><th>Issues</th><th><span className="sr-only">Actions</span></th></tr></thead>
+        <tbody>{rows.map((row) => {
+          const values = { ...rawRowValues(session, row), ...row.normalized_values };
+          return <tr className={!row.included ? 'is-excluded' : ''} id={`import-row-${row.id}`} key={row.id}>
+            <td>{row.row_number}</td><td><strong>{displayValue(values.product_name)}</strong></td><td>{displayValue(values.serial_number)}</td><td>{displayValue(values.model_number)}</td><td>{displayValue(values.asset_status)}</td><td><span className={`status status--${row.status.toLowerCase()}`}>{humanStatus(row.status)}</span></td><td>{row.issues.length ? `${row.issues.length} issue${row.issues.length === 1 ? '' : 's'}` : 'No issues'}</td><td><button className="button button--quiet" onClick={() => onOpenRow(row)} type="button"><Eye size={15}/>Review</button></td>
+          </tr>;
+        })}</tbody>
+      </table>{rows.length === 0 && <div className="import-table-empty"><CheckCircle2 size={22}/><strong>No rows in this view</strong><span>Choose another filter to continue reviewing the batch.</span></div>}</div>
+    </section>
+
+    {selectedRow && <Overlay
+      title={`CSV row ${selectedRow.row_number}: ${displayValue(selectedRow.normalized_values.product_name ?? rawRowValues(session, selectedRow).product_name)}`}
+      subtitle={`${humanStatus(selectedRow.status)} - ${selectedRow.issues.length} issue${selectedRow.issues.length === 1 ? '' : 's'}`}
+      onClose={() => { setEditing(false); onCloseRow(); }}
+      size="workspace"
+      footer={!closedStatuses.has(session.status) ? <><button className="button button--quiet" disabled={busy} onClick={() => onToggle(selectedRow, !selectedRow.included)} type="button">{selectedRow.included ? <><Trash2 size={15}/>Exclude Row</> : <><RotateCcw size={15}/>Restore Row</>}</button><button className="button button--primary" onClick={() => setEditing((current) => !current)} type="button"><Pencil size={15}/>{editing ? 'Close Editor' : 'Edit Row'}</button></> : undefined}
+    >
+      {editing && <RowEditor session={session} row={selectedRow} busy={busy} onSave={(values) => { onEdit(selectedRow, values); setEditing(false); }} onCancel={() => setEditing(false)}/>}
+      {session.mode === 'UPDATE' && selectedRow.before_values && <div className="import-diff"><strong>Proposed changes</strong><div>{session.fields.filter((field) => selectedRow.before_values?.[field.fieldKey] !== selectedRow.after_values?.[field.fieldKey]).map((field) => <span key={field.id}><b>{field.label}</b><s>{displayFieldValue(field, selectedRow.before_values?.[field.fieldKey])}</s><i aria-hidden>to</i><em className={selectedRow.after_values?.[field.fieldKey] == null ? 'will-clear' : ''}>{selectedRow.after_values?.[field.fieldKey] == null ? 'Will clear existing value' : displayFieldValue(field, selectedRow.after_values?.[field.fieldKey])}</em></span>)}</div></div>}
+      <dl className="import-row__fields">{session.fields.map((field) => <div key={field.id}><dt>{field.label}{field.required ? ' *' : ''}</dt><dd>{displayFieldValue(field, selectedRow.normalized_values[field.fieldKey] ?? rawRowValues(session, selectedRow)[field.fieldKey])}</dd></div>)}</dl>
+      {selectedRow.issues.length > 0 && <ul className="issue-list">{selectedRow.issues.map((issue, index) => <ImportIssueCard anchorId={`import-row-${selectedRow.id}-field-${issue.fieldKey ?? issue.code}`} issue={issue} canApproveLookups={canApproveLookups} busy={busyIssue === `${selectedRow.id}:${issue.fieldKey}`} onCorrect={(value) => onCorrect(selectedRow, issue, value)} onBulkCorrect={issue.sourceValue ? (value) => onBulkCorrect(issue, value) : undefined} onApprove={(reason) => onApprove(issue, reason)} onRepair={() => onRepair(issue)} key={`${issue.fieldKey ?? issue.code}-${index}`}/>)}</ul>}
+    </Overlay>}
+  </>;
 }
 
 export function ImportPage() {
@@ -297,12 +391,29 @@ export function ImportPage() {
   }
 
   async function start() {
-    await run(() => api.createImportSession(profileId, mode));
+    if (!file) { setError('Choose a completed CSV file.'); return; }
+    setBusy(true); setError('');
+    try {
+      const draft = await api.createImportSession(profileId, mode);
+      useSession(draft);
+      const next = await api.uploadImportFile(draft.id, file);
+      useSession(next);
+      await refreshRecent();
+      notify(next.status === 'MAPPING'
+        ? 'CSV analyzed. Review the columns that could not be matched safely.'
+        : `CSV analyzed automatically. ${next.invalidRows ? `${next.invalidRows} row${next.invalidRows === 1 ? '' : 's'} need attention.` : 'The batch is ready for review.'}`);
+    } catch (failure) {
+      setError((failure as Error).message);
+      notify((failure as Error).message, 'error');
+    } finally { setBusy(false); }
   }
 
   async function upload() {
     if (!importSession || !file) { setError('Choose a completed CSV file.'); return; }
-    await run(() => api.uploadImportFile(importSession.id, file), 'CSV staged. Confirm the column mapping before validation.');
+    await run(async () => {
+      const next = await api.uploadImportFile(importSession.id, file);
+      return next;
+    }, 'CSV analyzed. Confident columns were mapped automatically.');
   }
 
   async function commit() {
@@ -346,43 +457,46 @@ export function ImportPage() {
 
   const includedRows = importSession?.rows.filter((row) => row.included).length ?? 0;
   const firstIssue = importSession?.rows.flatMap((row) => row.issues.map((issue) => ({ row, issue })))[0];
-  const currentStep = !importSession ? 0 : importSession.status === 'DRAFT' ? 1 : importSession.status === 'MAPPING' ? 2 : 3;
+  const activeSessions = recent.filter((item) => !closedStatuses.has(item.status)).length;
+  const attentionSessions = recent.filter((item) => ['MAPPING', 'NEEDS_ATTENTION', 'NEEDS_REVALIDATION', 'FAILED'].includes(item.status)).length;
 
   return <>
-    <PageHeader eyebrow="Import" title="Bring inventory in with confidence." description="Create or update multiple assets through a resumable, validated session. Nothing changes in inventory until the complete included batch is ready." />
+    <PageHeader eyebrow="Smart Import" title="Bring inventory in with confidence." description="Choose a CSV and let the profile contract handle mapping and validation. You only stop where a decision is genuinely required." />
     <div className="import-shell">
       <aside className="import-sidebar surface">
         <div className="import-mode-heading"><span className="eyebrow">Import sessions</span>{importSession && <button className="icon-button" aria-label="Start a new import" onClick={() => useSession(undefined)}><CirclePlus size={18}/></button>}</div>
-        <div className="import-progress" aria-label="Import progress"><span className={currentStep >= 1 ? 'is-active' : ''}>1 Upload</span><span className={currentStep >= 2 ? 'is-active' : ''}>2 Map</span><span className={currentStep >= 3 ? 'is-active' : ''}>3 Review</span></div>
+        <div className="import-session-health" aria-label="Import session summary"><span><strong>{activeSessions}</strong>Active</span><span className={attentionSessions ? 'has-attention' : ''}><strong>{attentionSessions}</strong>Need attention</span></div>
         <div className="recent-list"><h3>Recent sessions</h3>{recent.length ? recent.map((item) => <button className={item.id === importSession?.id ? 'is-active' : ''} key={item.id} onClick={() => setSearchParams({ session: item.id })}><span>{item.file_name ?? `${item.category_name} ${item.mode === 'CREATE' ? 'create' : 'update'}`}</span><small>{item.total_rows} rows - {humanStatus(item.status)}</small></button>) : <p>No import sessions yet.</p>}</div>
       </aside>
 
       <main className="import-workspace surface">
         {error && <div className="form-alert" role="alert"><TriangleAlert size={18}/><span>{error}</span></div>}
         {!importSession ? <section className="import-start">
-          <div className="import-step-heading"><div><span className="eyebrow">New session</span><h2>Choose the inventory contract</h2><p>The category profile defines the generated template, mappings, validation, and allowed values.</p></div><span className="step-number">Start</span></div>
+          <div className="import-step-heading"><div><span className="eyebrow">New smart import</span><h2>Choose the contract and source file</h2><p>Known columns map automatically. The application asks for column decisions only when it cannot make a safe match.</p></div><span className="step-number">Ready when you are</span></div>
           <div className="import-start-grid">
             <label className="field"><span className="field__label">Asset category *</span><select value={profileId} onChange={(event) => setProfileId(Number(event.target.value))}>{appSession?.categories.map((item) => <option key={item.id} value={item.profileId}>{item.name}</option>)}</select></label>
             <fieldset className="mode-picker"><legend>Import mode *</legend><button className={mode === 'CREATE' ? 'is-active' : ''} onClick={() => setMode('CREATE')} type="button"><CirclePlus/><span><strong>Create Assets</strong><small>New serials only</small></span></button><button className={mode === 'UPDATE' ? 'is-active' : ''} onClick={() => setMode('UPDATE')} type="button"><RefreshCw/><span><strong>Update Existing</strong><small>Exact Serial # match</small></span></button></fieldset>
           </div>
-          <div className="import-contract-summary"><FileSpreadsheet size={22}/><div><strong>{category?.name ?? 'Profile'} contract</strong><p>The current profile and controlled values are pinned when this session starts. Required blanks block; optional blanks are accepted.</p></div><button className="button" onClick={() => setInstructionsOpen((current) => !current)} type="button">{instructionsOpen ? 'Hide Instructions' : 'View Instructions'}</button></div>
-          {instructionsOpen && <div className="import-instructions"><h3>How this import works</h3><ol><li>Start the session and download its profile-generated CSV.</li><li>Upload one or many rows. Quoted commas, BOM, and Windows line endings are supported.</li><li>Confirm every column mapping. Unknown columns may be mapped or ignored.</li><li>Resolve blocking issues in the staged rows. Warnings do not stop the batch.</li><li>Commit only when every included row is ready. The batch is all-or-nothing.</li></ol><p><strong>Update mode:</strong> blank optional mapped cells clear existing values. Blank required cells always block.</p></div>}
-          <div className="form-actions"><button className="button button--primary" disabled={busy || !profileId} onClick={start} type="button">Create Import Session</button></div>
+          <div className="import-contract-summary"><FileSpreadsheet size={22}/><div><strong>{category?.name ?? 'Profile'} contract</strong><p>Required blanks block; optional blanks are accepted. The profile and controlled values are pinned for a repeatable result.</p></div><div className="import-contract-actions"><button className="button" disabled={!profileId} onClick={() => download(api.importTemplateUrl(profileId), `${category?.key?.toLowerCase() ?? 'inventory'}-import.csv`)} type="button"><Download size={16}/>Download template</button><button className="button button--quiet" onClick={() => setInstructionsOpen((current) => !current)} type="button">{instructionsOpen ? 'Hide guide' : 'Field guide'}</button></div></div>
+          {instructionsOpen && <div className="import-instructions"><h3>What happens after analysis</h3><ol><li>Recognized labels, field keys, and approved aliases map automatically.</li><li>Only unknown or ambiguous columns require a mapping decision.</li><li>Repeated data issues are grouped so one correction can resolve many rows.</li><li>Warnings remain importable; blocking issues must be resolved.</li><li>The included batch commits in one transaction or not at all.</li></ol><p><strong>Update Existing:</strong> blank optional mapped cells clear existing values. Blank required cells always block.</p></div>}
+          <CsvFilePicker file={file} onChange={(next) => { setFile(next); setError(next ? '' : 'Choose a CSV file.'); }}/>
+          <div className="import-analysis-note"><CheckCircle2 size={18}/><span><strong>No inventory changes happen during analysis.</strong> You will review the complete result before commit.</span></div>
+          <div className="form-actions"><button className="button button--primary" disabled={busy || !profileId || !file} onClick={start} type="button"><FileSpreadsheet size={17}/>{busy ? 'Analyzing CSV...' : 'Analyze CSV'}</button></div>
         </section> : <>
           <header className="import-session-header"><div><button className="text-button" onClick={() => useSession(undefined)} type="button"><ArrowLeft size={15}/>All sessions</button><span className="eyebrow">{importSession.categoryName} - {importSession.mode === 'CREATE' ? 'Create Assets' : 'Update Existing'}</span><h2>{importSession.fileName ?? 'Upload source CSV'}</h2><p>Profile version {importSession.profileVersion} - Created by {importSession.createdBy}</p></div><span className={`status status--${importSession.status.toLowerCase()}`}>{humanStatus(importSession.status)}</span></header>
 
           {importSession.status === 'DRAFT' && <section className="import-upload-step">
-            <div className="import-step-heading"><div><span className="eyebrow">Source file</span><h2>Use the generated profile template</h2><p>The server stores the original CSV with this session so you can leave and resume safely.</p></div><span className="step-number">1 of 3</span></div>
+            <div className="import-step-heading"><div><span className="eyebrow">Source file</span><h2>Choose a CSV to analyze</h2><p>The original CSV is stored with this session so you can leave and resume safely.</p></div><span className="step-number">Draft</span></div>
             <div className="import-template-actions"><button className="button" onClick={() => download(api.importTemplateUrl(importSession.profileId), `${importSession.categoryKey.toLowerCase()}-import.csv`)} type="button"><Download size={17}/>Download Current CSV Template</button><button className="button" onClick={() => setInstructionsOpen((current) => !current)} type="button">{instructionsOpen ? 'Hide Field Guide' : 'View Field Guide'}</button></div>
             {instructionsOpen && <div className="field-guide">{importSession.fields.map((field) => <article key={field.id}><strong>{field.label}{field.required ? ' *' : ''}</strong><span>{field.fieldKey}</span><p>{field.definition || field.helpText}</p><small>{field.required ? 'Required' : 'Optional'} - {humanStatus(field.dataType)}</small></article>)}</div>}
-            <label className="file-picker"><FileUp/><span><strong>{file?.name ?? 'Choose completed CSV'}</strong><small>{file ? `${Math.ceil(file.size / 1024)} KB` : 'One or many rows, up to 10 MB'}</small></span><input type="file" accept=".csv,text/csv" onChange={(event) => { setFile(event.target.files?.[0]); setError(''); }}/></label>
-            <div className="form-actions"><button className="button button--primary" disabled={busy || !file} onClick={upload} type="button"><FileUp size={17}/>{busy ? 'Uploading...' : 'Upload And Map Columns'}</button></div>
+            <CsvFilePicker file={file} onChange={(next) => { setFile(next); setError(next ? '' : 'Choose a CSV file.'); }}/>
+            <div className="form-actions"><button className="button button--primary" disabled={busy || !file} onClick={upload} type="button"><FileSpreadsheet size={17}/>{busy ? 'Analyzing CSV...' : 'Analyze CSV'}</button></div>
           </section>}
 
-          {importSession.status === 'MAPPING' && <MappingPanel session={importSession} busy={busy} onSave={(mappings) => void run(() => api.saveImportMappings(importSession.id, mappings), 'Column mapping saved. The complete batch was validated.')}/>} 
+          {importSession.status === 'MAPPING' && <MappingPanel session={importSession} busy={busy} onSave={(mappings) => void run(() => api.saveImportMappings(importSession.id, mappings), 'Column decisions saved. The complete batch was validated.')}/>}
 
           {!['DRAFT', 'MAPPING'].includes(importSession.status) && <section className="import-review">
-            <div className="import-step-heading"><div><span className="eyebrow">Batch review</span><h2>{importSession.totalRows} source row{importSession.totalRows === 1 ? '' : 's'}, {includedRows} included</h2><p>Warnings can commit. Blocking and configuration errors must be resolved first.</p></div><span className="step-number">3 of 3</span></div>
+            <div className="import-step-heading"><div><span className="eyebrow">Analysis complete</span><h2>{importSession.totalRows} source row{importSession.totalRows === 1 ? '' : 's'}, {includedRows} included</h2><p>Review exceptions first, then confirm the staged rows. Warnings can commit; blocking and configuration errors cannot.</p></div><span className="step-number">{importSession.invalidRows ? 'Action required' : 'Ready for review'}</span></div>
             <div className="batch-kpis"><span><strong>{importSession.validRows}</strong>Valid</span><span><strong>{importSession.warningRows}</strong>Warnings</span><span><strong>{importSession.invalidRows}</strong>Blocked</span><span><strong>{importSession.rows.filter((row) => !row.included).length}</strong>Excluded</span></div>
             {importSession.failureMessage && <p className="form-alert">{importSession.failureMessage}</p>}
             {importSession.status === 'COMPLETED' ? <div className="import-complete"><CheckCircle2 size={34}/><div><h3>Import completed</h3><p>{importSession.results.length} asset{importSession.results.length === 1 ? '' : 's'} committed. Inventory, reports, activity, and category totals have refreshed.</p></div><div className="import-result-links">{importSession.results.map((result) => <button className="button" key={result.import_row_id} onClick={() => navigate(`/assets/${Number(result.asset_id)}`, { state: { backgroundLocation: location } })} type="button"><Link2 size={15}/>{result.product_name} - {result.serial_number}</button>)}</div></div> : <>
@@ -393,6 +507,9 @@ export function ImportPage() {
                 canApproveLookups={canApproveLookups}
                 busy={busy}
                 busyIssue={busyIssue}
+                selectedRowId={requestedRowId}
+                onOpenRow={(row) => setSearchParams({ session: importSession.id, row: row.id })}
+                onCloseRow={() => setSearchParams({ session: importSession.id })}
                 onEdit={(row, values) => void run(() => api.updateImportRow(importSession.id, row.id, { values }), `CSV row ${row.row_number} saved and revalidated.`)}
                 onToggle={(row, included) => void run(() => api.updateImportRow(importSession.id, row.id, { included }), `CSV row ${row.row_number} ${included ? 'restored' : 'excluded'}.`)}
                 onCorrect={(row, issue, value) => void correctRow(row, issue, value)}

@@ -12,6 +12,11 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $CataloguePath = Join-Path $ProjectRoot 'framework\requirements.json'
 $EvidencePath = Join-Path $ProjectRoot 'framework\conformance-evidence.json'
 $ApprovalPath = Join-Path $ProjectRoot 'framework\approval.json'
+$DesignDocumentPath = Join-Path $ProjectRoot 'framework\design-system-v1.1.md'
+$DesignLockPath = Join-Path $ProjectRoot 'framework\design-lock.json'
+$DesignApprovalPath = Join-Path $ProjectRoot 'framework\design-approval.json'
+$DesignChangeTemplatePath = Join-Path $ProjectRoot 'framework\design-change-request-template.md'
+$DesignLockTestPath = Join-Path $ProjectRoot 'operations\Test-DesignLock.ps1'
 $PackagePath = Join-Path $ProjectRoot 'package.json'
 $BackendPackagePath = Join-Path $ProjectRoot 'backend\package.json'
 $FrontendPackagePath = Join-Path $ProjectRoot 'frontend\package.json'
@@ -27,7 +32,7 @@ function Add-Result([string]$Check, [bool]$Passed, [string]$Detail) {
     })
 }
 
-foreach ($Path in @($CataloguePath, $EvidencePath, $ApprovalPath, $PackagePath, $BackendPackagePath, $FrontendPackagePath, $ApiVersionPath, $PdfPath)) {
+foreach ($Path in @($CataloguePath, $EvidencePath, $ApprovalPath, $DesignDocumentPath, $DesignLockPath, $DesignApprovalPath, $DesignChangeTemplatePath, $DesignLockTestPath, $PackagePath, $BackendPackagePath, $FrontendPackagePath, $ApiVersionPath, $PdfPath)) {
     Add-Result "Required artifact: $(Split-Path -Leaf $Path)" (Test-Path -LiteralPath $Path -PathType Leaf) $Path
 }
 if ($ReleaseEvidencePath) {
@@ -49,6 +54,10 @@ $Requirements = @($Catalogue.requirements)
 $Fields = @($Catalogue.standardFields)
 $Statuses = @($Catalogue.lifecycleStatuses)
 $EvidenceRows = @($Evidence.requirements)
+
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $DesignLockTestPath -ProjectRoot $ProjectRoot
+$DesignLockExitCode = $LASTEXITCODE
+Add-Result 'Approved Design System v1.1 lock' ($DesignLockExitCode -eq 0) "Design lock exit code=$DesignLockExitCode."
 
 Add-Result 'Framework requirement count' ($Requirements.Count -eq 138) "Found $($Requirements.Count); expected 138."
 $UniqueIds = @($Requirements.id | Sort-Object -Unique)

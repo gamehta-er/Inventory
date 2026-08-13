@@ -67,7 +67,16 @@ export interface Profile {
 
 export interface Lookups {
   lookups: Array<{ id: number; lookup_key: string; lookup_name: string; values: LookupOption[] }>;
-  locations: Array<{ id: number; parent_id: number | null; location_key: string; location_name: string; full_path: string }>;
+  locations: Array<{
+    id: number;
+    parent_id: number | null;
+    location_key: string;
+    location_name: string;
+    full_path: string;
+    type_key: string;
+    type_name: string;
+    level_order: number;
+  }>;
   users: Array<{ id: number; display_name: string; initials: string }>;
   vendors: Array<{ id: number; vendor_name: string }>;
 }
@@ -164,10 +173,37 @@ export interface ReportResult {
   kpis: Record<string, number>;
   dimensions: Record<string, Array<{ key: string; label: string; value: number }>>;
   trends: Array<{ month: string; value: number }>;
+  quality: {
+    complete: number;
+    missing: number;
+    issues: Array<{ key: string; label: string; value: number }>;
+  };
   rows: Array<Record<string, unknown>>;
   page: number;
   limit: number;
   total: number;
+}
+
+export interface CommandCenterResult {
+  generatedAt: string;
+  queryTimeMs: number;
+  database: { status: string };
+  inventory: ReportResult;
+  actionQueues: {
+    rework: number;
+    eWaste: number;
+    metadataGaps: number;
+    unassignedOwner: number;
+    unassignedLocation: number;
+    importsNeedingAttention: number;
+  };
+  imports: {
+    open: number;
+    needsAttention: number;
+    ready: number;
+    recent: ImportSessionSummary[];
+  };
+  recentActivity: ActivityEvent[];
 }
 
 export interface VersionContract {
@@ -188,6 +224,8 @@ export interface LabelData {
   barcodeValue: string;
   barcodeSvg: string;
 }
+
+export type LabelFieldKey = 'productName' | 'modelNumber' | 'assetTag' | 'serialNumber';
 
 export type ImportMode = 'CREATE' | 'UPDATE';
 

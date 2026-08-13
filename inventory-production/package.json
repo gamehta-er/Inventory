@@ -1,6 +1,6 @@
 {
   "name": "inventory-project-production",
-  "version": "1.3.4",
+  "version": "1.3.12",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "framework:export": "python tools/export_framework_catalogue.py",
+    "design:check": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File operations/Test-DesignLock.ps1",
     "conformance:check": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File operations/Test-FrameworkConformance.ps1",
     "conformance:release": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File operations/Test-FrameworkConformance.ps1 -ReleaseGate",
     "dev": "concurrently -k -n API,WEB -c blue,green \"npm:dev:api\" \"npm:dev:web\"",

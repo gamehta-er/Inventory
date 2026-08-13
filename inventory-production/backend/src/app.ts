@@ -19,6 +19,8 @@ import { registerActivityRoutes } from './activityRoutes.js';
 import { registerLabelRoutes } from './labels.js';
 import { registerAdminRoutes } from './admin.js';
 import { releaseVersion, requiredImportContract, requiredSchemaContract } from './version.js';
+import { authenticate } from './auth.js';
+import { maintenanceErrorMessage, readMaintenanceState } from './maintenance.js';
 
 export async function buildApp() {
   const app=Fastify({logger:{level:config.isProduction?'info':'debug'},requestIdHeader:'x-request-id',trustProxy:true});
@@ -28,6 +30,20 @@ export async function buildApp() {
   await app.register(multipart,{limits:{fileSize:Math.max(config.MAX_IMAGE_BYTES,20*1024*1024),files:1,fields:20}});
   await mkdir(resolve(config.UPLOAD_ROOT),{recursive:true});
   app.addHook('onSend',async(_request,reply,payload)=>{reply.header('x-content-type-options','nosniff').header('referrer-policy','same-origin');return payload;});
+  app.addHook('preHandler', async (request) => {
+    if (!request.url.startsWith('/api/v1/')) return;
+    const pathname = request.url.split('?', 1)[0] ?? request.url;
+    if (pathname.startsWith('/api/v1/health/') || pathname === '/api/v1/version' || pathname.startsWith('/api/v1/auth/')) return;
+    const maintenance = await readMaintenanceState();
+    if (!maintenance.enabled) return;
+    try {
+      const user = await authenticate(request);
+      if (user.permissions.includes('admin.system')) return;
+    } catch (error) {
+      if (!(error instanceof AppError) || error.statusCode !== 401) throw error;
+    }
+    throw new AppError(503, 'MAINTENANCE_ACTIVE', maintenanceErrorMessage(maintenance), { maintenance });
+  });
   app.get('/api/v1/health/live',async()=>({status:'live',service:'inventory-api'}));
   app.get('/api/v1/health/ready',async(_request,reply)=>{const database=await ready();if(!database)reply.code(503);return{status:database?'ready':'not-ready',database};});
   app.get('/api/v1/version', async () => {

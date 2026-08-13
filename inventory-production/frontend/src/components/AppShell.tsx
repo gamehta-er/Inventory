@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAppState } from '../state/AppState';
 
 const navigation = [
-  { to: '/', label: 'Search', icon: Search, permission: 'asset.view' },
+  { to: '/search', label: 'Search', icon: Search, permission: 'asset.view' },
   { to: '/inventory', label: 'Inventory', icon: Database, permission: 'asset.view' },
   { to: '/import', label: 'Import', icon: FileUp, permission: 'import.execute' },
   { to: '/reports', label: 'Reports', icon: BarChart3, permission: 'report.view' },

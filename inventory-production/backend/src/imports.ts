@@ -90,6 +90,10 @@ function serializeImportHeaders(headers: string[]): string {
   return JSON.stringify(headers);
 }
 
+function serializeImportIssueSuggestions(values: string[] | undefined): string {
+  return JSON.stringify(values ?? []);
+}
+
 function parseCsv(contents: Buffer): ParsedCsv {
   let records: string[][];
   try {
@@ -169,6 +173,12 @@ function mappingAssessment(headers: string[], fields: FieldDefinition[], mapping
     else if (mapping.ignored) issues.push({ severity: 'WARNING', code: 'COLUMN_IGNORED', sourceIndex, sourceHeader: header, message: `The column "${header}" will be ignored.` });
   });
   return issues;
+}
+
+function canAutoValidateMappings(headers: string[], fields: FieldDefinition[], mappings: MappingInput[]): boolean {
+  return headers.length > 0
+    && mappings.length === headers.length
+    && !mappingAssessment(headers, fields, mappings).some((issue) => issue.severity === 'ERROR');
 }
 
 type EntityOptions = Record<string, Array<{ id: number; value: string; label: string }>>;
@@ -612,8 +622,8 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
     for (const issue of row.issues) {
       await client.query(
         `INSERT INTO import_validation_issues(import_row_id,field_key,severity,issue_code,message,source_value,suggested_values)
-         VALUES($1,$2,$3,$4,$5,$6,$7)`,
-        [row.id, issue.fieldKey ?? null, issue.severity, issue.code, issue.message, issue.sourceValue ?? null, issue.suggestedValues ?? []],
+         VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+        [row.id, issue.fieldKey ?? null, issue.severity, issue.code, issue.message, issue.sourceValue ?? null, serializeImportIssueSuggestions(issue.suggestedValues)],
       );
     }
   }
@@ -841,7 +851,8 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
           [batchId, index + 2, source],
         );
       }
-      for (const mapping of autoMappings(parsed.headers, fields)) {
+      const automaticMappings = autoMappings(parsed.headers, fields);
+      for (const mapping of automaticMappings) {
         const field = fields.find((item) => item.fieldKey === mapping.fieldKey)!;
         await client.query(
           `INSERT INTO import_column_mappings(batch_id,source_header,source_index,field_definition_id,ignored) VALUES($1,$2,$3,$4,false)`,
@@ -852,7 +863,22 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
         `UPDATE import_batches SET file_name=$2,file_sha256=$3,original_csv=$4,original_headers=$5::jsonb,status='MAPPING',total_rows=$6,valid_rows=0,warning_rows=0,invalid_rows=0,validated_at=NULL,updated_at=now(),failure_message=NULL WHERE id=$1`,
         [batchId, fileName, createHash('sha256').update(contents).digest('hex'), contents, serializeImportHeaders(parsed.headers), parsed.rows.length],
       );
-      await recordActivity(client, { user, actionKey: 'IMPORT_FILE_UPLOADED', source: 'csv-import', reason: 'CSV uploaded and staged for column mapping.', recordType: 'import', recordId: batchId, recordLabel: fileName, routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { rows: parsed.rows.length, columns: parsed.headers.length } });
+      const mappingWasAutomatic = canAutoValidateMappings(parsed.headers, fields, automaticMappings);
+      if (mappingWasAutomatic) await validateSession(client, batchId);
+      await recordActivity(client, {
+        user,
+        actionKey: 'IMPORT_FILE_UPLOADED',
+        source: 'csv-import',
+        reason: mappingWasAutomatic
+          ? 'CSV uploaded, confidently mapped, and validated automatically.'
+          : 'CSV uploaded. One or more column decisions require review.',
+        recordType: 'import',
+        recordId: batchId,
+        recordLabel: fileName,
+        routePath: `/import?session=${batchId}`,
+        parentImportBatchId: batchId,
+        metadata: { rows: parsed.rows.length, columns: parsed.headers.length, mappingWasAutomatic },
+      });
       return { session: await sessionDetail(client, batchId) };
     });
   });
@@ -988,22 +1014,40 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
       }
       if (field.dataType !== 'lookup' || !field.lookupKey) throw new AppError(422, 'PROFILE_LOOKUP_MISSING', 'Use the linked Admin workflow to manage this relationship safely.');
       const existing = matchLookupOption(field.options, displayValue);
-      let valueId = existing?.id;
+      const stored = await client.query<{ id: string }>(
+        `SELECT lv.id
+           FROM lookup_values lv
+           JOIN lookup_lists ll ON ll.id=lv.lookup_list_id
+          WHERE ll.lookup_key=$1
+            AND (
+              lower(lv.value_key)=lower($2)
+              OR lower(lv.display_value)=lower($2)
+              OR EXISTS (SELECT 1 FROM unnest(lv.aliases) alias WHERE lower(alias)=lower($2))
+            )
+          ORDER BY lv.active DESC,lv.id
+          LIMIT 1`,
+        [field.lookupKey, displayValue],
+      );
+      const storedId = Number(stored.rows[0]?.id);
+      let valueId = existing?.id ?? (Number.isSafeInteger(storedId) && storedId > 0 ? storedId : undefined);
       let actionKey = 'LOOKUP_VALUE_REUSED';
       if (!valueId) {
-        let valueKey = lookupValueKey(displayValue);
-        const collision = await client.query(`SELECT 1 FROM lookup_values lv JOIN lookup_lists ll ON ll.id=lv.lookup_list_id WHERE ll.lookup_key=$1 AND lv.value_key=$2`, [field.lookupKey, valueKey]);
-        if (collision.rowCount) valueKey = `${valueKey.slice(0, 55)}_${createHash('sha256').update(displayValue).digest('hex').slice(0, 8).toUpperCase()}`;
+        const valueKey = lookupValueKey(displayValue);
         const inserted = await client.query<{ id: string }>(
           `INSERT INTO lookup_values(lookup_list_id,value_key,display_value,description,display_order)
            SELECT id,$2,$3,$4,COALESCE((SELECT max(display_order)+10 FROM lookup_values WHERE lookup_list_id=lookup_lists.id),10)
-             FROM lookup_lists WHERE lookup_key=$1 AND active RETURNING id`,
+             FROM lookup_lists WHERE lookup_key=$1 AND active
+           ON CONFLICT (lookup_list_id,value_key) DO UPDATE
+             SET active=true,updated_at=now()
+           RETURNING id`,
           [field.lookupKey, valueKey, displayValue, `Approved from import session ${batchId}.`],
         );
         if (!inserted.rows[0]) throw new AppError(404, 'LOOKUP_NOT_FOUND', 'The controlled list is unavailable.');
         valueId = Number(inserted.rows[0].id);
         actionKey = 'LOOKUP_VALUE_CREATED';
         await client.query('UPDATE lookup_lists SET version=version+1,updated_at=now() WHERE lookup_key=$1', [field.lookupKey]);
+      } else {
+        await client.query('UPDATE lookup_values SET active=true,updated_at=now() WHERE id=$1', [valueId]);
       }
       await recordActivity(client, { user, actionKey, source: 'csv-import', reason, recordType: 'lookup', recordId: valueId!, recordLabel: displayValue, routePath: `/admin?tab=lookups&lookup=${encodeURIComponent(field.lookupKey)}`, parentImportBatchId: batchId, metadata: { batchId, fieldKey, lookupKey: field.lookupKey } });
       await validateSession(client, batchId);
@@ -1105,7 +1149,9 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
 export const importInternals = {
   parseCsv,
   serializeImportHeaders,
+  serializeImportIssueSuggestions,
   autoMappings,
+  canAutoValidateMappings,
   mappingAssessment,
   normalizeDate,
   normalizeField,

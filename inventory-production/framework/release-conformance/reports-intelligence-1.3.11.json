@@ -1,0 +1,112 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.11",
+  "changeId": "REPORTS-INTELLIGENCE-1.3.11",
+  "scope": "Implement the approved Reports Intelligence design with PostgreSQL-backed management KPIs, lifecycle and ownership analysis, profile-driven data-quality gaps, monthly and dimensional drilldowns, exact asset results, and server CSV export without changing the production architecture or database schema.",
+  "requirements": [
+    {
+      "requirementId": "ARCH-004",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/ReportsPage.tsx renders only normalized server-owned report data",
+        "frontend/src/pages/ReportsPage.test.tsx verifies live queues, monthly drilldown, field-gap drilldown, and export hooks"
+      ]
+    },
+    {
+      "requirementId": "ARCH-006",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/reports.ts derives all counts, dimensions, trends, quality issues, and rows from PostgreSQL",
+        "No browser-owned report totals or synthetic report records are included"
+      ]
+    },
+    {
+      "requirementId": "RPT-001",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/reports.ts executes report calculations server-side and applies appendRegistryFilters for profile fields",
+        "backend/test/reporting-contract.test.ts verifies registry-driven report and export behavior"
+      ]
+    },
+    {
+      "requirementId": "RPT-002",
+      "status": "PASSED",
+      "evidence": [
+        "KPI, row, dimension, trend, quality, and CSV queries share reportWhere and applyReportScope",
+        "backend/test/reporting-contract.test.ts verifies the shared scoped filter expression"
+      ]
+    },
+    {
+      "requirementId": "RPT-003",
+      "status": "PASSED",
+      "evidence": [
+        "Reports expose category, lifecycle status, location, owner, vendor, model, and project breakdowns",
+        "Each breakdown value applies its corresponding server-side query parameter"
+      ]
+    },
+    {
+      "requirementId": "RPT-004",
+      "status": "PASSED",
+      "evidence": [
+        "Leadership and Operations views expose rework, e-waste, metadata-gap, aging, and date-received information",
+        "Profile-required field gaps are calculated from active profile definitions and storage mappings"
+      ]
+    },
+    {
+      "requirementId": "RPT-005",
+      "status": "PASSED",
+      "evidence": [
+        "Every KPI, management queue, breakdown, quality issue, and monthly trend invokes a matching report filter",
+        "Every returned asset row opens its actual asset workspace route"
+      ]
+    },
+    {
+      "requirementId": "RPT-006",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/api.ts normalizes KPI, dimension, trend, quality, row, and pagination structures",
+        "frontend/src/api.test.ts and frontend/src/pages/ReportsPage.test.tsx verify defensive rendering contracts"
+      ]
+    },
+    {
+      "requirementId": "RPT-008",
+      "status": "PASSED",
+      "evidence": [
+        "Export current view uses the same report ID and query scope as the visible result",
+        "backend/src/reports.ts generates the CSV server-side under report.export and records REPORT_EXPORTED activity"
+      ]
+    },
+    {
+      "requirementId": "RPT-009",
+      "status": "PASSED",
+      "evidence": [
+        "Charts display numeric values and month labels in addition to visual length and color",
+        "Breakdowns and quality indicators include text labels and exact counts"
+      ]
+    },
+    {
+      "requirementId": "UX-002",
+      "status": "PASSED",
+      "evidence": [
+        "Reports uses the approved AppShell, PageHeader, shared controls, surfaces, tokens, and breakpoints",
+        "No page-specific shell, overlay implementation, additional stylesheet, or hosting change was introduced"
+      ]
+    },
+    {
+      "requirementId": "OPS-004",
+      "status": "PASSED",
+      "evidence": [
+        "The change is delivered as a component-aware delta from 1.3.10 to 1.3.11",
+        "No full installer, database migration, upload change, or PostgreSQL replacement is included"
+      ]
+    },
+    {
+      "requirementId": "OPS-012",
+      "status": "PASSED",
+      "evidence": [
+        "The delta embeds this Framework v1.0 conformance record and DCR-2026-001 remains approved by Gaurav Mehta",
+        "The permanent updater will record package hash, operator, components, checks, and outcome in the release ledger"
+      ]
+    }
+  ]
+}

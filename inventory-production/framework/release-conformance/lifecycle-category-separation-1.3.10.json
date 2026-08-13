@@ -1,0 +1,73 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.10",
+  "changeId": "LIFECYCLE-CATEGORY-SEPARATION-1.3.10",
+  "scope": "Remove lifecycle statuses from asset-category shortcuts, safely deactivate legacy pseudo-categories, and prevent lifecycle values from being recreated as active categories without changing the approved architecture or existing assets.",
+  "requirements": [
+    {
+      "requirementId": "DATA-005",
+      "status": "PASSED",
+      "evidence": [
+        "database/Migrations/008-separate-lifecycle-from-categories.sql deactivates legacy categories and dependent profiles rather than deleting business configuration",
+        "The migration stops without changing data when an asset uses a reserved lifecycle category"
+      ]
+    },
+    {
+      "requirementId": "DATA-010",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/lifecycle.ts defines the six governed lifecycle status keys once",
+        "backend/test/lifecycle.test.ts and backend/test/contract.test.ts verify that lifecycle statuses remain status values and cannot appear in the asset-family catalogue"
+      ]
+    },
+    {
+      "requirementId": "DATA-014",
+      "status": "PASSED",
+      "evidence": [
+        "database/Migrations/008-separate-lifecycle-from-categories.sql is uniquely journaled, transactional, forward-only, and guarded before mutation",
+        "backend/test/databaseContract.test.ts verifies the migration safety, constraint, journal key, and required schema contract"
+      ]
+    },
+    {
+      "requirementId": "PROF-006",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/admin.ts rejects lifecycle keys and names when creating asset categories and directs administrators to the Status dropdown",
+        "database/001-production-baseline.sql and migration 008 enforce the same boundary in PostgreSQL"
+      ]
+    },
+    {
+      "requirementId": "UX-002",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/session.ts and backend/src/registry.ts return only asset-family categories to Search and Inventory",
+        "Available, Rework, and E-Waste remain lifecycle terminology in management KPIs and status workflows instead of duplicate category shortcuts"
+      ]
+    },
+    {
+      "requirementId": "OPS-004",
+      "status": "PASSED",
+      "evidence": [
+        "The correction is delivered as a component delta from 1.3.9 to 1.3.10",
+        "No baseline reinstall, database replacement, or page redesign is included"
+      ]
+    },
+    {
+      "requirementId": "OPS-005",
+      "status": "PASSED",
+      "evidence": [
+        "The permanent updater verifies fromVersion, file hashes, schema prerequisites, and complete target component manifests before publishing",
+        "Release tools 1.2.1 replace the unbounded Windows process scan with a bounded port 3020 owner check before migration",
+        "operations/Test-Delta-Package.ps1 validates the governed delta package"
+      ]
+    },
+    {
+      "requirementId": "OPS-012",
+      "status": "PASSED",
+      "evidence": [
+        "The delta manifest embeds this Framework v1.0 conformance record and migration ID",
+        "The permanent updater records version, package hash, operator, components, migration, health checks, and outcome in the release ledger"
+      ]
+    }
+  ]
+}

@@ -6,8 +6,10 @@ import { describe, it } from 'node:test';
 const projectFile = (path: string) => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 const baseline = await readFile(projectFile('database/001-production-baseline.sql'), 'utf8');
 const schemaMigration = await readFile(projectFile('database/Migrations/006-invmgmt-schema.sql'), 'utf8');
+const lifecycleCategoryMigration = await readFile(projectFile('database/Migrations/008-separate-lifecycle-from-categories.sql'), 'utf8');
 const dbSource = await readFile(projectFile('backend/src/db.ts'), 'utf8');
 const appSource = await readFile(projectFile('backend/src/app.ts'), 'utf8');
+const versionSource = await readFile(projectFile('backend/src/version.ts'), 'utf8');
 const installer = await readFile(projectFile('installer/Install-InventoryProject.ps1'), 'utf8');
 const packageBuilder = await readFile(projectFile('operations/Build-Production-Package.ps1'), 'utf8');
 const migrationRunner = await readFile(projectFile('operations/Apply-Migrations.ps1'), 'utf8');
@@ -32,6 +34,18 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
     assert.match(schemaMigration, /'006-invmgmt-schema'/);
     assert.match(schemaMigration, /ON CONFLICT \(migration_key\) DO NOTHING/);
     assert.match(schemaMigration, /COMMIT;\s*$/);
+  });
+
+  it('DATA-010 keeps lifecycle statuses separate from active asset categories', () => {
+    assert.match(lifecycleCategoryMigration, /'008-separate-lifecycle-from-categories'/);
+    assert.match(lifecycleCategoryMigration, /affected_asset_count<>0/);
+    assert.match(lifecycleCategoryMigration, /categories_asset_family_key_check/);
+    for (const table of ['import_profiles', 'asset_profiles', 'categories']) {
+      assert.match(lifecycleCategoryMigration, new RegExp(`UPDATE ${table}`));
+    }
+    assert.match(lifecycleCategoryMigration, /SET active=false/);
+    assert.match(lifecycleCategoryMigration, /COMMIT;/);
+    assert.match(versionSource, /requiredSchemaContract = '008-separate-lifecycle-from-categories'/);
   });
 
   it('DATA-015 separates owner and runtime privileges', () => {
@@ -74,6 +88,7 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
 
   it('OPS-003 packages and installs the complete ordered migration chain', () => {
     assert.match(packageBuilder, /database\\005-complete-import-workflow\.sql/);
+    assert.match(packageBuilder, /database\\Migrations/);
     assert.match(packageBuilder, /Sort-Object Name/);
     assert.match(installer, /Get-ChildItem -LiteralPath \$MigrationDirectory -Filter '\*\.sql'/);
     assert.match(installer, /006-invmgmt-schema\.sql/);

@@ -163,6 +163,7 @@ try {
         'SESSION_HOURS=8'
         "ALLOWED_ORIGIN=http://$PublicHost"
         "UPLOAD_ROOT=$UploadDirectory"
+        "MAINTENANCE_FLAG_PATH=$(Join-Path $InstallRoot 'Application\web\maintenance.flag')"
         'MAX_IMAGE_BYTES=5242880'
     ) | Set-Content -LiteralPath (Join-Path $ConfigDirectory 'inventory.env') -Encoding UTF8
     @{
@@ -207,8 +208,8 @@ try {
     if (-not (Test-Path "IIS:\AppPools\$AppPoolName")) { New-WebAppPool -Name $AppPoolName | Out-Null }
     Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name managedRuntimeVersion -Value ''
     Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.identityType -Value ApplicationPoolIdentity
-    & icacls.exe (Join-Path $InstallRoot 'Application\web') /grant "IIS AppPool\${AppPoolName}:(OI)(CI)(RX)" /T /C | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'IIS application pool read permission could not be applied.' }
+    & icacls.exe (Join-Path $InstallRoot 'Application\web') /grant 'SYSTEM:(OI)(CI)(M)' "IIS AppPool\${AppPoolName}:(OI)(CI)(RX)" /T /C | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Maintenance control and IIS application pool permissions could not be applied.' }
 
     $Port80Sites = @(Get-Website | Where-Object { $_.Bindings.Collection.bindingInformation -contains '*:80:' -or $_.Bindings.Collection.bindingInformation -match ':80:' })
     foreach ($Existing in $Port80Sites) {

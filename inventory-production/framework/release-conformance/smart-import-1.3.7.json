@@ -1,0 +1,88 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.7",
+  "changeId": "SMART-IMPORT-1.3.7",
+  "scope": "Complete Smart Import and restore the Inventory asset-selection workflow, including page selection, permission-aware CSV export, label printing, and stale-selection prevention, without changing the approved architecture or database contract.",
+  "requirements": [
+    {
+      "requirementId": "IMPORT-005",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts: automatically advances only when every source column maps unambiguously through the profile contract",
+        "backend/test/importWorkflow.test.ts: verifies complete recognized headers auto-advance while unknown columns remain in mapping"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-006",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts: reuses mappingAssessment before automatic validation so duplicate and missing-required decisions continue to block",
+        "backend/test/importWorkflow.test.ts: retains duplicate-header, duplicate-mapping, and unmapped-required-field coverage"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-007",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/ImportPage.tsx: groups repeated exceptions by severity, field, code, and source value with direct row review",
+        "frontend/src/pages/ImportPage.test.tsx: verifies controlled-value correction, approval, relationship guidance, and optional Notes behavior"
+      ]
+    },
+    {
+      "requirementId": "API-006",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts: upload returns the same documented import-session envelope after optional automatic validation",
+        "backend/test/importWorkflow.test.ts: validates the import session contract and automatic mapping decision"
+      ]
+    },
+    {
+      "requirementId": "UX-002",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/ImportPage.tsx: replaces implementation-oriented step wording with Analyze CSV, Exceptions, and Review rows",
+        "frontend/src/pages/ImportPage.test.tsx: verifies the revised Smart Import language"
+      ]
+    },
+    {
+      "requirementId": "UX-003",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/ImportPage.tsx: provides empty, analyzing, mapping-needed, exception, ready, completed, and failure states",
+        "frontend test suite: 28 tests pass including route error containment, Smart Import states, and Inventory selection actions"
+      ]
+    },
+    {
+      "requirementId": "AUTH-004",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/InventoryPage.tsx: exposes label printing only when label.print is granted",
+        "frontend/src/pages/InventoryPage.test.tsx: verifies that a user without report.export can print labels but cannot export"
+      ]
+    },
+    {
+      "requirementId": "AUTH-005",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/InventoryPage.tsx: exposes CSV export only when report.export is granted",
+        "frontend/src/pages/InventoryPage.test.tsx: verifies selected asset IDs are sent to the export workflow"
+      ]
+    },
+    {
+      "requirementId": "RPT-008",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/components/AssetSelectionActions.tsx: provides the shared permission-aware CSV action used by Inventory and Search",
+        "frontend/src/pages/InventoryPage.test.tsx: verifies that only selected asset IDs are exported"
+      ]
+    },
+    {
+      "requirementId": "UX-012",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/InventoryPage.tsx: opens the existing label workflow for the selected page assets",
+        "frontend/src/pages/InventoryPage.test.tsx: verifies Select Page passes every visible asset ID to label generation"
+      ]
+    }
+  ]
+}

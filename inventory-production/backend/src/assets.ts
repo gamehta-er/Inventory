@@ -36,6 +36,10 @@ const standardColumns: Record<string, string> = {
   board_sku: 'am.board_sku',
   gpu_sku: 'am.gpu_sku',
   board_architecture: 'am.board_architecture',
+  gpu_class: 'am.gpu_class',
+  gpu_chip: 'am.gpu_chip',
+  gpu_name_vrl: 'am.gpu_name_vrl',
+  gpu_name_market: 'am.gpu_name_market',
 };
 
 function valueAsId(values: Values, key: string, required = false): number | null {
@@ -123,7 +127,8 @@ async function loadAsset(assetId: number, client: DbClient | typeof pool = pool)
   const result = await client.query(
     `SELECT a.id,a.profile_id,a.revision,a.archived_at,a.created_at,a.updated_at,
        c.id category_id,c.category_key,c.category_name,
-       am.id model_id,am.model_number,am.product_name,am.board_sku,am.gpu_sku,am.board_architecture,am.image_path,
+       am.id model_id,am.model_number,am.product_name,am.board_sku,am.gpu_sku,am.board_architecture,
+       am.gpu_class,am.gpu_chip,am.gpu_name_vrl,am.gpu_name_market,am.image_path,
        a.serial_number,a.asset_tag,a.date_received,a.milestone,a.pool_team,a.project,a.notes,
        sv.id status_id,sv.value_key status,sv.display_value status_label,
        l.id location_id,l.full_path location,
@@ -149,7 +154,12 @@ async function loadAsset(assetId: number, client: DbClient | typeof pool = pool)
     id: Number(row.id), profileId: Number(row.profile_id), revision: row.revision, archived: Boolean(row.archived_at),
     createdAt: row.created_at, updatedAt: row.updated_at,
     category: { id:Number(row.category_id), key:row.category_key, name:row.category_name },
-    model: { id:Number(row.model_id), modelNumber:row.model_number, productName:row.product_name, boardSku:row.board_sku, gpuSku:row.gpu_sku, boardArchitecture:row.board_architecture, imagePath:row.image_path },
+    model: {
+      id:Number(row.model_id), modelNumber:row.model_number, productName:row.product_name,
+      boardSku:row.board_sku, gpuSku:row.gpu_sku, boardArchitecture:row.board_architecture,
+      gpuClass:row.gpu_class, gpuChip:row.gpu_chip, gpuNameVrl:row.gpu_name_vrl,
+      gpuNameMarket:row.gpu_name_market, imagePath:row.image_path,
+    },
     serialNumber: row.serial_number, assetTag: row.asset_tag, dateReceived: row.date_received,
     status: { id:Number(row.status_id), value:row.status, label:row.status_label },
     location: row.location_id ? { id:Number(row.location_id), path:row.location } : null,
@@ -160,7 +170,9 @@ async function loadAsset(assetId: number, client: DbClient | typeof pool = pool)
       mrs_order:(references.MRS_ORDER ?? []).join(', '), nvbugs:(references.NVBUG ?? []).join(', '), capacity_request:(references.CAPACITY_REQUEST ?? []).join(', '),
       date_received:row.date_received, board_sku:row.board_sku, gpu_sku:row.gpu_sku, model_number:row.model_number,
       serial_number:row.serial_number,milestone:row.milestone,product_name:row.product_name,location:row.location_id,
-      asset_status:row.status_id,board_architecture:row.board_architecture,pool_team:row.pool_team,project:row.project,
+      asset_status:row.status_id,board_architecture:row.board_architecture,gpu_class:row.gpu_class,
+      gpu_chip:row.gpu_chip,gpu_name_vrl:row.gpu_name_vrl,gpu_name_market:row.gpu_name_market,
+      pool_team:row.pool_team,project:row.project,
       asset_tag:row.asset_tag,owner:row.owner_id,notes:row.notes,vendor:row.vendor_id,...row.dynamic_values,
     },
   };
@@ -185,11 +197,38 @@ async function resolveModel(client: DbClient, profileId: number, values: Values)
   if (!profile.rows[0]) throw new AppError(422, 'PROFILE_NOT_FOUND', 'The selected profile is unavailable.');
   const categoryId = Number(profile.rows[0].category_id);
   const existing = await client.query('SELECT id FROM asset_models WHERE category_id=$1 AND lower(model_number)=lower($2)', [categoryId, String(values.model_number)]);
-  if (existing.rows[0]) return Number(existing.rows[0].id);
+  if (existing.rows[0]) {
+    const modelId = Number(existing.rows[0].id);
+    await client.query(
+      `UPDATE asset_models SET
+         gpu_class=COALESCE(gpu_class,NULLIF($2,'')),
+         gpu_chip=COALESCE(gpu_chip,NULLIF($3,'')),
+         gpu_name_vrl=COALESCE(gpu_name_vrl,NULLIF($4,'')),
+         gpu_name_market=COALESCE(gpu_name_market,NULLIF($5,'')),
+         updated_at=CASE
+           WHEN (gpu_class IS NULL AND NULLIF($2,'') IS NOT NULL)
+             OR (gpu_chip IS NULL AND NULLIF($3,'') IS NOT NULL)
+             OR (gpu_name_vrl IS NULL AND NULLIF($4,'') IS NOT NULL)
+             OR (gpu_name_market IS NULL AND NULLIF($5,'') IS NOT NULL)
+           THEN now() ELSE updated_at END
+       WHERE id=$1`,
+      [
+        modelId, values.gpu_class ?? '', values.gpu_chip ?? '',
+        values.gpu_name_vrl ?? '', values.gpu_name_market ?? '',
+      ],
+    );
+    return modelId;
+  }
   const created = await client.query<{ id: string }>(
-    `INSERT INTO asset_models(category_id,model_number,product_name,board_sku,gpu_sku,board_architecture)
-     VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
-    [categoryId, values.model_number, values.product_name, values.board_sku || null, values.gpu_sku || null, values.board_architecture || null],
+    `INSERT INTO asset_models(
+       category_id,model_number,product_name,board_sku,gpu_sku,board_architecture,
+       gpu_class,gpu_chip,gpu_name_vrl,gpu_name_market
+     ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+    [
+      categoryId, values.model_number, values.product_name, values.board_sku || null,
+      values.gpu_sku || null, values.board_architecture || null, values.gpu_class || null,
+      values.gpu_chip || null, values.gpu_name_vrl || null, values.gpu_name_market || null,
+    ],
   );
   return Number(created.rows[0]!.id);
 }

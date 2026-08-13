@@ -2,6 +2,7 @@ import type {
   ApiError,
   ActivityEvent,
   ActivityResponse,
+  CommandCenterResult,
   AppSession,
   AssetDetail,
   AssetSummary,
@@ -18,6 +19,7 @@ import type {
   ImportSessionStatus,
   ImportSessionSummary,
   LabelData,
+  LabelFieldKey,
   LookupOption,
   Lookups,
   Profile,
@@ -71,6 +73,19 @@ function normalizeLookupOption(value: unknown): LookupOption {
     label: text(data.label ?? data.value),
     description: nullableText(data.description) ?? undefined,
     aliases: list(data.aliases).map((item) => text(item)).filter(Boolean),
+  };
+}
+
+function normalizeLabelData(value: unknown): LabelData {
+  const data = object(value);
+  return {
+    assetId: count(data.assetId ?? data.asset_id),
+    productName: text(data.productName ?? data.product_name),
+    modelNumber: text(data.modelNumber ?? data.model_number),
+    assetTag: nullableText(data.assetTag ?? data.asset_tag),
+    serialNumber: text(data.serialNumber ?? data.serial_number),
+    barcodeValue: text(data.barcodeValue ?? data.barcode_value),
+    barcodeSvg: text(data.barcodeSvg ?? data.barcode_svg),
   };
 }
 
@@ -174,13 +189,42 @@ export function normalizeActivityResponse(payload: unknown): ActivityResponse {
 }
 
 export function normalizeReportResponse(payload: unknown): ReportResult {
-  const data=object(payload); const rawDimensions=object(data.dimensions); const dimensions:ReportResult['dimensions']={};
+  const data=object(payload); const rawDimensions=object(data.dimensions); const dimensions:ReportResult['dimensions']={}; const rawQuality=object(data.quality);
   for (const [key,values] of Object.entries(rawDimensions)) dimensions[key]=list(values).map((item)=>{const row=object(item);return{key:text(row.key),label:text(row.label),value:count(row.value)};});
   const rows=list(data.rows).map((row)=>object(row));
   return {
     reportId:text(data.reportId ?? data.report_id,'inventory'),kpis:Object.fromEntries(Object.entries(object(data.kpis)).map(([key,value])=>[key,count(value)])),dimensions,
-    trends:list(data.trends).map((item)=>{const row=object(item);return{month:text(row.month),value:count(row.value)};}),rows,
+    trends:list(data.trends).map((item)=>{const row=object(item);return{month:text(row.month),value:count(row.value)};}),
+    quality:{complete:count(rawQuality.complete),missing:count(rawQuality.missing),issues:list(rawQuality.issues).map((item)=>{const row=object(item);return{key:text(row.key),label:text(row.label),value:count(row.value)};})},rows,
     page:Math.max(1,count(data.page,1)),limit:Math.max(1,count(data.limit,50)),total:count(data.total,rows.length),
+  };
+}
+
+export function normalizeCommandCenterResponse(payload: unknown): CommandCenterResult {
+  const data = object(payload);
+  const queues = object(data.actionQueues ?? data.action_queues);
+  const imports = object(data.imports);
+  const database = object(data.database);
+  return {
+    generatedAt: text(data.generatedAt ?? data.generated_at),
+    queryTimeMs: count(data.queryTimeMs ?? data.query_time_ms),
+    database: { status: text(database.status, 'unknown') },
+    inventory: normalizeReportResponse(data.inventory),
+    actionQueues: {
+      rework: count(queues.rework),
+      eWaste: count(queues.eWaste ?? queues.e_waste),
+      metadataGaps: count(queues.metadataGaps ?? queues.metadata_gaps),
+      unassignedOwner: count(queues.unassignedOwner ?? queues.unassigned_owner),
+      unassignedLocation: count(queues.unassignedLocation ?? queues.unassigned_location),
+      importsNeedingAttention: count(queues.importsNeedingAttention ?? queues.imports_needing_attention),
+    },
+    imports: {
+      open: count(imports.open),
+      needsAttention: count(imports.needsAttention ?? imports.needs_attention),
+      ready: count(imports.ready),
+      recent: list(imports.recent).map(normalizeImportSummary).filter((session) => Boolean(session.id)),
+    },
+    recentActivity: list(data.recentActivity ?? data.recent_activity).map(normalizeActivityEvent),
   };
 }
 
@@ -205,7 +249,7 @@ function normalizeLookups(payload: unknown): Lookups {
   const data=object(payload);
   return {
     lookups:list(data.lookups).map((item)=>{const row=object(item);return{id:count(row.id),lookup_key:text(row.lookup_key ?? row.lookupKey),lookup_name:text(row.lookup_name ?? row.lookupName),values:list(row.values).map(normalizeLookupOption)};}),
-    locations:list(data.locations).map((item)=>{const row=object(item);return{id:count(row.id),parent_id:row.parent_id===null?null:count(row.parent_id ?? row.parentId)||null,location_key:text(row.location_key ?? row.locationKey),location_name:text(row.location_name ?? row.locationName),full_path:text(row.full_path ?? row.fullPath)};}),
+    locations:list(data.locations).map((item)=>{const row=object(item);return{id:count(row.id),parent_id:row.parent_id===null?null:count(row.parent_id ?? row.parentId)||null,location_key:text(row.location_key ?? row.locationKey),location_name:text(row.location_name ?? row.locationName),full_path:text(row.full_path ?? row.fullPath),type_key:text(row.type_key ?? row.typeKey),type_name:text(row.type_name ?? row.typeName),level_order:count(row.level_order ?? row.levelOrder)};}),
     users:list(data.users).map((item)=>{const row=object(item);return{id:count(row.id),display_name:text(row.display_name ?? row.displayName),initials:text(row.initials)};}),
     vendors:list(data.vendors).map((item)=>{const row=object(item);return{id:count(row.id),vendor_name:text(row.vendor_name ?? row.vendorName)};}),
   };
@@ -492,7 +536,8 @@ export const api = {
   operateAsset: async (id: number, body: unknown) => normalizeAssetDetailResponse(await request<unknown>(`/assets/${id}/operations`, { method: 'POST', body: JSON.stringify(body) })),
   assetActivity: async (id: number) => normalizeActivityResponse(await request<unknown>(`/assets/${id}/activity`)),
   activity: async (values: Record<string, unknown>) => normalizeActivityResponse(await request<unknown>(`/activity${query(values)}`)),
-  labels: async (assetIds: number[]) => list(object(await request<unknown>('/labels/print', { method: 'POST', body: JSON.stringify({ assetIds }) })).labels).map((item) => object(item) as unknown as LabelData),
+  labelPreview: async (assetIds: number[]) => list(object(await request<unknown>('/labels/preview', { method: 'POST', body: JSON.stringify({ assetIds }) })).labels).map(normalizeLabelData),
+  labels: async (assetIds: number[], fields?: LabelFieldKey[]) => list(object(await request<unknown>('/labels/print', { method: 'POST', body: JSON.stringify({ assetIds, fields }) })).labels).map(normalizeLabelData),
   exportAssets: (assetIds: number[]) => downloadRequest('/assets/export', { method: 'POST', body: JSON.stringify({ assetIds }) }, 'inventory-assets.csv'),
   imports: async () => normalizeImportSessionListResponse(await request<unknown>('/imports')),
   importSession: async (id: string) => normalizeImportSessionResponse(await request<unknown>(`/imports/${id}`)),
@@ -530,9 +575,14 @@ export const api = {
     const data = object(item);
     return { id: text(data.id), name: text(data.name), description: text(data.description) };
   }),
+  commandCenter: async (values: Record<string, unknown>) => normalizeCommandCenterResponse(await request<unknown>(`/reports/command-center${query(values)}`)),
   report: async (id: string, values: Record<string, unknown>) => normalizeReportResponse(await request<unknown>(`/reports/${id}/results${query(values)}`)),
   reportExportUrl: (id: string, values: Record<string, unknown>) => `${API}/reports/${id}/export${query(values)}`,
   adminHealth: async () => object(await request<unknown>('/admin/health')),
+  setMaintenance: async (enabled: boolean, reason: string) => {
+    const response = object(await request<unknown>('/admin/maintenance', { method: 'POST', body: JSON.stringify({ enabled, reason }) }));
+    return { maintenance: object(response.maintenance), changed: boolean(response.changed) };
+  },
   adminProfiles: async () => list(object(await request<unknown>('/admin/profiles')).profiles).map(object),
   adminUsers: async () => {
     const data = object(await request<unknown>('/admin/users'));
@@ -544,6 +594,7 @@ export const api = {
   updateProfileField: (profileId: number, fieldId: number, body: unknown) => request(`/admin/profiles/${profileId}/fields/${fieldId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   addLookupValue: (lookupKey: string, body: unknown) => request(`/admin/lookups/${lookupKey}/values`, { method: 'POST', body: JSON.stringify(body) }),
   addLocation: (body: unknown) => request('/admin/locations', { method: 'POST', body: JSON.stringify(body) }),
+  addLocationPath: (body: unknown) => request<{ location: Record<string, unknown>; createdCount: number; path: string }>('/admin/location-paths', { method: 'POST', body: JSON.stringify(body) }),
   addVendor: (body: unknown) => request('/admin/vendors', { method: 'POST', body: JSON.stringify(body) }),
   addManufacturer: (body: unknown) => request('/admin/manufacturers', { method: 'POST', body: JSON.stringify(body) }),
   uploadModelImage: async (modelId: number, file: File) => {
