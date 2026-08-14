@@ -65,16 +65,34 @@ function rawRowValues(session: ImportSession, row: ImportRow): Record<string, un
   return { ...values, ...row.corrected_values };
 }
 
-function editableRowValues(session: ImportSession, row: ImportRow): Record<string, unknown> {
+function editableFieldValue(field: FieldDefinition, value: unknown): unknown {
+  if ((field.dataType === 'lookup' || field.dataType === 'entity') && value !== null && value !== undefined && value !== '') {
+    const normalized = String(value).trim().toLocaleLowerCase();
+    const option = field.options.find((candidate) => String(candidate.id) === String(value)
+      || candidate.value.trim().toLocaleLowerCase() === normalized
+      || candidate.label.trim().toLocaleLowerCase() === normalized);
+    return option?.label ?? value;
+  }
+  return value ?? '';
+}
+
+export function editableRowValues(session: ImportSession, row: ImportRow): Record<string, unknown> {
   const values = rawRowValues(session, row);
+  for (const field of session.fields) {
+    if (Object.prototype.hasOwnProperty.call(values, field.fieldKey)) values[field.fieldKey] = editableFieldValue(field, values[field.fieldKey]);
+  }
   if (session.mode !== 'UPDATE') return values;
 
   const mappedFields = new Set(session.headers.flatMap((header) => header.fieldKey ? [header.fieldKey] : []));
   for (const field of session.fields) {
     if (mappedFields.has(field.fieldKey) || Object.prototype.hasOwnProperty.call(row.corrected_values, field.fieldKey)) continue;
-    values[field.fieldKey] = row.after_values?.[field.fieldKey] ?? row.before_values?.[field.fieldKey] ?? '';
+    values[field.fieldKey] = editableFieldValue(field, row.after_values?.[field.fieldKey] ?? row.before_values?.[field.fieldKey]);
   }
   return values;
+}
+
+export function changedImportValues(initial: Record<string, unknown>, current: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(current).filter(([fieldKey, value]) => String(value ?? '') !== String(initial[fieldKey] ?? '')));
 }
 
 export function ImportIssueCard({
@@ -180,7 +198,10 @@ function MappingPanel({ session, busy, onSave }: { session: ImportSession; busy:
 }
 
 function RowEditor({ session, row, busy, onSave, onCancel }: { session: ImportSession; row: ImportRow; busy: boolean; onSave(values: Record<string, unknown>): void; onCancel(): void }) {
-  const [values, setValues] = useState<Record<string, unknown>>(() => editableRowValues(session, row));
+  const [initialValues] = useState<Record<string, unknown>>(() => editableRowValues(session, row));
+  const [values, setValues] = useState<Record<string, unknown>>(initialValues);
+  const changes = useMemo(() => changedImportValues(initialValues, values), [initialValues, values]);
+  const hasChanges = Object.keys(changes).length > 0;
   return <div className="import-row-editor">
     <div className="form-grid">
       {session.fields.map((field) => <label className={`field ${field.dataType === 'long_text' ? 'field--wide' : ''}`} key={field.id}>
@@ -193,7 +214,7 @@ function RowEditor({ session, row, busy, onSave, onCancel }: { session: ImportSe
         <small>{field.helpText || field.definition}</small>
       </label>)}
     </div>
-    <div className="form-actions"><button className="button button--primary" disabled={busy} onClick={() => onSave(values)} type="button"><Save size={16}/>Save And Revalidate</button><button className="button" onClick={onCancel} type="button">Cancel</button></div>
+    <div className="form-actions"><button className="button button--primary" disabled={busy || !hasChanges} onClick={() => onSave(changes)} type="button"><Save size={16}/>Save Changes And Revalidate</button><button className="button" onClick={onCancel} type="button">Cancel</button></div>
   </div>;
 }
 

@@ -1,0 +1,72 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.13",
+  "changeId": "NVIDIA-HARDWARE-SEARCH-1.3.13",
+  "scope": "Implement approved DCR-2026-003 as the image-led NVIDIA hardware Search experience while preserving all PostgreSQL-backed search, filter, selection, export, print, asset creation, and asset workspace behavior.",
+  "requirements": [
+    {
+      "requirementId": "ARCH-004",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/SearchPage.tsx presents category, lifecycle, summary, and asset data returned by the existing API",
+        "No business field, status, permission, persistence, or validation contract was moved into React"
+      ]
+    },
+    {
+      "requirementId": "UX-001",
+      "status": "PASSED",
+      "evidence": [
+        "The approved Search experience composes the existing AppShell, buttons, fields, cards, feedback, and shared tokens",
+        "The design lock verifies SearchPage.tsx, styles.css, and the approved NVIDIA hardware image"
+      ]
+    },
+    {
+      "requirementId": "UX-002",
+      "status": "PASSED",
+      "evidence": [
+        "DCR-2026-003 is approved by Product Owner Gaurav Mehta",
+        "Search wording is operational and hardware-specific without exposing implementation terminology"
+      ]
+    },
+    {
+      "requirementId": "UX-003",
+      "status": "PASSED",
+      "evidence": [
+        "Search retains the existing loading, empty-result, and route-level failure handling",
+        "The new summary and family controls use initialized session and asset collections"
+      ]
+    },
+    {
+      "requirementId": "UX-007",
+      "status": "PASSED",
+      "evidence": [
+        "Search text, hardware-family shortcut, lifecycle summary, and explicit filters update independent request parameters",
+        "frontend/src/pages/SearchPage.test.tsx verifies independent query, family, and lifecycle behavior"
+      ]
+    },
+    {
+      "requirementId": "UX-009",
+      "status": "PASSED",
+      "evidence": [
+        "Search uses restrained shared transitions and introduces no continuous or decorative animation",
+        "The existing reduced-motion rule remains authoritative"
+      ]
+    },
+    {
+      "requirementId": "UX-010",
+      "status": "PASSED",
+      "evidence": [
+        "Search defines bounded responsive grids at desktop, laptop, tablet, and narrow breakpoints",
+        "Hardware media, result rows, controls, and text use stable dimensions and overflow safeguards"
+      ]
+    },
+    {
+      "requirementId": "OPS-012",
+      "status": "PASSED",
+      "evidence": [
+        "The release is a component-aware delta from verified production 1.3.12 to 1.3.13",
+        "The permanent updater records package hash, operator, changed components, checks, and outcome in the release ledger"
+      ]
+    }
+  ]
+}

@@ -6,11 +6,13 @@ const mocks = vi.hoisted(() => {
   const labels = [
     {
       assetId: 1, productName: 'RTX PRO 6000', modelNumber: 'MODEL-1', assetTag: 'INV-GPU-0001',
+      boardSku: 'PG133', gpuSku: 'SKU200', boardArchitecture: 'AMPERE',
       serialNumber: 'SYN-GPU-000001', barcodeValue: 'INV-GPU-0001',
       barcodeSvg: '<svg aria-label="Code 128 barcode"><rect width="10" height="10"/></svg>',
     },
     {
       assetId: 2, productName: 'Lab Server', modelNumber: 'MODEL-2', assetTag: null,
+      boardSku: null, gpuSku: null, boardArchitecture: null,
       serialNumber: 'SYN-SRV-000001', barcodeValue: 'SYN-SRV-000001',
       barcodeSvg: '<svg aria-label="Code 128 barcode"><rect width="10" height="10"/></svg>',
     },
@@ -78,11 +80,17 @@ describe('LabelPrint', () => {
 
     fireEvent.click(view.getByRole('checkbox', { name: /Lab Server/ }));
     fireEvent.click(view.getByRole('checkbox', { name: 'Model #' }));
+    fireEvent.click(view.getByRole('checkbox', { name: 'Board SKU' }));
+    fireEvent.click(view.getByRole('checkbox', { name: 'GPU SKU' }));
+    fireEvent.click(view.getByRole('checkbox', { name: 'Board Architecture' }));
+    expect(view.container.textContent).toContain('Board SKU PG133');
+    expect(view.container.textContent).toContain('GPU SKU SKU200');
+    expect(view.container.textContent).toContain('Architecture AMPERE');
     fireEvent.click(view.getByRole('button', { name: 'Print 1 Label' }));
 
     await waitFor(() => expect(mocks.printLabels).toHaveBeenCalledWith(
       [1],
-      ['productName', 'assetTag', 'serialNumber'],
+      ['productName', 'assetTag', 'serialNumber', 'boardSku', 'gpuSku', 'boardArchitecture'],
     ));
     expect(print).toHaveBeenCalledTimes(1);
     expect(document.body.querySelectorAll('.print-root .physical-label')).toHaveLength(0);

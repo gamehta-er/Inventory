@@ -69,6 +69,31 @@ interface ParsedCsv {
   rows: string[][];
 }
 
+interface PreparedImportRow {
+  id: string;
+  rowNumber: number;
+  source: Record<string, string>;
+  corrected: Values;
+  included: boolean;
+  values: Values;
+  issues: Issue[];
+  targetAssetId: number | null;
+  targetRevision: number | null;
+  beforeValues: Values | null;
+}
+
+const modelFieldColumns: Record<string, string> = {
+  model_number: 'model_number',
+  product_name: 'product_name',
+  board_sku: 'board_sku',
+  gpu_sku: 'gpu_sku',
+  board_architecture: 'board_architecture',
+  gpu_class: 'gpu_class',
+  gpu_chip: 'gpu_chip',
+  gpu_name_vrl: 'gpu_name_vrl',
+  gpu_name_market: 'gpu_name_market',
+};
+
 function cleanText(value: unknown): string {
   return String(value ?? '').replace(/\u00a0/g, ' ').trim();
 }
@@ -385,10 +410,97 @@ async function normalizeField(client: DbClient, field: FieldDefinition, raw: unk
   return { value: source, issues: validationRuleIssues(field, source, source) };
 }
 
+function hasImportValue(value: unknown): boolean {
+  return value !== undefined && value !== null && String(value).trim() !== '';
+}
+
+function comparableImportValue(value: unknown): unknown {
+  if (!hasImportValue(value)) return null;
+  if (Array.isArray(value)) return value.map(comparableImportValue);
+  return typeof value === 'string' ? value.trim() : value;
+}
+
+function modelValueToken(value: unknown): string {
+  const comparable = comparableImportValue(value);
+  return typeof comparable === 'string' ? normalizedValue(comparable) : JSON.stringify(comparable);
+}
+
+function reconcileModelGroup(rows: PreparedImportRow[], modelFields: FieldDefinition[], existingModel: Values | null): void {
+  const modelNumber = cleanText(rows[0]?.values.model_number);
+  for (const field of modelFields) {
+    const suppliedRows = rows.filter((row) => hasImportValue(row.values[field.fieldKey]));
+    const suppliedValues = new Map<string, unknown>();
+    for (const row of suppliedRows) suppliedValues.set(modelValueToken(row.values[field.fieldKey]), row.values[field.fieldKey]);
+
+    if (suppliedValues.size > 1) {
+      const sourceValue = [...suppliedValues.values()].map(cleanText).join(' / ');
+      for (const row of rows) {
+        row.issues.push({
+          fieldKey: field.fieldKey,
+          severity: 'ERROR',
+          code: 'MODEL_VALUE_CONFLICT_IN_FILE',
+          sourceValue,
+          message: `${field.label} must be consistent for every row using Model # ${modelNumber}.`,
+        });
+      }
+      continue;
+    }
+
+    const suppliedValue = suppliedValues.values().next().value as unknown;
+    const storedValue = existingModel?.[field.fieldKey];
+    if (hasImportValue(storedValue) && hasImportValue(suppliedValue) && modelValueToken(storedValue) !== modelValueToken(suppliedValue)) {
+      for (const row of suppliedRows) {
+        row.issues.push({
+          fieldKey: field.fieldKey,
+          severity: 'ERROR',
+          code: 'MODEL_VALUE_CONFLICT_EXISTING',
+          sourceValue: cleanText(row.values[field.fieldKey]),
+          suggestedValues: [cleanText(storedValue)],
+          message: `Model # ${modelNumber} already uses ${field.label} "${cleanText(storedValue)}". Use that shared model value or choose a different Model #.`,
+        });
+      }
+      continue;
+    }
+
+    const effectiveValue = hasImportValue(storedValue) ? storedValue : hasImportValue(suppliedValue) ? suppliedValue : null;
+    for (const row of rows) row.values[field.fieldKey] = effectiveValue;
+  }
+}
+
+async function reconcileModelValues(client: DbClient, categoryId: number, fields: FieldDefinition[], rows: PreparedImportRow[]): Promise<void> {
+  const modelFields = fields.filter((field) => modelFieldColumns[field.fieldKey] && field.storageTarget === `asset_models.${modelFieldColumns[field.fieldKey]}`);
+  if (!modelFields.length) return;
+
+  const rowsByModel = new Map<string, PreparedImportRow[]>();
+  for (const row of rows.filter((candidate) => candidate.included)) {
+    const modelNumber = normalizedValue(row.values.model_number);
+    if (!modelNumber) continue;
+    rowsByModel.set(modelNumber, [...(rowsByModel.get(modelNumber) ?? []), row]);
+  }
+
+  for (const group of rowsByModel.values()) {
+    const modelNumber = cleanText(group[0]?.values.model_number);
+    const existing = await client.query<Values>(
+      `SELECT model_number,product_name,board_sku,gpu_sku,board_architecture,gpu_class,gpu_chip,gpu_name_vrl,gpu_name_market
+         FROM asset_models WHERE category_id=$1 AND lower(model_number)=lower($2)`,
+      [categoryId, modelNumber],
+    );
+    reconcileModelGroup(group, modelFields, existing.rows[0] ?? null);
+  }
+}
+
+function committedValueMismatches(fields: FieldDefinition[], expected: Values, actual: Values): string[] {
+  return fields.flatMap((field) => (
+    JSON.stringify(comparableImportValue(expected[field.fieldKey])) === JSON.stringify(comparableImportValue(actual[field.fieldKey]))
+      ? []
+      : [field.fieldKey]
+  ));
+}
+
 async function loadSessionContext(client: DbClient, batchId: string, lock = false) {
   const result = await client.query(
     `SELECT b.*,ip.profile_id,ip.import_profile_name,ap.profile_name,ap.profile_key,ap.version current_profile_version,
-            c.category_name,c.category_key,u.display_name created_by
+             c.id category_id,c.category_name,c.category_key,u.display_name created_by
        FROM import_batches b
        JOIN import_profiles ip ON ip.id=b.import_profile_id
        JOIN asset_profiles ap ON ap.id=ip.profile_id
@@ -469,18 +581,7 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
     included: boolean;
   }>(`SELECT id,row_number,source_values,corrected_values,included FROM import_batch_rows WHERE batch_id=$1 ORDER BY row_number FOR UPDATE`, [batchId]);
 
-  const prepared: Array<{
-    id: string;
-    rowNumber: number;
-    source: Record<string, string>;
-    corrected: Values;
-    included: boolean;
-    values: Values;
-    issues: Issue[];
-    targetAssetId: number | null;
-    targetRevision: number | null;
-    beforeValues: Values | null;
-  }> = [];
+  const prepared: PreparedImportRow[] = [];
 
   for (const staged of rows.rows) {
     if (!staged.included) {
@@ -542,6 +643,8 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
       beforeValues,
     });
   }
+
+  await reconcileModelValues(client, Number(batch.category_id), fields, prepared);
 
   const serialRows = new Map<string, typeof prepared>();
   const tagRows = new Map<string, typeof prepared>();
@@ -936,7 +1039,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
       const row = await client.query<{ corrected_values: Values; row_number: number; included: boolean }>('SELECT corrected_values,row_number,included FROM import_batch_rows WHERE id=$1 AND batch_id=$2 FOR UPDATE', [rowId, batchId]);
       if (!row.rows[0]) throw new AppError(404, 'IMPORT_ROW_NOT_FOUND', 'Staged row not found.');
       const fields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
-      const patchValues = body.values && typeof body.values === 'object' ? body.values : body.fieldKey ? { [String(body.fieldKey)]: body.value ?? '' } : {};
+      const patchValues = body.values && typeof body.values === 'object' && !Array.isArray(body.values) ? body.values : body.fieldKey ? { [String(body.fieldKey)]: body.value ?? '' } : {};
       for (const fieldKey of Object.keys(patchValues)) {
         if (!fields.some((field) => field.fieldKey === fieldKey)) throw new AppError(422, 'IMPORT_FIELD_INVALID', `Field "${fieldKey}" is not enabled for this import profile.`);
       }
@@ -1098,6 +1201,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
           [batchId],
         );
         if (!rows.rowCount) throw new AppError(422, 'IMPORT_NO_INCLUDED_ROWS', 'Include at least one valid row before commit.');
+        const commitFields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
         const parentEventId = await recordActivity(client, { user, actionKey: 'IMPORT_COMMIT_STARTED', source: 'csv-import', reason: `${batch.mode === 'CREATE' ? 'Create Assets' : 'Update Existing'} batch commit.`, recordType: 'import', recordId: batchId, recordLabel: batch.file_name, routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { rows: rows.rowCount, mode: batch.mode, idempotencyKey: batch.idempotency_key } });
         for (const row of rows.rows) {
           let asset;
@@ -1109,6 +1213,10 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
               throw new AppError(409, 'IMPORT_TARGET_STALE', `Row ${row.row_number} must be revalidated before commit.`);
             }
             asset = await assetInternals.updateAsset(client, target.assetId, target.revision, row.normalized_values, user, `Updated by import ${batch.file_name}.`, 'csv-import', batchId);
+          }
+          const mismatches = committedValueMismatches(commitFields, row.normalized_values, asset.values);
+          if (mismatches.length) {
+            throw new AppError(409, 'IMPORT_COMMIT_VERIFICATION_FAILED', `Row ${row.row_number} did not match the staged values after storage. The entire import was rolled back; reopen the session and revalidate.`, { fields: mismatches });
           }
           await client.query(`UPDATE import_batch_rows SET status='COMMITTED',committed_asset_id=$2,updated_at=now() WHERE id=$1`, [row.id, asset.id]);
           await client.query(
@@ -1162,4 +1270,6 @@ export const importInternals = {
   importRefreshTargets,
   buildImportTemplate,
   requireSessionAccess,
+  reconcileModelGroup,
+  committedValueMismatches,
 };

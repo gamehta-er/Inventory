@@ -4,10 +4,10 @@
   "approvedBy": "Gaurav Mehta",
   "approvedAt": "2026-08-12T19:53:57-07:00",
   "baselineProductVersion": "1.3.10",
-  "approvalScope": "The verified 1.3.10 visual system, DCR-2026-001 Reports Intelligence hierarchy, and DCR-2026-002 Management Command Center are locked for future changes. Every visible Reports control must remain connected to PostgreSQL-backed API behavior.",
-  "designDocumentSha256": "528db18d586124bc757d90696ec928695c6554a6b2c531589a0123d9b1874a70",
-  "designLockSha256": "5f25808b70e490369c67dbe3376fdd6162a8b06dda474c483912c8ef6c8a20b2",
+  "approvalScope": "The verified 1.3.10 visual system, DCR-2026-001 Reports Intelligence hierarchy, DCR-2026-002 Management Command Center, DCR-2026-003 NVIDIA Hardware Search, DCR-2026-004 Label Content and Print Centering, and DCR-2026-005 Search Criteria Recovery are locked for future changes. Every visible control must remain connected to PostgreSQL-backed API behavior.",
+  "designDocumentSha256": "8f47905ffa4e8229dace1896ff4aad71a0157b21c89e71bc8160726a54633c68",
+  "designLockSha256": "e5651536775999f58a43f9e75befd7672ae2f4b1f627f09f8f2f79cf266fb085",
   "governingFrameworkVersion": "1.0",
-  "changeRule": "A design change requires a Design Change Request approved by Gaurav Mehta. DCR-2026-001 and DCR-2026-002 are the approved amendments to Design System v1.0.",
+  "changeRule": "A design change requires a Design Change Request approved by Gaurav Mehta. DCR-2026-001, DCR-2026-002, DCR-2026-003, DCR-2026-004, and DCR-2026-005 are the approved amendments to Design System v1.0.",
   "releaseCondition": "These artifacts and their automated gate must be committed before the next release candidate is packaged."
 }

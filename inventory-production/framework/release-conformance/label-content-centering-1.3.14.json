@@ -1,0 +1,42 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.14",
+  "changeId": "LABEL-CONTENT-CENTERING-1.3.14",
+  "scope": "Implement approved DCR-2026-004 by adding optional Board SKU, GPU SKU, and Board Architecture fields to permission-aware label printing and centering the physical label on every print page without changing the label size or database schema.",
+  "requirements": [
+    {
+      "requirementId": "AUTH-004",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/labels.ts validates the supported field list and rejects customized layouts from users without an elevated role",
+        "frontend/src/components/LabelPrint.test.tsx verifies customization for Super Users and Privileged Administrators and hides those controls from regular Users"
+      ]
+    },
+    {
+      "requirementId": "ACT-007",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/labels.ts records the selected field list on the parent label job and each navigable asset print event",
+        "backend/test/labels-contract.test.ts verifies preview and audited print routes remain separate"
+      ]
+    },
+    {
+      "requirementId": "UX-012",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/components/LabelPrint.tsx uses one physical renderer for preview and print and includes PostgreSQL-backed model metadata only when selected",
+        "frontend/src/styles.css keeps the 2.125 inch by 1 inch page, centers the print root and physical label, and preserves one page break per included asset",
+        "frontend/src/components/LabelPrint.test.tsx verifies one physical label per selected asset and the three new optional field controls",
+        "backend/test/labels-contract.test.ts verifies supported model fields, stable defaults, and centered physical print rules"
+      ]
+    },
+    {
+      "requirementId": "OPS-012",
+      "status": "PASSED",
+      "evidence": [
+        "The candidate is packaged as a component-aware delta from verified production 1.3.13 to 1.3.14",
+        "No database migration, PostgreSQL restart, baseline installer, or retained backup is introduced"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.3.16",
+  "changeId": "IMPORT-INTEGRITY-1.3.16",
+  "scope": "Complete the governed CSV import correction and commit path by preserving unrelated staged values, enforcing the approved eight required fields, reconciling shared model data, and verifying stored values before reporting an atomic import as successful.",
+  "requirements": [
+    {
+      "requirementId": "DATA-009",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/requiredFields.ts defines the approved eight required asset fields",
+        "backend/test/requiredFields.test.ts verifies runtime enforcement even when stored profile configuration has drifted"
+      ]
+    },
+    {
+      "requirementId": "DATA-013",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts verifies each committed asset inside the existing batch transaction",
+        "A stored-value mismatch throws IMPORT_COMMIT_VERIFICATION_FAILED and rolls back the entire import"
+      ]
+    },
+    {
+      "requirementId": "ASSET-001",
+      "status": "PASSED",
+      "evidence": [
+        "Import validation reconciles shared model fields across rows using the same Model #",
+        "backend/test/importWorkflow.test.ts verifies inheritance and conflict handling for batch and existing model values"
+      ]
+    },
+    {
+      "requirementId": "PROF-001",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/registry.ts applies the governed required-field contract whenever profile fields are loaded",
+        "Profile administration blocks attempts to make a governed required field optional"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-007",
+      "status": "PASSED",
+      "evidence": [
+        "Shared model conflicts are classified as blocking MODEL_VALUE_CONFLICT_IN_FILE or MODEL_VALUE_CONFLICT_EXISTING issues",
+        "backend/test/importWorkflow.test.ts covers both conflict classes"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-008",
+      "status": "PASSED",
+      "evidence": [
+        "The governed eight-field required contract is enforced before validation and fingerprinting",
+        "A blank Owner can no longer leave an import session in READY state"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-013",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/ImportPage.tsx sends only values changed in the active row edit",
+        "frontend/src/pages/ImportPage.test.tsx verifies unchanged staged values are omitted and relationship identifiers display as approved names"
+      ]
+    },
+    {
+      "requirementId": "IMPORT-014",
+      "status": "PASSED",
+      "evidence": [
+        "Post-storage comparison covers every active import field before a row is marked COMMITTED",
+        "backend/test/importWorkflow.test.ts verifies mismatch detection before success is reported"
+      ]
+    },
+    {
+      "requirementId": "OPS-004",
+      "status": "PASSED",
+      "evidence": [
+        "The candidate is packaged as a component delta from verified production 1.3.15 to 1.3.16",
+        "The package contains only compiled API, compiled web, and conformance evidence components"
+      ]
+    },
+    {
+      "requirementId": "OPS-005",
+      "status": "PASSED",
+      "evidence": [
+        "The established delta verifier requires installed version 1.3.15 and validates every packaged file hash",
+        "No direct production edit or baseline rebuild is used"
+      ]
+    }
+  ]
+}

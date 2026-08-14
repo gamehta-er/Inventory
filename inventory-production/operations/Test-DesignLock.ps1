@@ -5,6 +5,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop
 
 if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
     $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -15,6 +16,9 @@ $ApprovalPath = Join-Path $ProjectRoot 'framework\design-approval.json'
 $DocumentPath = Join-Path $ProjectRoot 'framework\design-system-v1.1.md'
 $ChangeRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-001-reports-intelligence.md'
 $CommandCenterRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-002-management-command-center.md'
+$HardwareSearchRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-003-nvidia-hardware-search.md'
+$LabelRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-004-label-content-and-centering.md'
+$SearchRecoveryRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-005-search-criteria-recovery.md'
 $StylesPath = Join-Path $ProjectRoot 'frontend\src\styles.css'
 $AppPath = Join-Path $ProjectRoot 'frontend\src\App.tsx'
 $Results = [System.Collections.Generic.List[object]]::new()
@@ -27,7 +31,7 @@ function Add-Result([string]$Check, [bool]$Passed, [string]$Detail) {
     })
 }
 
-foreach ($Path in @($LockPath, $ApprovalPath, $DocumentPath, $ChangeRequestPath, $CommandCenterRequestPath, $StylesPath, $AppPath)) {
+foreach ($Path in @($LockPath, $ApprovalPath, $DocumentPath, $ChangeRequestPath, $CommandCenterRequestPath, $HardwareSearchRequestPath, $LabelRequestPath, $SearchRecoveryRequestPath, $StylesPath, $AppPath)) {
     Add-Result "Required design artifact: $(Split-Path -Leaf $Path)" (Test-Path -LiteralPath $Path -PathType Leaf) $Path
 }
 
@@ -50,6 +54,12 @@ $ChangeRequest = Get-Content -LiteralPath $ChangeRequestPath -Raw
 Add-Result 'Approved Reports design change' ($ChangeRequest.Contains('| Status | APPROVED |') -and $ChangeRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-001'
 $CommandCenterRequest = Get-Content -LiteralPath $CommandCenterRequestPath -Raw
 Add-Result 'Approved Management Command Center design change' ($CommandCenterRequest.Contains('| Status | APPROVED |') -and $CommandCenterRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-002'
+$HardwareSearchRequest = Get-Content -LiteralPath $HardwareSearchRequestPath -Raw
+Add-Result 'Approved NVIDIA Hardware Search design change' ($HardwareSearchRequest.Contains('| Status | APPROVED |') -and $HardwareSearchRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-003'
+$LabelRequest = Get-Content -LiteralPath $LabelRequestPath -Raw
+Add-Result 'Approved Label Content and Print Centering design change' ($LabelRequest.Contains('| Status | APPROVED |') -and $LabelRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-004'
+$SearchRecoveryRequest = Get-Content -LiteralPath $SearchRecoveryRequestPath -Raw
+Add-Result 'Approved Search Criteria Recovery design change' ($SearchRecoveryRequest.Contains('| Status | APPROVED |') -and $SearchRecoveryRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-005'
 
 $DocumentHash = (Get-FileHash -LiteralPath $DocumentPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $LockHash = (Get-FileHash -LiteralPath $LockPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -101,6 +111,7 @@ foreach ($Pattern in @('AppShell', 'RouteErrorBoundary', 'ToastRegion')) {
 
 Add-Result 'Reduced-motion support' $Styles.Contains('@media (prefers-reduced-motion: reduce)') 'Required media query is present.'
 Add-Result 'Print isolation' ($Styles.Contains('@media print') -and $Styles.Contains('@page { size: 2.125in 1in; margin: 0; }')) 'Label page contract is present.'
+Add-Result 'Centered physical label output' ($Styles.Contains('body > .print-root') -and $Styles.Contains('margin: 0 auto !important') -and $Styles.Contains('text-align: center !important')) 'Preview and physical print alignment remain centered.'
 Add-Result 'Sites hosting remains disabled' (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot '.openai\hosting.json'))) 'IIS remains the production host.'
 
 $Results | Format-Table -AutoSize -Wrap

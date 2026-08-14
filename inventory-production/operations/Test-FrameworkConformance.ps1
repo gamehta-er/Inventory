@@ -7,6 +7,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $CataloguePath = Join-Path $ProjectRoot 'framework\requirements.json'

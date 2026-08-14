@@ -201,19 +201,28 @@ async function resolveModel(client: DbClient, profileId: number, values: Values)
     const modelId = Number(existing.rows[0].id);
     await client.query(
       `UPDATE asset_models SET
-         gpu_class=COALESCE(gpu_class,NULLIF($2,'')),
-         gpu_chip=COALESCE(gpu_chip,NULLIF($3,'')),
-         gpu_name_vrl=COALESCE(gpu_name_vrl,NULLIF($4,'')),
-         gpu_name_market=COALESCE(gpu_name_market,NULLIF($5,'')),
+         product_name=COALESCE(NULLIF(product_name,''),NULLIF($2,'')),
+         board_sku=COALESCE(NULLIF(board_sku,''),NULLIF($3,'')),
+         gpu_sku=COALESCE(NULLIF(gpu_sku,''),NULLIF($4,'')),
+         board_architecture=COALESCE(NULLIF(board_architecture,''),NULLIF($5,'')),
+         gpu_class=COALESCE(NULLIF(gpu_class,''),NULLIF($6,'')),
+         gpu_chip=COALESCE(NULLIF(gpu_chip,''),NULLIF($7,'')),
+         gpu_name_vrl=COALESCE(NULLIF(gpu_name_vrl,''),NULLIF($8,'')),
+         gpu_name_market=COALESCE(NULLIF(gpu_name_market,''),NULLIF($9,'')),
          updated_at=CASE
-           WHEN (gpu_class IS NULL AND NULLIF($2,'') IS NOT NULL)
-             OR (gpu_chip IS NULL AND NULLIF($3,'') IS NOT NULL)
-             OR (gpu_name_vrl IS NULL AND NULLIF($4,'') IS NOT NULL)
-             OR (gpu_name_market IS NULL AND NULLIF($5,'') IS NOT NULL)
+           WHEN (NULLIF(product_name,'') IS NULL AND NULLIF($2,'') IS NOT NULL)
+             OR (NULLIF(board_sku,'') IS NULL AND NULLIF($3,'') IS NOT NULL)
+             OR (NULLIF(gpu_sku,'') IS NULL AND NULLIF($4,'') IS NOT NULL)
+             OR (NULLIF(board_architecture,'') IS NULL AND NULLIF($5,'') IS NOT NULL)
+             OR (NULLIF(gpu_class,'') IS NULL AND NULLIF($6,'') IS NOT NULL)
+             OR (NULLIF(gpu_chip,'') IS NULL AND NULLIF($7,'') IS NOT NULL)
+             OR (NULLIF(gpu_name_vrl,'') IS NULL AND NULLIF($8,'') IS NOT NULL)
+             OR (NULLIF(gpu_name_market,'') IS NULL AND NULLIF($9,'') IS NOT NULL)
            THEN now() ELSE updated_at END
        WHERE id=$1`,
       [
-        modelId, values.gpu_class ?? '', values.gpu_chip ?? '',
+        modelId, values.product_name ?? '', values.board_sku ?? '', values.gpu_sku ?? '',
+        values.board_architecture ?? '', values.gpu_class ?? '', values.gpu_chip ?? '',
         values.gpu_name_vrl ?? '', values.gpu_name_market ?? '',
       ],
     );

@@ -38,8 +38,8 @@
   "lockedFiles": [
     {
       "path": "frontend/src/styles.css",
-      "bytes": 76880,
-      "sha256": "9a524ff07ad586068b08971e40e108d75eb668b03b26b204d26fce26f26795ed"
+      "bytes": 87057,
+      "sha256": "32fe7a208e4d821ba9609f497f74c8e464eaeeafd2cb67a4a239e1a58b54971a"
     },
     {
       "path": "frontend/public/brand/nvidia-logo.png",
@@ -90,6 +90,21 @@
       "path": "frontend/src/pages/ReportsPage.tsx",
       "bytes": 27455,
       "sha256": "57c427812e25706703bbfbb84189940fad4854e241c296e0dcf954a1499fb522"
+    },
+    {
+      "path": "frontend/src/pages/SearchPage.tsx",
+      "bytes": 15614,
+      "sha256": "fcd62b76922f5bf85cd020bc8fcedd18c473762de6ecdc62cbc7b8462fa94339"
+    },
+    {
+      "path": "frontend/src/components/LabelPrint.tsx",
+      "bytes": 7529,
+      "sha256": "56b791383e0a0859e19d59a5c8233ee6dccdf0fa45c3e2807795ddf6cfd176e5"
+    },
+    {
+      "path": "frontend/public/hardware/nvidia-rtx6000-ada.jpg",
+      "bytes": 120005,
+      "sha256": "12835fa428f48e97a4dfd6a9555ae2464670e9a1a5426caa187a620f12cf78a5"
     }
   ],
   "sharedComponents": [
@@ -101,7 +116,8 @@
     "PageFailure",
     "ToastRegion",
     "AssetCard",
-    "KpiStrip"
+    "KpiStrip",
+    "LabelPrint"
   ],
   "prohibitedPatterns": [
     "additional frontend CSS files",

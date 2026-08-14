@@ -16,7 +16,7 @@ In Update Existing mode, a mapped blank optional cell clears the current value. 
 3. Upload a UTF-8 CSV. BOM, quoted commas, Windows line endings, and blank lines are supported.
 4. Review and save explicit column mappings. Labels, field keys, and configured aliases can map automatically; ambiguous or unknown columns require a user decision.
 5. Validate the complete batch.
-6. Correct, exclude, restore, or bulk-correct staged rows without re-uploading.
+6. Correct, exclude, restore, or bulk-correct staged rows without re-uploading. The row editor submits only fields changed during that edit, so a stale editor cannot erase corrections made elsewhere in the session.
 7. Commit all included rows in one PostgreSQL transaction.
 
 Sessions can be resumed. A profile or controlled-value change marks unfinished work for revalidation, and opening the session replaces obsolete validation results.
@@ -29,6 +29,10 @@ Sessions can be resumed. A profile or controlled-value change marks unfinished w
 - **Configuration Error**: the profile itself must be repaired, such as a controlled field without its lookup-list mapping.
 
 Optional blank controlled fields do not produce lookup errors. Notes is optional free text and is never checked against a controlled list. NVBug, dates, whitespace, capitalization, and configured aliases are normalized during validation.
+
+The approved eight required fields are NVBug, Date Received, Model #, Serial #, Product Name, Status, Owner, and Vendor. These fields remain required on every profile and cannot be made optional through profile administration.
+
+Model-level values are shared by every asset using the same Model #. Validation fills a blank shared value from another row in the batch or from the existing model. Conflicting shared values block the affected rows and explain which value must be corrected before commit.
 
 ## Guided correction
 
@@ -44,7 +48,7 @@ Adding a controlled value writes activity and automatically revalidates matching
 
 ## Commit guarantees
 
-All included rows commit atomically. A database or revision conflict rolls back the entire batch. Repeating a successful commit does not create duplicate assets. The completion view links directly to every created or updated asset, and the active UI refreshes inventory-dependent pages automatically.
+All included rows commit atomically. A database or revision conflict rolls back the entire batch. Before reporting success, the server compares every staged field with the stored asset; any mismatch rolls back the entire batch and returns it for revalidation. Repeating a successful commit does not create duplicate assets. The completion view links directly to every created or updated asset, and the active UI refreshes inventory-dependent pages automatically.
 
 ## API
 

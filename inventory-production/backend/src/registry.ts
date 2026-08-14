@@ -5,6 +5,7 @@ import type { FieldDefinition } from './types.js';
 import { authenticate } from './auth.js';
 import { matchLookupOption } from './lookupMatching.js';
 import { lifecycleStatusKeys } from './lifecycle.js';
+import { effectiveRequiredSetting } from './requiredFields.js';
 
 export function lookupOptionForValue(field: FieldDefinition, value: unknown) {
   return field.options.find((option) => String(option.id) === String(value))
@@ -57,7 +58,7 @@ export async function loadProfileFields(profileId: number, client: DbClient | ty
     aliases: row.import_aliases,
     validationRules: row.validation_rules,
     uniqueWhenPopulated: row.unique_when_populated,
-    required: row.required,
+    required: effectiveRequiredSetting(row.field_key, row.required),
     displayOrder: row.display_order,
     surfaces: {
       add: row.visible_add, update: row.visible_update, filter: row.visible_filter, detail: row.visible_detail,

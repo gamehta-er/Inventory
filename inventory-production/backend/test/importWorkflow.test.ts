@@ -313,6 +313,62 @@ describe('complete import workflow contract', () => {
     assert.deepEqual(importInternals.importRefreshTargets, ['search', 'inventory', 'reports', 'activity', 'imports', 'categories']);
   });
 
+  it('reconciles shared model fields across rows before commit', () => {
+    const fields = [
+      field(30, 'model_number', 'Model #', true, [], { storageTarget: 'asset_models.model_number' }),
+      field(31, 'product_name', 'Product Name', true, [], { storageTarget: 'asset_models.product_name' }),
+      field(32, 'board_sku', 'Board SKU', false, [], { storageTarget: 'asset_models.board_sku' }),
+      field(33, 'gpu_chip', 'GPU Chip', false, [], { storageTarget: 'asset_models.gpu_chip' }),
+    ];
+    const rows = [
+      { id: '1', rowNumber: 2, source: {}, corrected: {}, included: true, values: { model_number: '699-TEST', product_name: 'GPU Test', board_sku: '', gpu_chip: 'GR100' }, issues: [], targetAssetId: null, targetRevision: null, beforeValues: null },
+      { id: '2', rowNumber: 3, source: {}, corrected: {}, included: true, values: { model_number: '699-TEST', product_name: 'GPU Test', board_sku: 'P2022', gpu_chip: '' }, issues: [], targetAssetId: null, targetRevision: null, beforeValues: null },
+    ];
+
+    importInternals.reconcileModelGroup(rows, fields, null);
+
+    assert.deepEqual(rows.map((row) => row.values.board_sku), ['P2022', 'P2022']);
+    assert.deepEqual(rows.map((row) => row.values.gpu_chip), ['GR100', 'GR100']);
+    assert.deepEqual(rows.flatMap((row) => row.issues), []);
+  });
+
+  it('blocks conflicting values for one shared model', () => {
+    const fields = [field(34, 'product_name', 'Product Name', true, [], { storageTarget: 'asset_models.product_name' })];
+    const rows = [
+      { id: '1', rowNumber: 2, source: {}, corrected: {}, included: true, values: { model_number: '699-TEST', product_name: 'GPU Alpha' }, issues: [], targetAssetId: null, targetRevision: null, beforeValues: null },
+      { id: '2', rowNumber: 3, source: {}, corrected: {}, included: true, values: { model_number: '699-TEST', product_name: 'GPU Beta' }, issues: [], targetAssetId: null, targetRevision: null, beforeValues: null },
+    ];
+
+    importInternals.reconcileModelGroup(rows, fields, null);
+
+    assert.ok(rows.every((row) => row.issues.some((issue) => issue.code === 'MODEL_VALUE_CONFLICT_IN_FILE')));
+  });
+
+  it('inherits an existing shared model value and blocks an incompatible replacement', () => {
+    const fields = [
+      field(35, 'board_sku', 'Board SKU', false, [], { storageTarget: 'asset_models.board_sku' }),
+      field(36, 'gpu_chip', 'GPU Chip', false, [], { storageTarget: 'asset_models.gpu_chip' }),
+    ];
+    const rows = [
+      { id: '1', rowNumber: 2, source: {}, corrected: {}, included: true, values: { model_number: '699-TEST', board_sku: '', gpu_chip: 'GB200' }, issues: [], targetAssetId: null, targetRevision: null, beforeValues: null },
+    ];
+
+    importInternals.reconcileModelGroup(rows, fields, { board_sku: 'P2022', gpu_chip: 'GR100' });
+
+    assert.equal(rows[0]!.values.board_sku, 'P2022');
+    assert.ok(rows[0]!.issues.some((issue) => issue.code === 'MODEL_VALUE_CONFLICT_EXISTING' && issue.fieldKey === 'gpu_chip'));
+  });
+
+  it('detects a stored value mismatch before reporting import success', () => {
+    const fields = [
+      field(37, 'serial_number', 'Serial #', true, [], { storageTarget: 'assets.serial_number' }),
+      field(38, 'board_sku', 'Board SKU', false, [], { storageTarget: 'asset_models.board_sku' }),
+    ];
+
+    assert.deepEqual(importInternals.committedValueMismatches(fields, { serial_number: 'SER-1', board_sku: 'P2022' }, { serial_number: 'SER-1', board_sku: 'P2022' }), []);
+    assert.deepEqual(importInternals.committedValueMismatches(fields, { serial_number: 'SER-1', board_sku: 'P2022' }, { serial_number: 'SER-1', board_sku: null }), ['board_sku']);
+  });
+
   it('blocks unknown required owners and vendors while offering approved matches', async () => {
     const client = queryClient((text) => {
       if (/FROM application_users/.test(text)) return { rows: [{ id: 1, label: 'Gaurav Mehta' }] };

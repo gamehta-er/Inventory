@@ -129,12 +129,18 @@ const surfaceLabels: Array<[keyof FieldDefinition['surfaces'], string]> = [
   ['export', 'Exports'],
 ];
 
+const systemRequiredFields = new Set([
+  'nvbugs', 'date_received', 'model_number', 'serial_number',
+  'product_name', 'asset_status', 'owner', 'vendor',
+]);
+
 function ProfileFieldEditor({ field, disabled, onSave, onDeprecate }: {
   field: FieldDefinition;
   disabled: boolean;
   onSave(updates: Record<string, unknown>): Promise<void>;
   onDeprecate(): Promise<void>;
 }) {
+  const systemRequired = systemRequiredFields.has(field.fieldKey);
   const [draft, setDraft] = useState(() => ({
     label: field.label,
     definition: field.definition,
@@ -191,7 +197,7 @@ function ProfileFieldEditor({ field, disabled, onSave, onDeprecate }: {
       <label className="field field--wide"><span>Business definition *</span><textarea value={draft.definition} onChange={(event)=>setDraft((current)=>({...current,definition:event.target.value}))}/></label>
       <label className="field field--wide"><span>User guidance *</span><textarea value={draft.helpText} onChange={(event)=>setDraft((current)=>({...current,helpText:event.target.value}))}/></label>
       <label className="field field--wide"><span>Import header aliases</span><input value={draft.aliases} onChange={(event)=>setDraft((current)=>({...current,aliases:event.target.value}))}/></label>
-      <fieldset className="field-options field--wide"><legend>Data rules</legend><label><input type="checkbox" checked={draft.required} onChange={(event)=>setDraft((current)=>({...current,required:event.target.checked}))}/>Required</label><label><input type="checkbox" checked={draft.uniqueWhenPopulated} onChange={(event)=>setDraft((current)=>({...current,uniqueWhenPopulated:event.target.checked}))}/>Unique when provided</label></fieldset>
+      <fieldset className="field-options field--wide"><legend>Data rules</legend><label><input type="checkbox" checked={systemRequired || draft.required} disabled={systemRequired} onChange={(event)=>setDraft((current)=>({...current,required:event.target.checked}))}/>{systemRequired ? 'Required for every asset' : 'Required'}</label><label><input type="checkbox" checked={draft.uniqueWhenPopulated} onChange={(event)=>setDraft((current)=>({...current,uniqueWhenPopulated:event.target.checked}))}/>Unique when provided</label></fieldset>
       <fieldset className="field-options field--wide"><legend>Application surfaces</legend>{surfaceLabels.map(([key,label])=><label key={key}><input type="checkbox" checked={Boolean(draft.surfaces[key])} onChange={(event)=>setDraft((current)=>({...current,surfaces:{...current.surfaces,[key]:event.target.checked}}))}/>{label}</label>)}</fieldset>
       <div className="validation-grid field--wide"><label className="field"><span>Minimum length</span><input type="number" min="0" value={draft.minLength} onChange={(event)=>setDraft((current)=>({...current,minLength:event.target.value}))}/></label><label className="field"><span>Maximum length</span><input type="number" min="1" value={draft.maxLength} onChange={(event)=>setDraft((current)=>({...current,maxLength:event.target.value}))}/></label><label className="field"><span>Minimum number</span><input type="number" value={draft.minimum} onChange={(event)=>setDraft((current)=>({...current,minimum:event.target.value}))}/></label><label className="field"><span>Maximum number</span><input type="number" value={draft.maximum} onChange={(event)=>setDraft((current)=>({...current,maximum:event.target.value}))}/></label><label className="field field--wide"><span>Format pattern</span><input value={draft.pattern} onChange={(event)=>setDraft((current)=>({...current,pattern:event.target.value}))} placeholder="Optional regular expression"/></label></div>
       <div className="field-editor__actions field--wide"><button type="button" className="button" disabled={disabled} onClick={()=>void save()}>Save field rules</button><button type="button" className="button button--danger" disabled={disabled} onClick={()=>void onDeprecate()}>Deprecate field</button>{disabled && <small>Enter a reason above before saving.</small>}</div>

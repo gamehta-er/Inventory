@@ -13,7 +13,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$UpdaterVersion = '1.2.2'
+$UpdaterVersion = '1.2.3'
 
 function Assert-Administrator {
     $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -68,17 +68,32 @@ function Stop-InventoryApi {
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $Deadline)
 
-    $Owners = @($Listeners.OwningProcess | Sort-Object -Unique)
-    foreach ($ProcessId in $Owners) {
-        $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-        if ($Process) {
-            Write-Host "Stopping remaining port 3020 process $ProcessId ($($Process.ProcessName))." -ForegroundColor Yellow
-            Stop-Process -Id $ProcessId -Force -ErrorAction Stop
+    $InventoryPath = [IO.Path]::GetFullPath($InstallRoot)
+    $Candidates = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+        $_.CommandLine -and
+        $_.CommandLine.IndexOf($InventoryPath, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+        ($_.CommandLine -match '(?i)Run-Api\.ps1|backend[\\/]dist[\\/]server\.js|Application[\\/]api[\\/]dist[\\/]server\.js')
+    })
+
+    $CandidateIds = @($Candidates.ProcessId)
+    $RootCandidates = @($Candidates | Where-Object { $CandidateIds -notcontains $_.ParentProcessId })
+    if (-not $RootCandidates.Count) { $RootCandidates = $Candidates }
+
+    foreach ($Process in $RootCandidates) {
+        Write-Host "Stopping remaining Inventory API process tree $($Process.ProcessId) ($($Process.Name))." -ForegroundColor Yellow
+        & "$env:SystemRoot\System32\taskkill.exe" /PID $Process.ProcessId /T /F | Out-Host
+        if ($LASTEXITCODE -notin @(0,128)) {
+            throw "Unable to stop Inventory API process tree $($Process.ProcessId). taskkill exit code: $LASTEXITCODE."
         }
     }
-    Start-Sleep -Seconds 2
 
-    $UnexpectedListeners = @(Get-NetTCPConnection -State Listen -LocalPort 3020 -ErrorAction SilentlyContinue)
+    $Deadline = (Get-Date).AddSeconds(10)
+    do {
+        $UnexpectedListeners = @(Get-NetTCPConnection -State Listen -LocalPort 3020 -ErrorAction SilentlyContinue)
+        if (-not $UnexpectedListeners.Count) { return }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $Deadline)
+
     if ($UnexpectedListeners.Count) {
         $Owners = $UnexpectedListeners.OwningProcess | Sort-Object -Unique
         throw "Port 3020 remains in use after the Inventory API service stopped. Process IDs: $($Owners -join ', ')."

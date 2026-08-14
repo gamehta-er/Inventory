@@ -7,6 +7,7 @@ import { loadProfileFields } from './registry.js';
 import type { AuthenticatedRequest, SessionUser } from './types.js';
 import { readMaintenanceState, writeMaintenanceState, type MaintenanceState } from './maintenance.js';
 import { isLifecycleStatusKey } from './lifecycle.js';
+import { isSystemRequiredField } from './requiredFields.js';
 
 const keyPattern = /^[A-Z][A-Z0-9_]{1,63}$/;
 const fieldKeyPattern = /^[a-z][a-z0-9_]{1,63}$/;
@@ -165,6 +166,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     return withTransaction(async(client)=>{
       const before=await client.query(`SELECT pf.*,fd.field_key,fd.field_label,fd.definition,fd.help_text,fd.validation_rules FROM profile_fields pf JOIN field_definitions fd ON fd.id=pf.field_definition_id WHERE pf.profile_id=$1 AND fd.id=$2 FOR UPDATE`,[profileId,fieldId]);
       if(!before.rows[0])throw new AppError(404,'FIELD_NOT_FOUND','Profile field not found.');
+      if(body.required===false&&isSystemRequiredField(String(before.rows[0].field_key)))throw new AppError(422,'SYSTEM_REQUIRED_FIELD',`${before.rows[0].field_label} is required by the approved asset record contract and cannot be made optional.`);
       await client.query(`UPDATE field_definitions SET field_label=COALESCE($2,field_label),definition=COALESCE($3,definition),help_text=COALESCE($4,help_text),import_aliases=COALESCE($5,import_aliases),validation_rules=COALESCE($6,validation_rules),unique_when_populated=COALESCE($7,unique_when_populated),active=COALESCE($8,active),deprecated_at=CASE WHEN $8=false THEN now() ELSE deprecated_at END,updated_at=now() WHERE id=$1`,[fieldId,body.label??null,body.definition??null,body.helpText??null,body.aliases??null,body.validationRules?JSON.stringify(body.validationRules):null,body.uniqueWhenPopulated??null,body.active??null]);
       await client.query(`UPDATE profile_fields SET required=COALESCE($3,required),display_order=COALESCE($4,display_order),visible_add=COALESCE($5,visible_add),visible_update=COALESCE($6,visible_update),visible_filter=COALESCE($7,visible_filter),visible_detail=COALESCE($8,visible_detail),visible_import=COALESCE($9,visible_import),visible_report=COALESCE($10,visible_report),visible_export=COALESCE($11,visible_export),active=COALESCE($12,active),updated_at=now() WHERE profile_id=$1 AND field_definition_id=$2`,[profileId,fieldId,body.required??null,body.displayOrder??null,body.visibleAdd??null,body.visibleUpdate??null,body.visibleFilter??null,body.visibleDetail??null,body.visibleImport??null,body.visibleReport??null,body.visibleExport??null,body.active??null]);
       await profileSnapshot(client,profileId,user,reason); const after=(await loadProfileFields(profileId,client)).find((item)=>item.id===fieldId);

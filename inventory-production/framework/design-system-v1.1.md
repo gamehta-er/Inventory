@@ -11,10 +11,11 @@
 | Governing framework | Inventory Project Product and Engineering Framework v1.0 |
 | Production host | IIS at `http://10.176.177.149` |
 | Review trigger | An approved Design Change Request |
-| Approved amendment | DCR-2026-001 Reports Intelligence |
+| Approved amendments | DCR-2026-001 Reports Intelligence; DCR-2026-002 Management Command Center; DCR-2026-003 NVIDIA Hardware Search; DCR-2026-004 Label Content and Print Centering |
 
-This document freezes the verified 1.3.10 visual system with the Reports Intelligence
-amendment approved by Gaurav Mehta on 2026-08-12. It does not certify every
+This document freezes the verified 1.3.10 visual system with the approved Reports,
+Management Command Center, NVIDIA Hardware Search, and Label Content and Print Centering
+amendments. It does not certify every
 business workflow. It prevents bug fixes, feature work, and wording changes from
 quietly becoming page redesigns.
 
@@ -23,7 +24,9 @@ quietly becoming page redesigns.
 1. Inventory Project is a quiet, work-focused inventory tool. It prioritizes scanning,
    comparison, repeated action, clear status, and recovery from errors.
 2. The first screen is the working application. Marketing pages, decorative hero
-   sections, gradient illustrations, and ornamental layouts are outside scope.
+   sections without operational controls, gradient illustrations, and ornamental
+   layouts are outside scope. DCR-2026-003 permits the functional image-led Search
+   header because the primary inventory search remains inside the first viewport.
 3. React presents server-owned state. UI styling cannot define fields, statuses,
    validation, permissions, reporting logic, or controlled values.
 4. All pages use the same shell, navigation, page-header hierarchy, controls, feedback,
@@ -90,6 +93,7 @@ and inline visual styles are prohibited.
 | `ToastRegion` | Non-blocking success, warning, and error feedback |
 | `AssetCard` | Shared asset row/card presentation and selection |
 | `KpiStrip` | Shared KPI summary presentation |
+| `LabelPrint` | Permission-aware label selection, content, preview, and isolated physical printing |
 
 A page may compose these components but may not create a replacement shell, overlay,
 failure pattern, selection model, or control language.
@@ -150,9 +154,39 @@ scroll region without making the page itself overflow.
 - The default physical label is 2.125 in x 1 in.
 - One selected asset produces one label unless the user explicitly selects a copy count.
 - Barcode, selected fields, and page count must match the preview.
+- Product Name, Model Number, Asset Tag, and Serial Number remain the default label fields.
+- Super Users and Privileged Administrators may add Board SKU, GPU SKU, and Board
+  Architecture to an individual print job.
+- Preview and print use the same centered physical-label renderer. The label remains centered
+  when the printer or PDF destination uses a larger page.
 - Printing changes may extend label configuration without changing the application shell.
 
 ## Change-control matrix
+
+### Approved Search experience
+
+- Search uses the DCR-2026-003 NVIDIA hardware hierarchy: hardware image, primary search,
+  fleet summary, hardware-family filters, and dense live results.
+- The image must remain a real, optimized NVIDIA hardware asset. Decorative illustrations,
+  video backgrounds, additional image libraries, and invented product imagery are prohibited.
+- Text search, category selection, lifecycle selection, and applied profile filters remain
+  independent and use the existing Fastify search contract.
+- Fleet and category counts are server-owned. React cannot invent, rename, or reinterpret
+  the underlying measures.
+- Add Asset, Filters, selection, CSV export, labels, and asset navigation remain visible
+  where permitted and connected to their existing workflows.
+- DCR-2026-005 requires one Applied Criteria bar above Results whenever Search, Family,
+  Availability, or profile filters are active. Each criterion is removable independently,
+  and `Clear all` remains visible while criteria exist.
+- Applied Search criteria are URL-backed. Shared links and Browser Back restore the same
+  applied result set; draft typing is not written to history until Search is submitted.
+- The search-field close control clears only text. Filter-drawer `Clear Filters` removes
+  profile filters, family, and availability while retaining text. Active family and fleet
+  status controls toggle off when selected again.
+- Both Filters buttons show the active facet count. Empty results provide one primary
+  `Clear all criteria` recovery action.
+- Future Search wording or spacing corrections must preserve this hierarchy. Replacing it
+  requires another approved Design Change Request.
 
 | Change | Design approval required | Rule |
 |---|---|---|

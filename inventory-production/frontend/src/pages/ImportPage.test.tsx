@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api';
 import type { FieldDefinition, ImportIssue, ImportSession } from '../types';
-import { ImportIssueCard, ImportPage } from './ImportPage';
+import { changedImportValues, editableRowValues, ImportIssueCard, ImportPage } from './ImportPage';
 
 const mockedState = vi.hoisted(() => ({
   session: {
@@ -69,6 +69,20 @@ const serialField: FieldDefinition = {
   displayOrder: 1,
   surfaces: { import: true },
   options: [],
+};
+
+const ownerField: FieldDefinition = {
+  ...serialField,
+  id: 102,
+  fieldKey: 'owner',
+  label: 'Owner / Assignee',
+  dataType: 'entity',
+  storageTarget: 'assets.owner_user_id',
+  uniqueWhenPopulated: false,
+  options: [
+    { id: 5, value: 'Gaurav Mehta', label: 'Gaurav Mehta' },
+    { id: 16, value: 'Monica Martin', label: 'Monica Martin' },
+  ],
 };
 
 function importSession(overrides: Partial<ImportSession> = {}): ImportSession {
@@ -242,6 +256,29 @@ describe('ImportIssueCard', () => {
 });
 
 describe('ImportPage workflow', () => {
+  it('submits only fields the user changed so a stale editor cannot erase another correction', () => {
+    const initial = { serial_number: 'SER-100', owner: 'Gaurav Mehta', notes: 'Validated note' };
+    const current = { ...initial, owner: 'Monica Martin' };
+
+    expect(changedImportValues(initial, current)).toEqual({ owner: 'Monica Martin' });
+  });
+
+  it('shows relationship names instead of stored IDs in an update-row editor', () => {
+    const session = importSession({
+      mode: 'UPDATE',
+      fields: [serialField, ownerField],
+      headers: [{ sourceIndex: 0, header: 'Serial #', fieldKey: 'serial_number', ignored: false }],
+    });
+    const row: ImportSession['rows'][number] = {
+      id: 'row-1', row_number: 2, source_values: { '0': 'SER-100' }, corrected_values: {},
+      normalized_values: { serial_number: 'SER-100', owner: 5 }, included: true, operation: 'UPDATE',
+      target_asset_id: 10, target_asset_revision: 2, before_values: { serial_number: 'SER-100', owner: 5 },
+      after_values: { serial_number: 'SER-100', owner: 5 }, status: 'VALID', committed_asset_id: null, issues: [],
+    };
+
+    expect(editableRowValues(session, row)).toEqual({ serial_number: 'SER-100', owner: 'Gaurav Mehta' });
+  });
+
   it('resumes a persistent session from its saved URL', async () => {
     const savedSession = importSession({ id: 'saved-session-42', fileName: null, status: 'DRAFT' });
     vi.spyOn(api, 'imports').mockResolvedValue([]);

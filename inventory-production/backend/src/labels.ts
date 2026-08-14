@@ -6,7 +6,10 @@ import { requirePermission, verifyCsrf } from './auth.js';
 import { recordActivity } from './activity.js';
 import type { AuthenticatedRequest } from './types.js';
 
-const labelFields = ['productName', 'modelNumber', 'assetTag', 'serialNumber'] as const;
+const labelFields = [
+  'productName', 'modelNumber', 'boardSku', 'gpuSku', 'boardArchitecture', 'assetTag', 'serialNumber',
+] as const;
+const defaultLabelFields = ['productName', 'modelNumber', 'assetTag', 'serialNumber'] as const;
 type LabelField = typeof labelFields[number];
 
 function svg(value: string): string {
@@ -21,7 +24,7 @@ function assetIds(value: unknown): number[] {
 }
 
 function selectedFields(value: unknown): LabelField[] {
-  if (value === undefined) return [...labelFields];
+  if (value === undefined) return [...defaultLabelFields];
   if (!Array.isArray(value) || value.some((field) => !labelFields.includes(field as LabelField))) {
     throw new AppError(422, 'LABEL_FIELDS_INVALID', 'One or more selected label fields are not supported.');
   }
@@ -30,7 +33,8 @@ function selectedFields(value: unknown): LabelField[] {
 
 async function loadLabels(ids: number[]) {
   const rows = await pool.query(
-    `SELECT a.id,a.asset_tag,a.serial_number,am.product_name,am.model_number
+    `SELECT a.id,a.asset_tag,a.serial_number,am.product_name,am.model_number,
+            am.board_sku,am.gpu_sku,am.board_architecture
        FROM assets a
        JOIN asset_models am ON am.id=a.asset_model_id
       WHERE a.id=ANY($1::bigint[])
@@ -42,6 +46,7 @@ async function loadLabels(ids: number[]) {
     const barcode = String(row.asset_tag || row.serial_number);
     return {
       assetId: Number(row.id), productName: row.product_name, modelNumber: row.model_number,
+      boardSku: row.board_sku, gpuSku: row.gpu_sku, boardArchitecture: row.board_architecture,
       assetTag: row.asset_tag, serialNumber: row.serial_number, barcodeValue: barcode, barcodeSvg: svg(barcode),
     };
   });

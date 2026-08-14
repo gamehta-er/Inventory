@@ -10,16 +10,26 @@ import { Overlay } from './Overlay';
 const fieldOptions: Array<{ key: LabelFieldKey; label: string }> = [
   { key: 'productName', label: 'Product Name' },
   { key: 'modelNumber', label: 'Model #' },
+  { key: 'boardSku', label: 'Board SKU' },
+  { key: 'gpuSku', label: 'GPU SKU' },
+  { key: 'boardArchitecture', label: 'Board Architecture' },
   { key: 'assetTag', label: 'Asset Tag #' },
   { key: 'serialNumber', label: 'Serial #' },
 ];
 
-const defaultFields = fieldOptions.map((field) => field.key);
+const defaultFields: LabelFieldKey[] = ['productName', 'modelNumber', 'assetTag', 'serialNumber'];
 
 function PhysicalLabel({ label, fields }: { label: LabelData; fields: LabelFieldKey[] }) {
-  return <article className="physical-label">
+  const metadata = [
+    fields.includes('boardSku') && label.boardSku ? `Board SKU ${label.boardSku}` : '',
+    fields.includes('gpuSku') && label.gpuSku ? `GPU SKU ${label.gpuSku}` : '',
+    fields.includes('boardArchitecture') && label.boardArchitecture ? `Architecture ${label.boardArchitecture}` : '',
+  ].filter(Boolean);
+
+  return <article className={`physical-label${metadata.length ? ' physical-label--dense' : ''}`}>
     {fields.includes('productName') && <strong>{label.productName}</strong>}
     {fields.includes('modelNumber') && <span className="physical-label__model">{label.modelNumber}</span>}
+    {metadata.length > 0 && <span className="physical-label__metadata">{metadata.join(' | ')}</span>}
     {fields.includes('assetTag') && label.assetTag && <b>{label.assetTag}</b>}
     <div className="barcode" dangerouslySetInnerHTML={{ __html: label.barcodeSvg }}/>
     {fields.includes('serialNumber') && <span className="physical-label__serial">{label.serialNumber}</span>}

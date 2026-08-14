@@ -219,13 +219,23 @@ export interface LabelData {
   assetId: number;
   productName: string;
   modelNumber: string;
+  boardSku: string | null;
+  gpuSku: string | null;
+  boardArchitecture: string | null;
   assetTag: string | null;
   serialNumber: string;
   barcodeValue: string;
   barcodeSvg: string;
 }
 
-export type LabelFieldKey = 'productName' | 'modelNumber' | 'assetTag' | 'serialNumber';
+export type LabelFieldKey =
+  | 'productName'
+  | 'modelNumber'
+  | 'boardSku'
+  | 'gpuSku'
+  | 'boardArchitecture'
+  | 'assetTag'
+  | 'serialNumber';
 
 export type ImportMode = 'CREATE' | 'UPDATE';
 
