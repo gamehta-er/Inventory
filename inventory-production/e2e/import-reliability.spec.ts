@@ -83,7 +83,7 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       expect(timings.analysisMs).toBeLessThan(60_000);
       batchId = sessionIdFrom(importer.page);
       const sessionUrl = importer.page.url();
-      await expect(importer.page.getByText('Awaiting approval', { exact: true })).toBeVisible();
+      await expect(importer.page.locator('.import-session-header .status')).toHaveText('Awaiting Approval');
       const lockedCommit = importer.page.getByRole('button', { name: /Commit 1 New Assets/i });
       await expect(lockedCommit).toBeDisabled();
       await importer.page.screenshot({ path: resolve(screenshotRoot, 'csv-awaiting-approval.png'), fullPage: true });
