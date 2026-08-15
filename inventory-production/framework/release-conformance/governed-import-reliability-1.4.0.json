@@ -48,7 +48,8 @@
       "requirementId": "DATA-014",
       "status": "PASSED",
       "evidence": [
-        "database/009-governed-import-reliability.sql is transactional, forward-only, uniquely journaled, and marks existing open sessions NEEDS_REVALIDATION.",
+        "database/Migrations/006-invmgmt-schema.sql is locked to deployed SHA-256 fc332b26717641edf8df3dee94b716925606d68f3b3ff2dfa914ac7f7dfe38ba.",
+        "database/Migrations/009-governed-import-reliability.sql owns the three new reliability tables, is transactional and uniquely journaled, supports clean-baseline replay, and marks existing open sessions NEEDS_REVALIDATION.",
         "The PostgreSQL 18 GitHub job applies migrations and passes the database contract before integration tests."
       ]
     },

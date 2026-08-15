@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
@@ -22,16 +23,26 @@ const migrationTableBlock = schemaMigration.match(/application_tables constant t
 const migratedTables = migrationTableBlock
   ? [...migrationTableBlock[1].matchAll(/'([a-z][a-z0-9_]*)'/g)].map((match) => match[1])
   : [];
+const reliabilityTableBlock = importReliabilityMigration.match(/reliability_tables constant text\[\] := ARRAY\[([\s\S]*?)\];/);
+const reliabilityTables = reliabilityTableBlock
+  ? [...reliabilityTableBlock[1].matchAll(/'([a-z][a-z0-9_]*)'/g)].map((match) => match[1])
+  : [];
 
 describe('Framework v1.0 PostgreSQL boundary', () => {
-  it('DATA-001 moves every baseline application table to invmgmt', () => {
+  it('DATA-001 moves every baseline application table through immutable migrations', () => {
     assert.equal(baselineTables.length, 40);
-    assert.deepEqual(migratedTables, baselineTables);
+    assert.equal(migratedTables.length, 37);
+    assert.deepEqual(reliabilityTables, ['import_runtime_control', 'import_reviews', 'import_stage_events']);
+    assert.deepEqual([...new Set([...migratedTables, ...reliabilityTables])].sort(), [...baselineTables].sort());
     assert.match(schemaMigration, /CREATE SCHEMA IF NOT EXISTS invmgmt AUTHORIZATION inventory_owner/);
     assert.match(schemaMigration, /public_inventory_count <> 0/);
+    assert.doesNotMatch(schemaMigration, /import_runtime_control|import_reviews|import_stage_events/);
+    assert.match(importReliabilityMigration, /ALTER TABLE public\.%I SET SCHEMA invmgmt/);
   });
 
   it('DATA-014 keeps the schema migration transactional and uniquely journaled', () => {
+    const canonicalHash = createHash('sha256').update(schemaMigration.replace(/\r\n/g, '\n')).digest('hex');
+    assert.equal(canonicalHash, 'fc332b26717641edf8df3dee94b716925606d68f3b3ff2dfa914ac7f7dfe38ba');
     assert.match(schemaMigration, /^\\set ON_ERROR_STOP on\s+\s*BEGIN;/);
     assert.match(schemaMigration, /pg_advisory_xact_lock/);
     assert.match(schemaMigration, /'006-invmgmt-schema'/);

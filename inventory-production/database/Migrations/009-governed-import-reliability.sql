@@ -5,6 +5,45 @@ SET LOCAL search_path TO invmgmt, public;
 
 SELECT pg_advisory_xact_lock(hashtext('inventory-project-migrations'));
 
+-- Fresh baselines define the latest tables before replaying the immutable
+-- migration chain. Move only the 009-owned objects that predate invmgmt.
+DO $$
+DECLARE
+    reliability_table text;
+    reliability_tables constant text[] := ARRAY[
+        'import_runtime_control',
+        'import_reviews',
+        'import_stage_events'
+    ];
+BEGIN
+    FOREACH reliability_table IN ARRAY reliability_tables LOOP
+        IF to_regclass(format('invmgmt.%I', reliability_table)) IS NOT NULL
+           AND to_regclass(format('public.%I', reliability_table)) IS NOT NULL THEN
+            RAISE EXCEPTION 'Reliability table % exists in both public and invmgmt', reliability_table;
+        ELSIF to_regclass(format('invmgmt.%I', reliability_table)) IS NULL
+              AND to_regclass(format('public.%I', reliability_table)) IS NOT NULL THEN
+            EXECUTE format('ALTER TABLE public.%I SET SCHEMA invmgmt', reliability_table);
+        END IF;
+    END LOOP;
+
+    IF to_regprocedure('invmgmt.validate_import_review()') IS NOT NULL
+       AND to_regprocedure('public.validate_import_review()') IS NOT NULL THEN
+        RAISE EXCEPTION 'validate_import_review exists in both public and invmgmt';
+    ELSIF to_regprocedure('invmgmt.validate_import_review()') IS NULL
+          AND to_regprocedure('public.validate_import_review()') IS NOT NULL THEN
+        ALTER FUNCTION public.validate_import_review() SET SCHEMA invmgmt;
+    END IF;
+
+    IF to_regprocedure('invmgmt.reject_import_evidence_mutation()') IS NOT NULL
+       AND to_regprocedure('public.reject_import_evidence_mutation()') IS NOT NULL THEN
+        RAISE EXCEPTION 'reject_import_evidence_mutation exists in both public and invmgmt';
+    ELSIF to_regprocedure('invmgmt.reject_import_evidence_mutation()') IS NULL
+          AND to_regprocedure('public.reject_import_evidence_mutation()') IS NOT NULL THEN
+        ALTER FUNCTION public.reject_import_evidence_mutation() SET SCHEMA invmgmt;
+    END IF;
+END;
+$$;
+
 ALTER TABLE import_batches DROP CONSTRAINT IF EXISTS import_batches_status_check;
 ALTER TABLE import_batches DROP CONSTRAINT IF EXISTS import_batches_source_format_check;
 ALTER TABLE import_batches DROP CONSTRAINT IF EXISTS import_batches_file_size_check;

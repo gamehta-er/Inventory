@@ -74,9 +74,6 @@ DECLARE
         'import_batch_rows',
         'import_validation_issues',
         'import_commit_results',
-        'import_runtime_control',
-        'import_reviews',
-        'import_stage_events',
         'saved_reports',
         'export_definitions',
         'activity_events',
@@ -110,15 +107,6 @@ BEGIN
     END IF;
 
     ALTER FUNCTION invmgmt.reject_activity_mutation() OWNER TO inventory_owner;
-
-    IF to_regprocedure('public.validate_import_review()') IS NOT NULL THEN
-        ALTER FUNCTION public.validate_import_review() SET SCHEMA invmgmt;
-    END IF;
-    IF to_regprocedure('public.reject_import_evidence_mutation()') IS NOT NULL THEN
-        ALTER FUNCTION public.reject_import_evidence_mutation() SET SCHEMA invmgmt;
-    END IF;
-    ALTER FUNCTION invmgmt.validate_import_review() OWNER TO inventory_owner;
-    ALTER FUNCTION invmgmt.reject_import_evidence_mutation() OWNER TO inventory_owner;
 END;
 $$;
 
@@ -209,8 +197,7 @@ BEGIN
           'asset_external_references', 'asset_assignments', 'asset_status_events',
           'asset_transfers', 'asset_relationships', 'import_profiles',
           'import_batches', 'import_column_mappings', 'import_batch_rows',
-          'import_validation_issues', 'import_commit_results',
-          'import_runtime_control', 'import_reviews', 'import_stage_events', 'saved_reports',
+          'import_validation_issues', 'import_commit_results', 'saved_reports',
           'export_definitions', 'activity_events', 'activity_field_changes'
       ]);
 
@@ -229,7 +216,7 @@ BEGIN
         'SELECT,INSERT,UPDATE,DELETE'
     );
 
-    IF table_count <> 40
+    IF table_count <> 37
        OR wrong_owner_count <> 0
        OR public_inventory_count <> 0
        OR missing_import_privilege_count <> 0 THEN
