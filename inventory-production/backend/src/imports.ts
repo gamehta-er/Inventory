@@ -113,6 +113,41 @@ function normalizedValue(value: unknown): string {
   return cleanText(value).toLocaleLowerCase().replace(/\s+/g, ' ');
 }
 
+function appendInFileDuplicateIssues(rows: PreparedImportRow[], fields: FieldDefinition[]): void {
+  const duplicateGroups = (fieldKey: string) => {
+    const grouped = new Map<string, PreparedImportRow[]>();
+    for (const row of rows.filter((item) => item.included)) {
+      const value = normalizedValue(row.values[fieldKey]);
+      if (value) grouped.set(value, [...(grouped.get(value) ?? []), row]);
+    }
+    return [...grouped.values()].filter((group) => group.length > 1);
+  };
+
+  for (const duplicateRows of duplicateGroups('serial_number')) {
+    duplicateRows.forEach((row) => row.issues.push({
+      fieldKey: 'serial_number', severity: 'ERROR', code: 'DUPLICATE_SERIAL_IN_FILE',
+      sourceValue: cleanText(row.values.serial_number), message: 'Serial # is repeated in this import session.',
+    }));
+  }
+  for (const duplicateRows of duplicateGroups('asset_tag')) {
+    duplicateRows.forEach((row) => row.issues.push({
+      fieldKey: 'asset_tag', severity: 'ERROR', code: 'DUPLICATE_ASSET_TAG_IN_FILE',
+      sourceValue: cleanText(row.values.asset_tag), message: 'Asset Tag # is repeated in this import session.',
+    }));
+  }
+  for (const field of fields.filter((item) => item.uniqueWhenPopulated && !['serial_number', 'asset_tag'].includes(item.fieldKey))) {
+    for (const duplicateRows of duplicateGroups(field.fieldKey)) {
+      duplicateRows.forEach((row) => row.issues.push({
+        fieldKey: field.fieldKey,
+        severity: 'ERROR',
+        code: 'DUPLICATE_UNIQUE_VALUE_IN_FILE',
+        sourceValue: cleanText(row.values[field.fieldKey]),
+        message: `${field.label} must be unique and is repeated in this import session.`,
+      }));
+    }
+  }
+}
+
 function buildImportTemplate(fields: FieldDefinition[]): string {
   return `\uFEFF${fields.map((field) => csvCell(field.label)).join(',')}\r\n`;
 }
@@ -762,39 +797,7 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
 
   await reconcileModelValues(client, Number(batch.category_id), fields, prepared);
 
-  const serialRows = new Map<string, typeof prepared>();
-  const tagRows = new Map<string, typeof prepared>();
-  for (const row of prepared.filter((item) => item.included)) {
-    const serial = normalizedValue(row.values.serial_number);
-    const tag = normalizedValue(row.values.asset_tag);
-    if (serial) serialRows.set(serial, [...(serialRows.get(serial) ?? []), row]);
-    if (tag) tagRows.set(tag, [...(tagRows.get(tag) ?? []), row]);
-  }
-  for (const duplicateRows of serialRows.values()) {
-    if (duplicateRows.length > 1) duplicateRows.forEach((row) => row.issues.push({ fieldKey: 'serial_number', severity: 'ERROR', code: 'DUPLICATE_SERIAL_IN_FILE', sourceValue: cleanText(row.values.serial_number), message: 'Serial # is repeated in this import session.' }));
-  }
-  for (const duplicateRows of tagRows.values()) {
-    if (duplicateRows.length > 1) duplicateRows.forEach((row) => row.issues.push({ fieldKey: 'asset_tag', severity: 'ERROR', code: 'DUPLICATE_ASSET_TAG_IN_FILE', sourceValue: cleanText(row.values.asset_tag), message: 'Asset Tag # is repeated in this import session.' }));
-  }
-
-  for (const field of fields.filter((item) => item.uniqueWhenPopulated && !['serial_number', 'asset_tag'].includes(item.fieldKey))) {
-    const valueRows = new Map<string, typeof prepared>();
-    for (const row of prepared.filter((item) => item.included)) {
-      const value = normalizedValue(row.values[field.fieldKey]);
-      if (value) valueRows.set(value, [...(valueRows.get(value) ?? []), row]);
-    }
-    for (const duplicateRows of valueRows.values()) {
-      if (duplicateRows.length > 1) {
-        duplicateRows.forEach((row) => row.issues.push({
-          fieldKey: field.fieldKey,
-          severity: 'ERROR',
-          code: 'DUPLICATE_UNIQUE_VALUE_IN_FILE',
-          sourceValue: cleanText(row.values[field.fieldKey]),
-          message: `${field.label} must be unique and is repeated in this import session.`,
-        }));
-      }
-    }
-  }
+  appendInFileDuplicateIssues(prepared, fields);
 
   for (const row of prepared.filter((item) => item.included)) {
     const serial = cleanText(row.values.serial_number);
@@ -1787,5 +1790,6 @@ export const importInternals = {
   committedValueMismatchDetails,
   calculateDraftHash,
   stageParsedSource,
+  appendInFileDuplicateIssues,
   stableJson,
 };

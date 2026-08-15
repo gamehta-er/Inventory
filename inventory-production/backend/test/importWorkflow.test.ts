@@ -73,6 +73,25 @@ describe('complete import workflow contract', () => {
     assert.equal(JSON.parse(String(calls[3]?.values?.[1])).length, 1);
   });
 
+  it('blocks duplicate serials and profile-unique values within one included batch', () => {
+    const rows: Parameters<typeof importInternals.appendInFileDuplicateIssues>[0] = [
+      { id: '1', rowNumber: 2, source: {}, corrected: {}, included: true, values: { serial_number: 'GPU-001', asset_tag: 'TAG-1', rack_slot: 'R1' }, issues: [], targetAssetId: null, targetRevision: null, beforeValues: null },
+      { id: '2', rowNumber: 3, source: {}, corrected: {}, included: true, values: { serial_number: ' gpu-001 ', asset_tag: 'TAG-2', rack_slot: ' r1 ' }, issues: [], targetAssetId: null, targetRevision: null, beforeValues: null },
+      { id: '3', rowNumber: 4, source: {}, corrected: {}, included: false, values: { serial_number: 'GPU-001', asset_tag: 'TAG-3', rack_slot: 'R1' }, issues: [], targetAssetId: null, targetRevision: null, beforeValues: null },
+    ];
+    const fields = [
+      field(1, 'serial_number', 'Serial #', true),
+      field(2, 'asset_tag', 'Asset Tag #', false),
+      field(3, 'rack_slot', 'Rack Slot', false, [], { uniqueWhenPopulated: true }),
+    ];
+
+    importInternals.appendInFileDuplicateIssues(rows, fields);
+
+    assert.deepEqual(rows[0]!.issues.map((issue) => issue.code), ['DUPLICATE_SERIAL_IN_FILE', 'DUPLICATE_UNIQUE_VALUE_IN_FILE']);
+    assert.deepEqual(rows[1]!.issues.map((issue) => issue.code), ['DUPLICATE_SERIAL_IN_FILE', 'DUPLICATE_UNIQUE_VALUE_IN_FILE']);
+    assert.deepEqual(rows[2]!.issues, []);
+  });
+
   it('generates the template from every enabled profile field, including administrator-added fields', () => {
     const template = importInternals.buildImportTemplate([
       ...standardFields,

@@ -5,10 +5,11 @@ import { AppError } from '../src/errors.js';
 import { csvCell } from '../src/csvSafety.js';
 import { inspectImportSource, maxImportBytes, maxImportRows } from '../src/importSources.js';
 
-async function workbookBuffer(sheets: Array<{ name: string; rows: unknown[][] }>): Promise<Buffer> {
+async function workbookBuffer(sheets: Array<{ name: string; rows: unknown[][]; state?: 'visible' | 'hidden' | 'veryHidden' }>): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   for (const source of sheets) {
     const worksheet = workbook.addWorksheet(source.name);
+    worksheet.state = source.state ?? 'visible';
     source.rows.forEach((row) => worksheet.addRow(row));
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());
@@ -34,6 +35,13 @@ describe('canonical CSV and XLSX import source', () => {
     assert.equal(source.parsed?.rows[0]?.[1], 'Café drive');
   });
 
+  it('rejects malformed CSV quoting with a clear parser error', async () => {
+    await assert.rejects(
+      () => inspectImportSource('malformed.csv', Buffer.from('Serial #,Product Name\r\nSER-1,"Unclosed value\r\n')),
+      (error: unknown) => error instanceof AppError && error.code === 'CSV_INVALID',
+    );
+  });
+
   it('prompts for one of several visible worksheets before staging rows', async () => {
     const xlsx = await workbookBuffer([
       { name: 'Building A', rows: [['Serial #', 'Product Name'], ['A-1', 'SSD']] },
@@ -47,6 +55,16 @@ describe('canonical CSV and XLSX import source', () => {
     assert.equal(selected.parsed?.rows[0]?.[0], 'B-1');
   });
 
+  it('does not offer hidden worksheets as import sources', async () => {
+    const xlsx = await workbookBuffer([
+      { name: 'Visible Inventory', rows: [['Serial #', 'Product Name'], ['A-1', 'SSD']] },
+      { name: 'Hidden Calculations', state: 'hidden', rows: [['Serial #', 'Product Name'], ['H-1', 'Hidden GPU']] },
+    ]);
+    const source = await inspectImportSource('regional.xlsx', xlsx);
+    assert.deepEqual(source.availableSheets, [{ name: 'Visible Inventory', rowCount: 1 }]);
+    assert.equal(source.parsed?.rows[0]?.[0], 'A-1');
+  });
+
   it('rejects formula cells even when a workbook contains a cached result', async () => {
     const xlsx = await workbookBuffer([{ name: 'Inventory', rows: [
       ['Serial #', 'Quantity'],
@@ -55,6 +73,28 @@ describe('canonical CSV and XLSX import source', () => {
     await assert.rejects(
       () => inspectImportSource('formula.xlsx', xlsx),
       (error: unknown) => error instanceof AppError && error.code === 'XLSX_FORMULA_BLOCKED',
+    );
+  });
+
+  it('rejects merged headers and data beyond the final header column', async () => {
+    const mergedWorkbook = new ExcelJS.Workbook();
+    const mergedSheet = mergedWorkbook.addWorksheet('Inventory');
+    mergedSheet.addRow(['Serial #', 'Product Name']);
+    mergedSheet.mergeCells('A1:B1');
+    mergedSheet.addRow(['SER-1', 'GPU']);
+    const merged = Buffer.from(await mergedWorkbook.xlsx.writeBuffer());
+    await assert.rejects(
+      () => inspectImportSource('merged.xlsx', merged),
+      (error: unknown) => error instanceof AppError && error.code === 'XLSX_MERGED_HEADER',
+    );
+
+    const overwide = await workbookBuffer([{ name: 'Inventory', rows: [
+      ['Serial #', 'Product Name'],
+      ['SER-1', 'GPU', 'Unexpected value'],
+    ] }]);
+    await assert.rejects(
+      () => inspectImportSource('overwide.xlsx', overwide),
+      (error: unknown) => error instanceof AppError && error.code === 'XLSX_ROW_TOO_WIDE',
     );
   });
 
