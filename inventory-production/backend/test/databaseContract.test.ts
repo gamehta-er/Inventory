@@ -11,6 +11,7 @@ const importReliabilityMigration = await readFile(projectFile('database/Migratio
 const databaseContract = await readFile(projectFile('database/Test-DatabaseContract.sql'), 'utf8');
 const dbSource = await readFile(projectFile('backend/src/db.ts'), 'utf8');
 const appSource = await readFile(projectFile('backend/src/app.ts'), 'utf8');
+const importsSource = await readFile(projectFile('backend/src/imports.ts'), 'utf8');
 const versionSource = await readFile(projectFile('backend/src/version.ts'), 'utf8');
 const installer = await readFile(projectFile('installer/Install-InventoryProject.ps1'), 'utf8');
 const packageBuilder = await readFile(projectFile('operations/Build-Production-Package.ps1'), 'utf8');
@@ -95,6 +96,9 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
     }
     assert.match(databaseContract, /has_table_privilege/);
     assert.match(databaseContract, /IMPORT-014/);
+    assert.match(importsSource, /id bigint,normalized_values jsonb/);
+    assert.match(importsSource, /import_row_id bigint,field_key text/);
+    assert.doesNotMatch(importsSource, /id uuid,normalized_values jsonb/);
   });
 
   it('IMPORT-001 persists resumable sessions, source files, mappings, rows, issues, and idempotent results', () => {

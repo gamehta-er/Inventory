@@ -867,7 +867,7 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
             target_asset_id=staged.target_asset_id,target_asset_revision=staged.target_asset_revision,
             before_values=staged.before_values,after_values=staged.after_values,updated_at=now()
        FROM jsonb_to_recordset($2::jsonb) AS staged(
-         id uuid,normalized_values jsonb,status text,operation text,target_asset_id bigint,
+         id bigint,normalized_values jsonb,status text,operation text,target_asset_id bigint,
          target_asset_revision integer,before_values jsonb,after_values jsonb
        )
       WHERE target.batch_id=$1 AND target.id=staged.id`,
@@ -878,7 +878,7 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
       `INSERT INTO import_validation_issues(import_row_id,field_key,severity,issue_code,message,source_value,suggested_values)
        SELECT issue.import_row_id,issue.field_key,issue.severity,issue.issue_code,issue.message,issue.source_value,issue.suggested_values
          FROM jsonb_to_recordset($1::jsonb) AS issue(
-           import_row_id uuid,field_key text,severity text,issue_code text,message text,source_value text,suggested_values jsonb
+           import_row_id bigint,field_key text,severity text,issue_code text,message text,source_value text,suggested_values jsonb
          )`,
       [JSON.stringify(issueInserts)],
     );
