@@ -170,11 +170,11 @@ async function loadAsset(assetId: number, client: DbClient | typeof pool = pool)
     values: {
       mrs_order:(references.MRS_ORDER ?? []).join(', '), nvbugs:(references.NVBUG ?? []).join(', '), capacity_request:(references.CAPACITY_REQUEST ?? []).join(', '),
       date_received:row.date_received, board_sku:row.board_sku, gpu_sku:row.gpu_sku, model_number:row.model_number,
-      serial_number:row.serial_number,milestone:row.milestone,product_name:row.product_name,location:row.location_id,
-      asset_status:row.status_id,board_architecture:row.board_architecture,gpu_class:row.gpu_class,
+      serial_number:row.serial_number,milestone:row.milestone,product_name:row.product_name,location:row.location_id ? Number(row.location_id) : null,
+      asset_status:Number(row.status_id),board_architecture:row.board_architecture,gpu_class:row.gpu_class,
       gpu_chip:row.gpu_chip,gpu_name_vrl:row.gpu_name_vrl,gpu_name_market:row.gpu_name_market,
       pool_team:row.pool_team,project:row.project,
-      asset_tag:row.asset_tag,owner:row.owner_id,notes:row.notes,vendor:row.vendor_id,...row.dynamic_values,
+      asset_tag:row.asset_tag,owner:Number(row.owner_id),notes:row.notes,vendor:Number(row.vendor_id),...row.dynamic_values,
     },
   };
 }

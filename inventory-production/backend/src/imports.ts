@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { pool, withTransaction, type DbClient } from './db.js';
 import { AppError } from './errors.js';
 import { requirePermission, verifyCsrf } from './auth.js';
-import { canonicalizeFieldValue, loadProfileFields, lookupOptionForValue } from './registry.js';
+import { canonicalizeFieldValue, loadProfileFields, lookupOptionForValue, lookupStoresReferenceId } from './registry.js';
 import { assetInternals } from './assets.js';
 import { normalizeNVBugs } from './references.js';
 import { recordActivity } from './activity.js';
@@ -487,6 +487,12 @@ function importValueType(value: unknown): string {
 
 function fieldComparableValue(field: FieldDefinition, value: unknown): unknown {
   if (field.dataType === 'date') return canonicalDateText(value);
+  if (field.dataType === 'entity' || lookupStoresReferenceId(field)) {
+    const comparable = comparableImportValue(value);
+    if (comparable === null) return null;
+    const referenceId = Number(comparable);
+    return Number.isSafeInteger(referenceId) ? referenceId : comparable;
+  }
   return comparableImportValue(value);
 }
 

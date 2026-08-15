@@ -400,6 +400,24 @@ describe('complete import workflow contract', () => {
     );
   });
 
+  it('treats PostgreSQL bigint reference strings as the same approved IDs', () => {
+    const fields = [
+      field(40, 'asset_status', 'Status', true, [], { dataType: 'lookup', storageTarget: 'assets.status_value_id' }),
+      field(41, 'owner', 'Owner / Assignee', true, [], { dataType: 'entity', storageTarget: 'assets.owner_user_id' }),
+      field(42, 'vendor', 'Vendor', true, [], { dataType: 'entity', storageTarget: 'assets.vendor_id' }),
+      field(43, 'location', 'Location', false, [], { dataType: 'entity', storageTarget: 'assets.location_id' }),
+    ];
+
+    assert.deepEqual(
+      importInternals.committedValueMismatchDetails(
+        fields,
+        { asset_status: 9, owner: 12, vendor: 3, location: 18 },
+        { asset_status: '9', owner: '12', vendor: '3', location: '18' },
+      ),
+      [],
+    );
+  });
+
   it('blocks unknown required owners and vendors while offering approved matches', async () => {
     const client = queryClient((text) => {
       if (/FROM application_users/.test(text)) return { rows: [{ id: 1, label: 'Gaurav Mehta' }] };
