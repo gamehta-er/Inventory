@@ -51,7 +51,7 @@ jobs:
       COOKIE_SECRET: inventory-ci-cookie-secret-at-least-32-characters
       COOKIE_SECURE: "false"
       ALLOWED_ORIGIN: http://127.0.0.1:3021
-      UPLOAD_ROOT: ${{ runner.temp }}/inventory-uploads
+      UPLOAD_ROOT: /tmp/inventory-uploads
       PGPASSWORD: postgres_ci_password
 
     steps:
