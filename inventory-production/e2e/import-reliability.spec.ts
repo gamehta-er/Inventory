@@ -62,6 +62,7 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
     const contexts: BrowserContext[] = [];
     const timings: Record<string, number> = {};
     const serialNumber = `CI-CSV-${process.env.GITHUB_RUN_ID ?? 'LOCAL'}-${process.env.GITHUB_RUN_ATTEMPT ?? '0'}-${testInfo.retry}-${Date.now()}`;
+    const correctedProductName = '1TB SATA SSD - Reviewed Import';
     const goldenCsv = await readFile(resolve(fixtureRoot, 'inventory-golden.csv'), 'utf8');
     const csvContents = Buffer.from(goldenCsv.replace('CI-CSV-000001', serialNumber), 'utf8');
     const csvPath = resolve(evidenceRoot, 'working', `inventory-golden-${testInfo.retry}.csv`);
@@ -94,12 +95,67 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       await firstReviewer.page.getByRole('button', { name: 'Accept this draft' }).click();
       await expect(firstReviewer.page.getByRole('heading', { name: '1 of 2 approvals' })).toBeVisible();
 
+      await importer.page.getByRole('button', { name: 'Review', exact: true }).click();
+      await importer.page.getByRole('button', { name: 'Edit Row' }).click();
+      await importer.page.getByLabel(/Product Name/).fill(correctedProductName);
+      await importer.page.getByRole('button', { name: 'Save Changes And Revalidate' }).click();
+      await expect(importer.page.getByRole('dialog')).toContainText(correctedProductName);
+      await importer.page.getByRole('button', { name: 'Close' }).click();
+      await expect(importer.page.getByRole('heading', { name: '0 of 2 approvals' })).toBeVisible();
+      await importer.page.getByRole('tab', { name: /Ready/ }).click();
+      await expect(importer.page.getByText(correctedProductName, { exact: true })).toBeVisible();
+
+      await importer.page.goto('/reports');
+      await expect(importer.page.getByRole('heading', { name: 'Inventory command center' })).toBeVisible();
+      await importer.page.goto(sessionUrl);
+      await expect(importer.page.getByText(correctedProductName, { exact: true })).toBeVisible();
+      await importer.page.getByRole('button', { name: 'Review', exact: true }).click();
+      await expect(importer.page.getByRole('dialog')).toContainText(correctedProductName);
+      await importer.page.getByRole('button', { name: 'Close' }).click();
+      await importer.page.screenshot({ path: resolve(screenshotRoot, 'csv-correction-retained.png'), fullPage: true });
+
+      const [correctedDraft] = await administratorQuery<{
+        draft_revision: number;
+        draft_hash: string;
+        product_name: string;
+      }>(`
+        SELECT batch.draft_revision,batch.draft_hash,
+               row.normalized_values->>'product_name' AS product_name
+        FROM invmgmt.import_batches batch
+        JOIN invmgmt.import_batch_rows row ON row.batch_id=batch.id
+        WHERE batch.id=$1::uuid
+      `, [batchId]);
+      expect(Number(correctedDraft?.draft_revision)).toBeGreaterThan(1);
+      expect(correctedDraft?.draft_hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(correctedDraft?.product_name).toBe(correctedProductName);
+
+      await firstReviewer.page.goto(sessionUrl);
+      await firstReviewer.page.getByRole('button', { name: 'Accept this draft' }).click();
+      await expect(firstReviewer.page.getByRole('heading', { name: '1 of 2 approvals' })).toBeVisible();
+
       const secondReviewer = await signedInPage(browser, 'Monica Martin');
       contexts.push(secondReviewer.context);
       await secondReviewer.page.goto(sessionUrl);
       await secondReviewer.page.getByRole('button', { name: 'Accept this draft' }).click();
       await expect(secondReviewer.page.getByRole('heading', { name: '2 of 2 approvals' })).toBeVisible();
       await secondReviewer.page.screenshot({ path: resolve(screenshotRoot, 'csv-two-approvals.png'), fullPage: true });
+
+      const [reviewLedger] = await administratorQuery<{
+        current_acceptances: number;
+        recorded_decisions: number;
+      }>(`
+        SELECT count(*) FILTER(
+                 WHERE review.decision='ACCEPT'
+                   AND review.draft_revision=batch.draft_revision
+                   AND review.draft_hash=batch.draft_hash
+               )::int AS current_acceptances,
+               count(*)::int AS recorded_decisions
+        FROM invmgmt.import_batches batch
+        JOIN invmgmt.import_reviews review ON review.batch_id=batch.id
+        WHERE batch.id=$1::uuid
+        GROUP BY batch.id
+      `, [batchId]);
+      expect(reviewLedger).toEqual({ current_acceptances: 2, recorded_decisions: 3 });
 
       await setImportMode('ENABLED', 'CI opens the lock only for the fully approved synthetic draft.');
       await importer.page.reload();
@@ -147,7 +203,7 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       expect(readback).toEqual([{
         serial_number: serialNumber,
         date_received: '2026-08-13',
-        product_name: '1TB SATA SSD',
+        product_name: correctedProductName,
         verification_status: 'PASSED',
         result_count: 1,
       }]);
@@ -156,8 +212,18 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       await importer.page.getByLabel('Search inventory').fill(serialNumber);
       await importer.page.getByRole('button', { name: 'Search inventory' }).click();
       await expect(importer.page.getByRole('heading', { name: '1 asset found' })).toBeVisible();
-      await expect(importer.page.getByText('1TB SATA SSD', { exact: true })).toBeVisible();
-      await importer.page.getByRole('checkbox', { name: 'Select 1TB SATA SSD' }).check();
+      await expect(importer.page.getByText(correctedProductName, { exact: true })).toBeVisible();
+
+      const apiReadback = await importer.page.evaluate(async (serial) => {
+        const response = await fetch(`/api/v1/assets?q=${encodeURIComponent(serial)}&limit=100`);
+        return { ok: response.ok, payload: await response.json() };
+      }, serialNumber) as { ok: boolean; payload: { assets?: Array<{ serialNumber?: string; model?: { productName?: string } }> } };
+      expect(apiReadback.ok).toBe(true);
+      expect(apiReadback.payload.assets).toEqual(expect.arrayContaining([
+        expect.objectContaining({ serialNumber, model: expect.objectContaining({ productName: correctedProductName }) }),
+      ]));
+
+      await importer.page.getByRole('checkbox', { name: `Select ${correctedProductName}` }).check();
       const downloadPromise = importer.page.waitForEvent('download');
       await importer.page.getByRole('button', { name: 'Export CSV' }).click();
       const download = await downloadPromise;
@@ -166,13 +232,22 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       const exportedCsv = await readFile(downloadedPath, 'utf8');
       expect(exportedCsv).toContain(serialNumber);
       expect(exportedCsv).toContain('2026-08-13');
+      expect(exportedCsv).toContain(correctedProductName);
 
       await writeFile(resolve(evidenceRoot, 'csv-browser-journey.json'), `${JSON.stringify({
         source: { format: 'CSV', sha256: fileSha256, rows: 1 },
         batchReference: createHash('sha256').update(batchId).digest('hex'),
         approvals: 2,
         timings,
-        reconciliation: { database: 'PASSED', apiAndSearch: 'PASSED', export: 'PASSED' },
+        correctionRetention: {
+          field: 'product_name',
+          correctedValueSha256: createHash('sha256').update(correctedProductName).digest('hex'),
+          revalidation: 'PASSED',
+          filter: 'PASSED',
+          navigation: 'PASSED',
+          priorApprovalInvalidation: 'PASSED',
+        },
+        reconciliation: { database: 'PASSED', api: 'PASSED', search: 'PASSED', export: 'PASSED' },
       }, null, 2)}\n`);
     } finally {
       await setImportMode('DISABLED', 'CI journey finished; import commits returned to the safe default.');
