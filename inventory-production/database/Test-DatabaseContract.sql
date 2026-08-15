@@ -137,21 +137,28 @@ BEGIN
         RAISE EXCEPTION 'IMPORT-014: global Import runtime control is missing';
     END IF;
 
-    IF (SELECT count(*) FROM invmgmt.field_definitions WHERE active) <> 19 THEN
-        RAISE EXCEPTION 'DATA-009: active field definition count is not 19';
+    IF (SELECT count(*) FROM invmgmt.field_definitions WHERE active) <> 23
+       OR (SELECT count(*) FROM invmgmt.field_definitions
+           WHERE active AND field_key=ANY(ARRAY['gpu_class','gpu_chip','gpu_name_vrl','gpu_name_market'])) <> 4 THEN
+        RAISE EXCEPTION 'DATA-009: active field definition contract is not 19 standard plus 4 GPU fields';
     END IF;
 
     IF EXISTS (
         SELECT 1
         FROM invmgmt.asset_profiles p
+        JOIN invmgmt.categories c ON c.id=p.category_id
         LEFT JOIN invmgmt.profile_fields pf ON pf.profile_id = p.id AND pf.active
+        LEFT JOIN invmgmt.field_definitions fd ON fd.id=pf.field_definition_id AND fd.active
         WHERE p.active
-        GROUP BY p.id
-        HAVING count(pf.id) <> 19
-            OR count(pf.id) FILTER (WHERE pf.required) <> 8
-            OR count(pf.id) FILTER (WHERE NOT pf.required) <> 11
+        GROUP BY p.id,c.category_key
+        HAVING count(fd.id) <> CASE WHEN c.category_key='GPU' THEN 23 ELSE 19 END
+            OR count(fd.id) FILTER (WHERE pf.required) <> 8
+            OR count(fd.id) FILTER (WHERE NOT pf.required) <> CASE WHEN c.category_key='GPU' THEN 15 ELSE 11 END
+            OR count(fd.id) FILTER (
+                WHERE fd.field_key=ANY(ARRAY['gpu_class','gpu_chip','gpu_name_vrl','gpu_name_market'])
+            ) <> CASE WHEN c.category_key='GPU' THEN 4 ELSE 0 END
     ) THEN
-        RAISE EXCEPTION 'DATA-009: an active profile does not have the approved 19/8/11 field contract';
+        RAISE EXCEPTION 'DATA-009: an active profile does not have the approved 19-field standard and GPU extension contract';
     END IF;
 
     SELECT array_agg(lv.value_key ORDER BY lv.value_key)

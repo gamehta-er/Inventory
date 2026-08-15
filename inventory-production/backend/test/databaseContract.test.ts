@@ -60,6 +60,15 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
     assert.doesNotMatch(databaseContract, /has_schema_privilege\('PUBLIC'/);
   });
 
+  it('DATA-009 verifies the 19-field standard and four optional GPU extensions', () => {
+    assert.match(databaseContract, /active field definition contract is not 19 standard plus 4 GPU fields/);
+    assert.match(databaseContract, /c\.category_key='GPU' THEN 23 ELSE 19/);
+    assert.match(databaseContract, /c\.category_key='GPU' THEN 15 ELSE 11/);
+    for (const fieldKey of ['gpu_class', 'gpu_chip', 'gpu_name_vrl', 'gpu_name_market']) {
+      assert.match(databaseContract, new RegExp(`'${fieldKey}'`));
+    }
+  });
+
   it('ARCH-005 pins API queries to invmgmt without runtime schema creation', () => {
     assert.match(dbSource, /search_path=invmgmt,public/);
     assert.match(dbSource, /to_regclass\('invmgmt\.assets'\)/);
