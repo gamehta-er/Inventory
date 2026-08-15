@@ -16,7 +16,7 @@
       "requirementId": "GOV-006",
       "status": "PASSED",
       "evidence": [
-        "Required inventory-production GitHub run 17 passed at commit e702401eb2040e6c4803157e9a006dddde706755.",
+        "Required inventory-production GitHub run 22 passed at commit 61fcecbc424ca36f59a74c84d9b36173f5873b9d with 108 backend, 47 frontend, 4 PostgreSQL 18, and 3 Chromium tests; artifact 9242957657 has digest sha256:7819d67ee60f6c4062fc74e751dc96bac26fa2d8f63d6120055f69b5b4610fe1.",
         "operations/Build-Delta-Package.ps1 and operations/Test-Delta-Package.ps1 require a versioned, hash-verified component delta and immutable migration IDs."
       ]
     },
