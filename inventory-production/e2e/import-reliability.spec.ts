@@ -52,6 +52,36 @@ function sessionIdFrom(page: Page): string {
   return sessionId;
 }
 
+interface CommitContract {
+  draftRevision: number;
+  draftHash: string;
+  idempotencyKey: string;
+}
+
+async function commitThroughApi(page: Page, batchId: string, contract: CommitContract): Promise<{
+  ok: boolean;
+  status: number;
+  code: string | undefined;
+  idempotent: boolean | undefined;
+}> {
+  return page.evaluate(async ({ id, body }) => {
+    const cookieValue = document.cookie.split('; ')
+      .find((value) => value.startsWith('inventory_csrf='))
+      ?.slice('inventory_csrf='.length) ?? '';
+    const response = await fetch(`/api/v1/imports/${id}/commit`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'content-type': 'application/json',
+        'x-csrf-token': decodeURIComponent(cookieValue),
+      },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json() as { code?: string; idempotent?: boolean };
+    return { ok: response.ok, status: response.status, code: payload.code, idempotent: payload.idempotent };
+  }, { id: batchId, body: contract });
+}
+
 test.beforeAll(async () => {
   await mkdir(screenshotRoot, { recursive: true });
 });
@@ -119,9 +149,10 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       const [correctedDraft] = await administratorQuery<{
         draft_revision: number;
         draft_hash: string;
+        idempotency_key: string;
         product_name: string;
       }>(`
-        SELECT batch.draft_revision,batch.draft_hash,
+        SELECT batch.draft_revision,batch.draft_hash,batch.idempotency_key::text,
                row.normalized_values->>'product_name' AS product_name
         FROM invmgmt.import_batches batch
         JOIN invmgmt.import_batch_rows row ON row.batch_id=batch.id
@@ -129,7 +160,13 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       `, [batchId]);
       expect(Number(correctedDraft?.draft_revision)).toBeGreaterThan(1);
       expect(correctedDraft?.draft_hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(correctedDraft?.idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
       expect(correctedDraft?.product_name).toBe(correctedProductName);
+      const commitContract: CommitContract = {
+        draftRevision: Number(correctedDraft!.draft_revision),
+        draftHash: correctedDraft!.draft_hash,
+        idempotencyKey: correctedDraft!.idempotency_key,
+      };
 
       await firstReviewer.page.goto(sessionUrl);
       await firstReviewer.page.getByRole('button', { name: 'Accept this draft' }).click();
@@ -159,12 +196,20 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       `, [batchId]);
       expect(reviewLedger).toEqual({ current_acceptances: 2, recorded_decisions: 3 });
 
+      const blockedApiCommit = await commitThroughApi(importer.page, batchId, commitContract);
+      expect(blockedApiCommit).toEqual(expect.objectContaining({
+        ok: false,
+        status: 423,
+        code: 'IMPORT_COMMITS_DISABLED',
+      }));
+
       await setImportMode('ENABLED', 'CI opens the lock only for the fully approved synthetic draft.');
       await importer.page.reload();
       await expect(importer.page.getByText('Imports enabled', { exact: true })).toBeVisible();
       const commitButton = importer.page.getByRole('button', { name: /Commit 1 New Assets/i });
       await expect(commitButton).toBeEnabled();
       const commitStarted = Date.now();
+      const concurrentCommit = commitThroughApi(importer.page, batchId, commitContract);
       await commitButton.click();
       try {
         await expect(importer.page.getByRole('heading', { name: 'Import completed' })).toBeVisible();
@@ -184,6 +229,15 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       }
       timings.commitMs = Date.now() - commitStarted;
       expect(timings.commitMs).toBeLessThan(120_000);
+      expect(await concurrentCommit).toEqual(expect.objectContaining({ ok: true, status: 200 }));
+      const replayedCommits = await Promise.all([
+        commitThroughApi(importer.page, batchId, commitContract),
+        commitThroughApi(importer.page, batchId, commitContract),
+      ]);
+      expect(replayedCommits).toEqual([
+        expect.objectContaining({ ok: true, status: 200, idempotent: true }),
+        expect.objectContaining({ ok: true, status: 200, idempotent: true }),
+      ]);
       await importer.page.screenshot({ path: resolve(screenshotRoot, 'csv-commit-complete.png'), fullPage: true });
 
       const readback = await administratorQuery<{
@@ -249,6 +303,7 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
           navigation: 'PASSED',
           priorApprovalInvalidation: 'PASSED',
         },
+        governance: { disabledApiCommit: 'PASSED', concurrentIdempotentRetries: 'PASSED' },
         reconciliation: { database: 'PASSED', api: 'PASSED', search: 'PASSED', export: 'PASSED' },
       }, null, 2)}\n`);
     } finally {

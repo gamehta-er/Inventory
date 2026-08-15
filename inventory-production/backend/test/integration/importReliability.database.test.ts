@@ -12,10 +12,12 @@ if (integrationDatabaseUrl) {
 }
 
 let database: typeof import('../../src/db.js');
+let assets: typeof import('../../src/assets.js');
 
 describe('governed import PostgreSQL 18 boundary', { skip: integrationDatabaseUrl ? false : 'INTEGRATION_DATABASE_URL is not configured' }, () => {
   before(async () => {
     database = await import('../../src/db.js');
+    assets = await import('../../src/assets.js');
     assert.equal(await database.ready(), true, 'The migrated runtime contract must be ready before integration tests run.');
   });
 
@@ -187,8 +189,46 @@ describe('governed import PostgreSQL 18 boundary', { skip: integrationDatabaseUr
   });
 
   it('rolls back forced mid-batch failures without retaining partial evidence', async () => {
+    const [references] = (await database.pool.query<{
+      profile_id: string;
+      status_id: string;
+      owner_id: string;
+      vendor_id: string;
+    }>(`
+      SELECT
+        (SELECT profile.id::text FROM asset_profiles profile
+          JOIN categories category ON category.id=profile.category_id
+         WHERE category.category_key='GPU' AND profile.active ORDER BY profile.id LIMIT 1) AS profile_id,
+        (SELECT value.id::text FROM lookup_values value
+          JOIN lookup_lists list ON list.id=value.lookup_list_id
+         WHERE list.lookup_key='ASSET_STATUS' AND value.value_key='AVAILABLE' AND value.active LIMIT 1) AS status_id,
+        (SELECT id::text FROM application_users WHERE display_name='Gaurav Mehta' AND active LIMIT 1) AS owner_id,
+        (SELECT id::text FROM vendors WHERE vendor_name='NVIDIA Lab Supply' AND active LIMIT 1) AS vendor_id
+    `)).rows;
+    assert.ok(references?.profile_id && references.status_id && references.owner_id && references.vendor_id);
+    const serialNumber = `CI-FORCED-ROLLBACK-${Date.now()}`;
+    const modelNumber = `CI-ROLLBACK-MODEL-${Date.now()}`;
+
     await assert.rejects(
       database.withTransaction(async (client) => {
+        const created = await assets.assetInternals.createAsset(client, Number(references.profile_id), {
+          nvbugs: '999991',
+          date_received: '2026-08-13',
+          model_number: modelNumber,
+          serial_number: serialNumber,
+          product_name: 'Forced Rollback GPU',
+          asset_status: Number(references.status_id),
+          owner: Number(references.owner_id),
+          vendor: Number(references.vendor_id),
+          notes: 'Synthetic transaction rollback evidence.',
+        }, {
+          id: Number(references.owner_id),
+          displayName: 'Gaurav Mehta',
+          initials: 'GM',
+          roles: ['privileged_administrator'],
+          permissions: ['asset.create'],
+        }, 'Synthetic mid-batch rollback test.', 'inventory-import');
+        assert.equal(created.serialNumber, serialNumber);
         await client.query(`
           INSERT INTO import_stage_events(stage,event_key,metadata)
           VALUES('COMMIT','CI_FORCED_ROLLBACK','{"synthetic":true}'::jsonb)
@@ -197,9 +237,17 @@ describe('governed import PostgreSQL 18 boundary', { skip: integrationDatabaseUr
       }),
       /Synthetic mid-batch failure/,
     );
-    const retained = await database.pool.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM import_stage_events WHERE event_key='CI_FORCED_ROLLBACK'",
+    const retained = await database.pool.query<{
+      assets: number;
+      models: number;
+      stage_events: number;
+    }>(
+      `SELECT
+         (SELECT count(*)::int FROM assets WHERE serial_number=$1) AS assets,
+         (SELECT count(*)::int FROM asset_models WHERE model_number=$2) AS models,
+         (SELECT count(*)::int FROM import_stage_events WHERE event_key='CI_FORCED_ROLLBACK') AS stage_events`,
+      [serialNumber, modelNumber],
     );
-    assert.equal(retained.rows[0]?.count, '0');
+    assert.deepEqual(retained.rows[0], { assets: 0, models: 0, stage_events: 0 });
   });
 });
