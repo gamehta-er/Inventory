@@ -4,6 +4,7 @@ import { pool, withTransaction } from './db.js';
 import { AppError } from './errors.js';
 import { requirePermission, verifyCsrf } from './auth.js';
 import { recordActivity } from './activity.js';
+import { parseAssetId } from './identifiers.js';
 import type { AuthenticatedRequest } from './types.js';
 
 const labelFields = [
@@ -54,7 +55,7 @@ async function loadLabels(ids: number[]) {
 
 export async function registerLabelRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/assets/:id/label', { preHandler: requirePermission('label.print') }, async (request) => {
-    const id = Number((request.params as { id: string }).id);
+    const id = parseAssetId((request.params as { id: string }).id);
     const labels = await loadLabels(assetIds([id]));
     return { label: labels[0] };
   });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  api,
   normalizeActivityResponse,
   normalizeAssetListResponse,
   normalizeCommandCenterResponse,
@@ -8,6 +9,12 @@ import {
   normalizeReportResponse,
   normalizeVersionResponse,
 } from './api';
+
+describe('asset request boundary', () => {
+  it('rejects an invalid asset identifier before making a request', async () => {
+    await expect(api.asset(Number.NaN)).rejects.toThrow('Choose a valid asset.');
+  });
+});
 
 describe('normalizeAssetListResponse', () => {
   it('supplies a complete summary when an older or incomplete API response omits it', () => {

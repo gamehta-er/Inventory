@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api';
 import type { FieldDefinition, ImportIssue, ImportSession } from '../types';
-import { changedImportValues, editableRowValues, ImportIssueCard, ImportPage } from './ImportPage';
+import { changedImportValues, editableRowValues, formatImportCount, ImportIssueCard, ImportPage } from './ImportPage';
 
 const mockedState = vi.hoisted(() => ({
   session: {
@@ -150,6 +150,13 @@ function importSession(overrides: Partial<ImportSession> = {}): ImportSession {
     ...overrides,
   };
 }
+
+describe('formatImportCount', () => {
+  it('uses the requested regional number format for large batches', () => {
+    expect(formatImportCount(1000, 'en-US')).toBe('1,000');
+    expect(formatImportCount(1000, 'de-DE')).toBe('1.000');
+  });
+});
 
 describe('ImportIssueCard', () => {
   it('shows approved values and corrects the staged row without a new upload', () => {

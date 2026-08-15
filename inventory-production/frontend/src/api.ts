@@ -44,6 +44,11 @@ function count(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function assetPath(id: number, suffix = ''): string {
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error('Choose a valid asset.');
+  return `/assets/${id}${suffix}`;
+}
+
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -592,11 +597,11 @@ export const api = {
   profile: async (id: number) => normalizeProfile(await request<unknown>(`/profiles/${id}`)),
   lookups: async () => normalizeLookups(await request<unknown>('/lookups')),
   assets: async (values: Record<string, unknown>) => normalizeAssetListResponse(await request<unknown>(`/assets${query(values)}`)),
-  asset: async (id: number) => normalizeAssetDetailResponse(await request<unknown>(`/assets/${id}`)),
+  asset: async (id: number) => normalizeAssetDetailResponse(await request<unknown>(assetPath(id))),
   createAsset: async (body: unknown) => normalizeAssetDetailResponse(await request<unknown>('/assets', { method: 'POST', body: JSON.stringify(body) })),
-  updateAsset: async (id: number, body: unknown) => normalizeAssetDetailResponse(await request<unknown>(`/assets/${id}`, { method: 'PATCH', body: JSON.stringify(body) })),
-  operateAsset: async (id: number, body: unknown) => normalizeAssetDetailResponse(await request<unknown>(`/assets/${id}/operations`, { method: 'POST', body: JSON.stringify(body) })),
-  assetActivity: async (id: number) => normalizeActivityResponse(await request<unknown>(`/assets/${id}/activity`)),
+  updateAsset: async (id: number, body: unknown) => normalizeAssetDetailResponse(await request<unknown>(assetPath(id), { method: 'PATCH', body: JSON.stringify(body) })),
+  operateAsset: async (id: number, body: unknown) => normalizeAssetDetailResponse(await request<unknown>(assetPath(id, '/operations'), { method: 'POST', body: JSON.stringify(body) })),
+  assetActivity: async (id: number) => normalizeActivityResponse(await request<unknown>(assetPath(id, '/activity'))),
   activity: async (values: Record<string, unknown>) => normalizeActivityResponse(await request<unknown>(`/activity${query(values)}`)),
   labelPreview: async (assetIds: number[]) => list(object(await request<unknown>('/labels/preview', { method: 'POST', body: JSON.stringify({ assetIds }) })).labels).map(normalizeLabelData),
   labels: async (assetIds: number[], fields?: LabelFieldKey[]) => list(object(await request<unknown>('/labels/print', { method: 'POST', body: JSON.stringify({ assetIds, fields }) })).labels).map(normalizeLabelData),

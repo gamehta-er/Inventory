@@ -12,6 +12,7 @@ import { appendRegistryFilters } from './filtering.js';
 import { normalizeNVBugs, referenceInsertionOrder, splitReferences } from './references.js';
 import type { AuthenticatedRequest, FieldDefinition, SessionUser } from './types.js';
 import { csvCell } from './csvSafety.js';
+import { parseAssetId, parseRelationshipId } from './identifiers.js';
 import {
   appendLifecycleFilter,
   assertOperationStatus,
@@ -125,6 +126,7 @@ async function saveDynamicValues(client: DbClient, assetId: number, fields: Fiel
 }
 
 async function loadAsset(assetId: number, client: DbClient | typeof pool = pool) {
+  assetId = parseAssetId(assetId);
   const result = await client.query(
     `SELECT a.id,a.profile_id,a.revision,a.archived_at,a.created_at,a.updated_at,
        c.id category_id,c.category_key,c.category_name,
@@ -476,7 +478,7 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(csv);
   });
 
-  app.get('/api/v1/assets/:id', { preHandler: requirePermission('asset.view') }, async (request) => ({ asset: await loadAsset(Number((request.params as {id:string}).id)) }));
+  app.get('/api/v1/assets/:id', { preHandler: requirePermission('asset.view') }, async (request) => ({ asset: await loadAsset(parseAssetId((request.params as {id:string}).id)) }));
 
   app.post('/api/v1/assets', { preHandler: requirePermission('asset.create') }, async (request) => {
     await verifyCsrf(request);
@@ -493,7 +495,7 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/api/v1/assets/:id', { preHandler: requirePermission('asset.update') }, async (request) => {
     await verifyCsrf(request);
-    const id = Number((request.params as {id:string}).id);
+    const id = parseAssetId((request.params as {id:string}).id);
     const user = (request as AuthenticatedRequest).inventoryUser;
     const body = request.body as { revision:number; values:Values; reason?:string };
     if (!Number.isInteger(body.revision)) throw new AppError(400,'REVISION_REQUIRED','Asset revision is required.');
@@ -503,7 +505,7 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/v1/assets/:id/operations', { preHandler: requirePermission('asset.operate') }, async (request) => {
     await verifyCsrf(request);
-    const id=Number((request.params as {id:string}).id); const user=(request as AuthenticatedRequest).inventoryUser;
+    const id=parseAssetId((request.params as {id:string}).id); const user=(request as AuthenticatedRequest).inventoryUser;
     const body=request.body as { operation:string;revision:number;reason?:string;statusId?:number;ownerId?:number;locationId?:number|null;referenceValue?:string };
     if(!body.reason?.trim()) throw new AppError(422,'REASON_REQUIRED','Reason is required.');
     const allowed=Object.keys(lifecycleOperations) as AssetOperation[];
@@ -542,15 +544,17 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/api/v1/assets/:id/relationships', { preHandler: requirePermission('asset.relationship') }, async(request)=>{
-    await verifyCsrf(request); const parentId=Number((request.params as {id:string}).id); const user=(request as AuthenticatedRequest).inventoryUser;
+    await verifyCsrf(request); const parentId=parseAssetId((request.params as {id:string}).id); const user=(request as AuthenticatedRequest).inventoryUser;
     const body=request.body as {childAssetId:number;relationshipType:string;notes?:string;reason?:string};
     if(!body.reason?.trim()) throw new AppError(422,'REASON_REQUIRED','Reason is required.');
-    return withTransaction(async(client)=>{const row=await client.query<{id:string}>('INSERT INTO asset_relationships(parent_asset_id,child_asset_id,relationship_type,notes,created_by_user_id) VALUES($1,$2,$3,$4,$5) RETURNING id',[parentId,body.childAssetId,body.relationshipType,body.notes??null,user.id]);await recordActivity(client,{user,actionKey:'RELATIONSHIP_CREATED',source:'asset-relationship',reason:body.reason!,recordType:'asset',recordId:parentId,recordLabel:`Asset ${parentId}`,routePath:`/assets/${parentId}`,metadata:{relationshipId:row.rows[0]!.id,childAssetId:body.childAssetId,type:body.relationshipType}});return{relationshipId:Number(row.rows[0]!.id)};});
+    const childAssetId=parseAssetId(body.childAssetId);
+    return withTransaction(async(client)=>{const row=await client.query<{id:string}>('INSERT INTO asset_relationships(parent_asset_id,child_asset_id,relationship_type,notes,created_by_user_id) VALUES($1,$2,$3,$4,$5) RETURNING id',[parentId,childAssetId,body.relationshipType,body.notes??null,user.id]);await recordActivity(client,{user,actionKey:'RELATIONSHIP_CREATED',source:'asset-relationship',reason:body.reason!,recordType:'asset',recordId:parentId,recordLabel:`Asset ${parentId}`,routePath:`/assets/${parentId}`,metadata:{relationshipId:row.rows[0]!.id,childAssetId,type:body.relationshipType}});return{relationshipId:Number(row.rows[0]!.id)};});
   });
 
   app.delete('/api/v1/assets/:id/relationships/:relationshipId', { preHandler: requirePermission('asset.relationship') }, async(request)=>{
     await verifyCsrf(request); const params=request.params as {id:string;relationshipId:string}; const user=(request as AuthenticatedRequest).inventoryUser;
-    return withTransaction(async(client)=>{const deleted=await client.query('DELETE FROM asset_relationships WHERE id=$1 AND parent_asset_id=$2 RETURNING id,child_asset_id,relationship_type',[params.relationshipId,params.id]);if(!deleted.rows[0])throw new AppError(404,'RELATIONSHIP_NOT_FOUND','Relationship not found.');await recordActivity(client,{user,actionKey:'RELATIONSHIP_REMOVED',source:'asset-relationship',reason:'Relationship removed.',recordType:'asset',recordId:params.id,recordLabel:`Asset ${params.id}`,routePath:`/assets/${params.id}`,metadata:deleted.rows[0]});return{removed:true};});
+    const assetId=parseAssetId(params.id); const relationshipId=parseRelationshipId(params.relationshipId);
+    return withTransaction(async(client)=>{const deleted=await client.query('DELETE FROM asset_relationships WHERE id=$1 AND parent_asset_id=$2 RETURNING id,child_asset_id,relationship_type',[relationshipId,assetId]);if(!deleted.rows[0])throw new AppError(404,'RELATIONSHIP_NOT_FOUND','Relationship not found.');await recordActivity(client,{user,actionKey:'RELATIONSHIP_REMOVED',source:'asset-relationship',reason:'Relationship removed.',recordType:'asset',recordId:assetId,recordLabel:`Asset ${assetId}`,routePath:`/assets/${assetId}`,metadata:deleted.rows[0]});return{removed:true};});
   });
 
   app.post('/api/v1/models/:id/image', { preHandler: requirePermission('model.image') }, async(request)=>{

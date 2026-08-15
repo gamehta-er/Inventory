@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { pool } from './db.js';
 import { requirePermission } from './auth.js';
+import { parseAssetId } from './identifiers.js';
 
 export async function registerActivityRoutes(app: FastifyInstance): Promise<void> {
   const handler=async(request: import('fastify').FastifyRequest,assetId?:number)=>{
@@ -33,5 +34,5 @@ export async function registerActivityRoutes(app: FastifyInstance): Promise<void
     return {events:result.rows,page,limit,total:count.rows[0].total};
   };
   app.get('/api/v1/activity',{preHandler:requirePermission('activity.view')},async(request)=>handler(request));
-  app.get('/api/v1/assets/:id/activity',{preHandler:requirePermission('asset.history')},async(request)=>handler(request,Number((request.params as {id:string}).id)));
+  app.get('/api/v1/assets/:id/activity',{preHandler:requirePermission('asset.history')},async(request)=>handler(request,parseAssetId((request.params as {id:string}).id)));
 }
