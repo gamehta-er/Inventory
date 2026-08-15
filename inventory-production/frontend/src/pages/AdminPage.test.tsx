@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api';
 import { HealthPanel, LocationManager } from './AdminPage';
@@ -24,12 +24,13 @@ describe('Admin maintenance control', () => {
     const view = render(<HealthPanel health={{ counts: {}, incompleteProfiles: [], fieldUsage: [], maintenance: { enabled: false } }} onChanged={onChanged}/>);
 
     fireEvent.click(view.getByRole('button', { name: 'Enable maintenance' }));
-    expect(view.getByRole('dialog', { name: 'Enable maintenance mode' })).toBeTruthy();
-    fireEvent.click(view.getAllByRole('button', { name: 'Enable maintenance' }).at(-1)!);
+    const dialog = view.getByRole('dialog', { name: 'Enable maintenance mode' });
+    expect(dialog).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enable maintenance' }));
     expect(api.setMaintenance).not.toHaveBeenCalled();
 
-    fireEvent.change(view.getByPlaceholderText('Why this configuration is changing'), { target: { value: 'Planned database maintenance' } });
-    fireEvent.click(view.getAllByRole('button', { name: 'Enable maintenance' }).at(-1)!);
+    fireEvent.change(within(dialog).getByPlaceholderText('Why this configuration is changing'), { target: { value: 'Planned database maintenance' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Enable maintenance' }));
 
     await waitFor(() => expect(api.setMaintenance).toHaveBeenCalledWith(true, 'Planned database maintenance'));
     expect(onChanged).toHaveBeenCalledOnce();

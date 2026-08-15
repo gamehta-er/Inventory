@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { parse } from 'csv-parse/sync';
 import type { FastifyInstance } from 'fastify';
 import { pool, withTransaction, type DbClient } from './db.js';
 import { AppError } from './errors.js';
@@ -11,10 +10,27 @@ import { recordActivity } from './activity.js';
 import type { AuthenticatedRequest, FieldDefinition, SessionUser } from './types.js';
 import { matchLookupOption } from './lookupMatching.js';
 import { normalizeImportHeader } from './importSourceValues.js';
+import { canonicalDateText } from './databaseValues.js';
+import { csvCell } from './csvSafety.js';
+import {
+  buildImportWorkbook,
+  importSourceSchemaVersion,
+  inspectCsvSource,
+  inspectImportSource,
+  type ImportSourceOptions,
+  type ParsedImportSource,
+} from './importSources.js';
+import {
+  disableImportsAfterVerificationFailure,
+  loadImportControl,
+  recordImportStage,
+  requireImportCommitAllowed,
+  type ImportMismatchField,
+} from './importGovernance.js';
 
 type Values = Record<string, unknown>;
 type ImportMode = 'CREATE' | 'UPDATE';
-type SessionStatus = 'DRAFT' | 'MAPPING' | 'VALIDATING' | 'NEEDS_ATTENTION' | 'READY' | 'COMMITTING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'NEEDS_REVALIDATION';
+type SessionStatus = 'DRAFT' | 'SOURCE_SELECTION' | 'MAPPING' | 'VALIDATING' | 'NEEDS_ATTENTION' | 'AWAITING_APPROVAL' | 'DECLINED' | 'APPROVED' | 'READY' | 'COMMITTING' | 'COMPLETED' | 'FAILED' | 'VERIFICATION_FAILED' | 'CANCELLED' | 'NEEDS_REVALIDATION';
 type IssueSeverity = 'WARNING' | 'ERROR' | 'CONFIGURATION';
 type ImportRowStatus = 'VALID' | 'WARNING' | 'BLOCKED' | 'CONFIGURATION_ERROR';
 
@@ -64,11 +80,6 @@ interface MappingInput {
   ignored?: boolean;
 }
 
-interface ParsedCsv {
-  headers: string[];
-  rows: string[][];
-}
-
 interface PreparedImportRow {
   id: string;
   rowNumber: number;
@@ -102,11 +113,6 @@ function normalizedValue(value: unknown): string {
   return cleanText(value).toLocaleLowerCase().replace(/\s+/g, ' ');
 }
 
-function csvCell(value: unknown): string {
-  const text = value === null || value === undefined ? '' : String(value);
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
-
 function buildImportTemplate(fields: FieldDefinition[]): string {
   return `\uFEFF${fields.map((field) => csvCell(field.label)).join(',')}\r\n`;
 }
@@ -119,27 +125,10 @@ function serializeImportIssueSuggestions(values: string[] | undefined): string {
   return JSON.stringify(values ?? []);
 }
 
-function parseCsv(contents: Buffer): ParsedCsv {
-  let records: string[][];
-  try {
-    records = parse(contents, {
-      bom: true,
-      columns: false,
-      relax_column_count: false,
-      skip_empty_lines: true,
-      trim: false,
-    }) as string[][];
-  } catch (error) {
-    throw new AppError(422, 'CSV_INVALID', 'The CSV could not be read. Confirm the file uses the generated template and valid quoted CSV values.', {
-      parserMessage: error instanceof Error ? error.message : 'CSV parsing failed.',
-    });
-  }
-  if (!records.length) throw new AppError(422, 'CSV_EMPTY', 'The CSV contains no header or inventory rows.');
-  const headers = records[0]!.map((value) => String(value).replace(/^\uFEFF/, '').trim());
-  if (!headers.length || headers.every((header) => !header)) throw new AppError(422, 'CSV_HEADER_EMPTY', 'The CSV header row is empty.');
-  const rows = records.slice(1).filter((row) => row.some((value) => cleanText(value) !== ''));
-  if (!rows.length) throw new AppError(422, 'CSV_EMPTY', 'The CSV contains no inventory rows.');
-  return { headers, rows };
+function parseCsv(contents: Buffer): Pick<ParsedImportSource, 'headers' | 'rows'> {
+  const inspection = inspectCsvSource(contents);
+  if (!inspection.parsed) throw new AppError(422, 'CSV_SOURCE_OPTIONS_REQUIRED', 'Choose the CSV delimiter before continuing.');
+  return { headers: inspection.parsed.headers, rows: inspection.parsed.rows };
 }
 
 function fieldTokens(field: FieldDefinition): Set<string> {
@@ -489,12 +478,30 @@ async function reconcileModelValues(client: DbClient, categoryId: number, fields
   }
 }
 
-function committedValueMismatches(fields: FieldDefinition[], expected: Values, actual: Values): string[] {
-  return fields.flatMap((field) => (
-    JSON.stringify(comparableImportValue(expected[field.fieldKey])) === JSON.stringify(comparableImportValue(actual[field.fieldKey]))
+function importValueType(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (value instanceof Date) return 'date';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function fieldComparableValue(field: FieldDefinition, value: unknown): unknown {
+  if (field.dataType === 'date') return canonicalDateText(value);
+  return comparableImportValue(value);
+}
+
+function committedValueMismatchDetails(fields: FieldDefinition[], expected: Values, actual: Values): ImportMismatchField[] {
+  return fields.flatMap((field) => {
+    const expectedValue = expected[field.fieldKey];
+    const actualValue = actual[field.fieldKey];
+    return JSON.stringify(fieldComparableValue(field, expectedValue)) === JSON.stringify(fieldComparableValue(field, actualValue))
       ? []
-      : [field.fieldKey]
-  ));
+      : [{ fieldKey: field.fieldKey, expectedType: importValueType(expectedValue), actualType: importValueType(actualValue) }];
+  });
+}
+
+function committedValueMismatches(fields: FieldDefinition[], expected: Values, actual: Values): string[] {
+  return committedValueMismatchDetails(fields, expected, actual).map((mismatch) => mismatch.fieldKey);
 }
 
 async function loadSessionContext(client: DbClient, batchId: string, lock = false) {
@@ -515,9 +522,15 @@ async function loadSessionContext(client: DbClient, batchId: string, lock = fals
 
 function requireSessionAccess(user: SessionUser, batch: { created_by_user_id: number | string }): void {
   const ownsSession = Number(batch.created_by_user_id) === Number(user.id);
-  const canManageAllSessions = user.permissions.includes('admin.profile');
+  const canManageAllSessions = user.permissions.includes('import.review') || user.permissions.includes('admin.profile');
   if (!ownsSession && !canManageAllSessions) {
     throw new AppError(403, 'FORBIDDEN', 'You cannot access another user\'s import session.');
+  }
+}
+
+function requireSessionOwner(user: SessionUser, batch: { created_by_user_id: number | string }): void {
+  if (Number(batch.created_by_user_id) !== Number(user.id)) {
+    throw new AppError(403, 'IMPORT_OWNER_REQUIRED', 'Only the person who started this import can change or commit it.');
   }
 }
 
@@ -532,16 +545,91 @@ async function loadMappings(client: DbClient, batchId: string): Promise<MappingI
   return result.rows.map((row) => ({ sourceIndex: Number(row.source_index), fieldKey: row.field_key ?? undefined, ignored: row.ignored }));
 }
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+async function calculateDraftHash(client: DbClient, batchId: string): Promise<string> {
+  const batch = await loadSessionContext(client, batchId);
+  const mappings = await loadMappings(client, batchId);
+  const rows = await client.query(
+    `SELECT row_number,included,operation,target_asset_id,target_asset_revision,normalized_values
+       FROM import_batch_rows WHERE batch_id=$1 ORDER BY row_number`,
+    [batchId],
+  );
+  const contract = {
+    fileSha256: batch.file_sha256,
+    sourceFormat: batch.source_format,
+    sourceSheetName: batch.source_sheet_name,
+    sourceEncoding: batch.source_encoding,
+    sourceDelimiter: batch.source_delimiter,
+    sourceSchemaVersion: batch.source_schema_version,
+    mode: batch.mode,
+    profileVersion: Number(batch.profile_version),
+    contractFingerprint: batch.contract_fingerprint,
+    draftRevision: Number(batch.draft_revision),
+    mappings: mappings.map((mapping) => ({ sourceIndex: mapping.sourceIndex, fieldKey: mapping.fieldKey ?? null, ignored: Boolean(mapping.ignored) })),
+    rows: rows.rows.map((row) => ({
+      rowNumber: Number(row.row_number),
+      included: Boolean(row.included),
+      operation: row.operation,
+      targetAssetId: row.target_asset_id === null ? null : Number(row.target_asset_id),
+      targetAssetRevision: row.target_asset_revision === null ? null : Number(row.target_asset_revision),
+      normalizedValues: row.normalized_values,
+    })),
+  };
+  return createHash('sha256').update(stableJson(contract)).digest('hex');
+}
+
+async function invalidateDraft(client: DbClient, batchId: string, status: SessionStatus = 'NEEDS_REVALIDATION'): Promise<number> {
+  const result = await client.query<{ draft_revision: number }>(
+    `UPDATE import_batches
+     SET status=$2,draft_revision=draft_revision+1,draft_hash=NULL,
+         verification_status='NOT_RUN',verification_details='{}'::jsonb,
+         validated_at=NULL,failure_message=NULL,updated_at=now()
+     WHERE id=$1
+     RETURNING draft_revision`,
+    [batchId, status],
+  );
+  return Number(result.rows[0]?.draft_revision ?? 0);
+}
+
+async function stageParsedSource(client: DbClient, batchId: string, parsed: ParsedImportSource, fields: FieldDefinition[]): Promise<MappingInput[]> {
+  await client.query('DELETE FROM import_batch_rows WHERE batch_id=$1', [batchId]);
+  await client.query('DELETE FROM import_column_mappings WHERE batch_id=$1', [batchId]);
+  for (let index = 0; index < parsed.rows.length; index++) {
+    const source = Object.fromEntries(parsed.headers.map((_header, sourceIndex) => [String(sourceIndex), parsed.rows[index]![sourceIndex] ?? '']));
+    await client.query(
+      `INSERT INTO import_batch_rows(batch_id,row_number,source_values,normalized_values,status)
+       VALUES($1,$2,$3,'{}'::jsonb,'PENDING')`,
+      [batchId, parsed.rowNumbers[index] ?? index + 2, source],
+    );
+  }
+  const automaticMappings = autoMappings(parsed.headers, fields);
+  for (const mapping of automaticMappings) {
+    const field = fields.find((item) => item.fieldKey === mapping.fieldKey)!;
+    await client.query(
+      `INSERT INTO import_column_mappings(batch_id,source_header,source_index,field_definition_id,ignored)
+       VALUES($1,$2,$3,$4,false)`,
+      [batchId, parsed.headers[mapping.sourceIndex], mapping.sourceIndex, field.id],
+    );
+  }
+  return automaticMappings;
+}
+
 async function markStaleIfNeeded(client: DbClient, batchId: string): Promise<boolean> {
   const batch = await loadSessionContext(client, batchId, true);
   if (['COMPLETED', 'CANCELLED'].includes(batch.status)) return false;
   const fields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
   const fingerprint = await currentContractFingerprint(client, Number(batch.current_profile_version), fields);
   if (batch.contract_fingerprint !== fingerprint) {
-    await client.query(
-      `UPDATE import_batches SET status='NEEDS_REVALIDATION',failure_message=NULL,updated_at=now() WHERE id=$1`,
-      [batchId],
-    );
+    await invalidateDraft(client, batchId);
     await client.query(
       `DELETE FROM import_validation_issues WHERE import_row_id IN (SELECT id FROM import_batch_rows WHERE batch_id=$1)`,
       [batchId],
@@ -553,9 +641,11 @@ async function markStaleIfNeeded(client: DbClient, batchId: string): Promise<boo
 }
 
 async function validateSession(client: DbClient, batchId: string): Promise<void> {
+  const startedAt = Date.now();
   const batch = await loadSessionContext(client, batchId, true);
   if (['COMPLETED', 'CANCELLED'].includes(batch.status)) throw new AppError(409, 'IMPORT_SESSION_CLOSED', 'This import session is closed.');
-  if (!batch.original_csv) throw new AppError(422, 'IMPORT_FILE_REQUIRED', 'Upload a CSV before validation.');
+  if (!batch.original_file) throw new AppError(422, 'IMPORT_FILE_REQUIRED', 'Upload a CSV or XLSX file before validation.');
+  if (batch.status === 'SOURCE_SELECTION') throw new AppError(422, 'IMPORT_SOURCE_OPTIONS_REQUIRED', 'Choose the worksheet or CSV delimiter before validation.');
 
   const fields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
   if (!fields.length) throw new AppError(422, 'IMPORT_PROFILE_EMPTY', 'The selected profile has no enabled import fields.');
@@ -565,9 +655,18 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
   const fingerprint = await currentContractFingerprint(client, Number(batch.current_profile_version), fields);
   if (mappingIssues.some((issue) => issue.severity === 'ERROR')) {
     await client.query(
-      `UPDATE import_batches SET status='MAPPING',profile_version=$2,contract_fingerprint=$3,validated_at=NULL,updated_at=now() WHERE id=$1`,
+      `UPDATE import_batches SET status='MAPPING',profile_version=$2,contract_fingerprint=$3,draft_hash=NULL,validated_at=NULL,updated_at=now() WHERE id=$1`,
       [batchId, batch.current_profile_version, fingerprint],
     );
+    await recordImportStage(client, {
+      batchId,
+      stage: 'VALIDATION',
+      eventKey: 'MAPPING_REQUIRED',
+      draftRevision: Number(batch.draft_revision),
+      durationMs: Date.now() - startedAt,
+      rowCount: Number(batch.total_rows),
+      metadata: { mappingErrorCount: mappingIssues.filter((issue) => issue.severity === 'ERROR').length },
+    });
     return;
   }
 
@@ -731,11 +830,26 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
     }
   }
 
-  const status: SessionStatus = counts.invalid > 0 ? 'NEEDS_ATTENTION' : 'READY';
+  const status: SessionStatus = counts.invalid > 0 ? 'NEEDS_ATTENTION' : 'AWAITING_APPROVAL';
   await client.query(
-    `UPDATE import_batches SET status=$2,profile_version=$3,contract_fingerprint=$4,total_rows=$5,valid_rows=$6,warning_rows=$7,invalid_rows=$8,validated_at=now(),updated_at=now(),failure_message=NULL WHERE id=$1`,
+    `UPDATE import_batches
+     SET status=$2,profile_version=$3,contract_fingerprint=$4,total_rows=$5,valid_rows=$6,warning_rows=$7,invalid_rows=$8,
+         draft_hash=NULL,verification_status='NOT_RUN',verification_details='{}'::jsonb,
+         validated_at=now(),updated_at=now(),failure_message=NULL
+     WHERE id=$1`,
     [batchId, status, batch.current_profile_version, fingerprint, rows.rowCount, counts.valid, counts.warning, counts.invalid],
   );
+  const draftHash = counts.invalid > 0 ? null : await calculateDraftHash(client, batchId);
+  if (draftHash) await client.query('UPDATE import_batches SET draft_hash=$2,updated_at=now() WHERE id=$1', [batchId, draftHash]);
+  await recordImportStage(client, {
+    batchId,
+    stage: 'VALIDATION',
+    eventKey: counts.invalid > 0 ? 'VALIDATION_BLOCKED' : 'DRAFT_READY_FOR_REVIEW',
+    draftRevision: Number(batch.draft_revision),
+    durationMs: Date.now() - startedAt,
+    rowCount: rows.rowCount,
+    metadata: { validRows: counts.valid, warningRows: counts.warning, invalidRows: counts.invalid },
+  });
 }
 
 async function sessionDetail(client: DbClient, batchId: string) {
@@ -763,11 +877,33 @@ async function sessionDetail(client: DbClient, batchId: string) {
       WHERE cr.batch_id=$1 ORDER BY cr.id`,
     [batchId],
   );
+  const reviews = await client.query(
+    `SELECT review.id,review.draft_revision,review.draft_hash,review.decision,review.reason,review.created_at,
+            review.reviewer_user_id,user_account.display_name reviewer_name
+       FROM import_reviews review
+       JOIN application_users user_account ON user_account.id=review.reviewer_user_id
+      WHERE review.batch_id=$1 AND review.draft_revision=$2 AND review.draft_hash=$3
+      ORDER BY review.created_at`,
+    [batchId, batch.draft_revision, batch.draft_hash],
+  );
+  const stageEvents = await client.query(
+    `SELECT stage,event_key,draft_revision,row_number,duration_ms,row_count,mismatch_fields,metadata,created_at
+       FROM import_stage_events WHERE batch_id=$1 ORDER BY created_at,id`,
+    [batchId],
+  );
+  const importControl = await loadImportControl(client);
   const fieldsByKey = new Map(fields.map((field) => [field.fieldKey, field]));
   const entities = await entityOptions(client);
   const sessionFields = fields.map((field) => field.dataType === 'entity'
     ? { ...field, options: entities[field.fieldKey] ?? [] }
     : field);
+  const acceptedReviews = reviews.rows.filter((review) => review.decision === 'ACCEPT').length;
+  const declinedReviews = reviews.rows.filter((review) => review.decision === 'DECLINE').length;
+  const includedRows = rows.rows.filter((row) => row.included);
+  const changedFieldCount = includedRows.reduce((count, row) => {
+    if (row.operation !== 'UPDATE' || !row.before_values || !row.after_values) return count;
+    return count + fields.filter((field) => stableJson(row.before_values[field.fieldKey]) !== stableJson(row.after_values[field.fieldKey])).length;
+  }, 0);
   return {
     id: batch.id,
     profileId: Number(batch.profile_id),
@@ -778,12 +914,27 @@ async function sessionDetail(client: DbClient, batchId: string) {
     categoryKey: batch.category_key,
     mode: batch.mode,
     fileName: batch.file_name,
+    fileSha256: batch.file_sha256,
+    fileSizeBytes: batch.file_size_bytes === null ? null : Number(batch.file_size_bytes),
+    sourceFormat: batch.source_format,
+    sourceSheetName: batch.source_sheet_name,
+    sourceEncoding: batch.source_encoding,
+    sourceDelimiter: batch.source_delimiter,
+    sourceSchemaVersion: batch.source_schema_version,
+    sourceOptions: batch.source_options ?? {},
+    availableSheets: Array.isArray(batch.available_sheets) ? batch.available_sheets : [],
+    draftRevision: Number(batch.draft_revision),
+    draftHash: batch.draft_hash,
+    idempotencyKey: batch.idempotency_key,
+    verificationStatus: batch.verification_status,
+    verificationDetails: batch.verification_details ?? {},
     status: batch.status,
     totalRows: Number(batch.total_rows),
     validRows: Number(batch.valid_rows),
     warningRows: Number(batch.warning_rows),
     invalidRows: Number(batch.invalid_rows),
     createdBy: batch.created_by,
+    createdByUserId: Number(batch.created_by_user_id),
     createdAt: batch.created_at,
     updatedAt: batch.updated_at,
     validatedAt: batch.validated_at,
@@ -821,6 +972,27 @@ async function sessionDetail(client: DbClient, batchId: string) {
       }),
     })),
     results: results.rows,
+    reviews: reviews.rows.map((review) => ({
+      id: Number(review.id),
+      draftRevision: Number(review.draft_revision),
+      draftHash: review.draft_hash,
+      reviewerUserId: Number(review.reviewer_user_id),
+      reviewerName: review.reviewer_name,
+      decision: review.decision,
+      reason: review.reason,
+      createdAt: review.created_at,
+    })),
+    approvalProgress: { accepted: acceptedReviews, declined: declinedReviews, required: 2 },
+    reviewSummary: {
+      includedRows: includedRows.length,
+      excludedRows: rows.rows.length - includedRows.length,
+      createRows: includedRows.filter((row) => row.operation === 'CREATE').length,
+      updateRows: includedRows.filter((row) => row.operation === 'UPDATE').length,
+      warningRows: Number(batch.warning_rows),
+      changedFields: changedFieldCount,
+    },
+    stageEvents: stageEvents.rows,
+    importControl,
   };
 }
 
@@ -835,17 +1007,17 @@ async function saveMappings(client: DbClient, batchId: string, mappings: Mapping
   if (['COMPLETED', 'CANCELLED'].includes(batch.status)) throw new AppError(409, 'IMPORT_SESSION_CLOSED', 'This import session is closed.');
   const headers = Array.isArray(batch.original_headers) ? batch.original_headers.map(String) : [];
   const fields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
-  if (mappings.length !== headers.length) throw new AppError(422, 'MAPPING_INCOMPLETE', 'Choose a field or Ignore for every CSV column.');
+  if (mappings.length !== headers.length) throw new AppError(422, 'MAPPING_INCOMPLETE', 'Choose a field or Ignore for every source column.');
   const sourceIndexes = mappings.map((mapping) => mapping.sourceIndex);
   if (sourceIndexes.some((sourceIndex) => !Number.isInteger(sourceIndex) || sourceIndex < 0 || sourceIndex >= headers.length)) {
     throw new AppError(422, 'MAPPING_SOURCE_INVALID', 'One or more column mappings refer to a source column that does not exist.');
   }
   if (new Set(sourceIndexes).size !== sourceIndexes.length) {
-    throw new AppError(422, 'MAPPING_SOURCE_DUPLICATE', 'Each CSV column must have exactly one mapping decision.');
+    throw new AppError(422, 'MAPPING_SOURCE_DUPLICATE', 'Each source column must have exactly one mapping decision.');
   }
   for (const mapping of mappings) {
     if (Boolean(mapping.ignored) === Boolean(mapping.fieldKey)) {
-      throw new AppError(422, 'MAPPING_DECISION_INVALID', 'Each CSV column must be mapped to one field or explicitly ignored.');
+      throw new AppError(422, 'MAPPING_DECISION_INVALID', 'Each source column must be mapped to one field or explicitly ignored.');
     }
   }
   const assessment = mappingAssessment(headers, fields, mappings);
@@ -861,7 +1033,8 @@ async function saveMappings(client: DbClient, batchId: string, mappings: Mapping
       [batchId, headers[mapping.sourceIndex], mapping.sourceIndex, field?.id ?? null, Boolean(mapping.ignored)],
     );
   }
-  await client.query(`UPDATE import_batches SET status='NEEDS_REVALIDATION',mapping_revision=mapping_revision+1,updated_at=now() WHERE id=$1`, [batchId]);
+  await client.query('UPDATE import_batches SET mapping_revision=mapping_revision+1 WHERE id=$1', [batchId]);
+  await invalidateDraft(client, batchId);
 }
 
 function requireModePermission(user: SessionUser, mode: ImportMode): void {
@@ -870,6 +1043,8 @@ function requireModePermission(user: SessionUser, mode: ImportMode): void {
 }
 
 export async function registerImportRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/v1/imports/control', { preHandler: requirePermission('import.execute') }, async () => ({ importControl: await loadImportControl() }));
+
   app.get('/api/v1/imports', { preHandler: requirePermission('import.execute') }, async (request) => {
     const user = (request as AuthenticatedRequest).inventoryUser;
     const result = await pool.query(
@@ -879,7 +1054,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
          JOIN categories c ON c.id=ap.category_id JOIN application_users u ON u.id=b.created_by_user_id
         WHERE b.created_by_user_id=$1 OR $2::boolean
         ORDER BY b.updated_at DESC LIMIT 100`,
-      [user.id, user.permissions.includes('admin.profile')],
+      [user.id, user.permissions.includes('import.review') || user.permissions.includes('admin.profile')],
     );
     return { sessions: result.rows };
   });
@@ -898,6 +1073,17 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
   };
   app.get('/api/v1/profiles/:id/import-template.csv', { preHandler: requirePermission('import.execute') }, templateHandler);
   app.get('/api/v1/imports/template', { preHandler: requirePermission('import.execute') }, templateHandler);
+  app.get('/api/v1/profiles/:id/import-template.xlsx', { preHandler: requirePermission('import.execute') }, async (request, reply) => {
+    const profileId = Number((request.params as { id: string }).id);
+    const fields = (await loadProfileFields(profileId)).filter((field) => field.surfaces.import);
+    if (!fields.length) throw new AppError(404, 'PROFILE_NOT_FOUND', 'Import profile not found or it has no enabled import fields.');
+    const profile = await pool.query('SELECT profile_key,version FROM asset_profiles WHERE id=$1 AND active', [profileId]);
+    if (!profile.rows[0]) throw new AppError(404, 'PROFILE_NOT_FOUND', 'Import profile not found.');
+    const workbook = await buildImportWorkbook(fields);
+    reply.header('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    reply.header('content-disposition', `attachment; filename="${profile.rows[0].profile_key.toLowerCase()}-v${profile.rows[0].version}-import.xlsx"`);
+    return reply.send(workbook);
+  });
 
   app.post('/api/v1/imports', { preHandler: requirePermission('import.execute') }, async (request) => {
     await verifyCsrf(request);
@@ -921,7 +1107,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
          VALUES($1,$2,$3,$4,'DRAFT',$5) RETURNING id`,
         [profile.rows[0].import_profile_id, mode, profile.rows[0].version, await currentContractFingerprint(client, Number(profile.rows[0].version), fields), user.id],
       );
-      await recordActivity(client, { user, actionKey: 'IMPORT_SESSION_CREATED', source: 'csv-import', reason: `${mode === 'CREATE' ? 'Create Assets' : 'Update Existing'} import session started.`, recordType: 'import', recordId: created.rows[0]!.id, recordLabel: 'New import session', routePath: `/import?session=${created.rows[0]!.id}`, parentImportBatchId: created.rows[0]!.id, metadata: { profileId, mode } });
+      await recordActivity(client, { user, actionKey: 'IMPORT_SESSION_CREATED', source: 'inventory-import', reason: `${mode === 'CREATE' ? 'Create Assets' : 'Update Existing'} import session started.`, recordType: 'import', recordId: created.rows[0]!.id, recordLabel: 'New import session', routePath: `/import?session=${created.rows[0]!.id}`, parentImportBatchId: created.rows[0]!.id, metadata: { profileId, mode } });
       return { session: await sessionDetail(client, created.rows[0]!.id) };
     });
   });
@@ -938,49 +1124,159 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
         contents = await part.toBuffer();
       }
     }
-    if (!contents || !/\.csv$/i.test(fileName)) throw new AppError(415, 'CSV_REQUIRED', 'Choose a CSV file.');
-    const parsed = parseCsv(contents);
+    if (!contents || !/\.(csv|xlsx)$/i.test(fileName)) throw new AppError(415, 'IMPORT_FILE_REQUIRED', 'Choose a CSV or XLSX inventory file.');
+    const analysisStartedAt = Date.now();
+    const inspection = await inspectImportSource(fileName, contents);
+    const analysisDuration = Date.now() - analysisStartedAt;
     return withTransaction(async (client) => {
       const batch = await loadSessionContext(client, batchId, true);
-      requireSessionAccess(user, batch);
+      requireSessionOwner(user, batch);
       if (['COMPLETED', 'CANCELLED'].includes(batch.status)) throw new AppError(409, 'IMPORT_SESSION_CLOSED', 'This import session is closed.');
       const fields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
       await client.query('DELETE FROM import_batch_rows WHERE batch_id=$1', [batchId]);
       await client.query('DELETE FROM import_column_mappings WHERE batch_id=$1', [batchId]);
-      for (let index = 0; index < parsed.rows.length; index++) {
-        const source = Object.fromEntries(parsed.headers.map((_header, sourceIndex) => [String(sourceIndex), parsed.rows[index]![sourceIndex] ?? '']));
-        await client.query(
-          `INSERT INTO import_batch_rows(batch_id,row_number,source_values,normalized_values,status) VALUES($1,$2,$3,'{}'::jsonb,'PENDING')`,
-          [batchId, index + 2, source],
-        );
-      }
-      const automaticMappings = autoMappings(parsed.headers, fields);
-      for (const mapping of automaticMappings) {
-        const field = fields.find((item) => item.fieldKey === mapping.fieldKey)!;
-        await client.query(
-          `INSERT INTO import_column_mappings(batch_id,source_header,source_index,field_definition_id,ignored) VALUES($1,$2,$3,$4,false)`,
-          [batchId, parsed.headers[mapping.sourceIndex], mapping.sourceIndex, field.id],
-        );
-      }
+      const nextStatus: SessionStatus = inspection.selectionRequired ? 'SOURCE_SELECTION' : 'MAPPING';
+      const draftRevision = await invalidateDraft(client, batchId, nextStatus);
+      const automaticMappings = inspection.parsed ? await stageParsedSource(client, batchId, inspection.parsed, fields) : [];
+      const sourceOptions = {
+        sheetName: inspection.sheetName,
+        encoding: inspection.encoding,
+        delimiter: inspection.delimiter,
+        delimiterCandidates: inspection.delimiterCandidates,
+      };
       await client.query(
-        `UPDATE import_batches SET file_name=$2,file_sha256=$3,original_csv=$4,original_headers=$5::jsonb,status='MAPPING',total_rows=$6,valid_rows=0,warning_rows=0,invalid_rows=0,validated_at=NULL,updated_at=now(),failure_message=NULL WHERE id=$1`,
-        [batchId, fileName, createHash('sha256').update(contents).digest('hex'), contents, serializeImportHeaders(parsed.headers), parsed.rows.length],
+        `UPDATE import_batches
+         SET file_name=$2,file_sha256=$3,original_file=$4,original_csv=$5,source_format=$6,
+             source_sheet_name=$7,source_encoding=$8,source_delimiter=$9,file_size_bytes=$10,
+             source_schema_version=$11,source_options=$12::jsonb,available_sheets=$13::jsonb,
+             original_headers=$14::jsonb,status=$15,total_rows=$16,valid_rows=0,warning_rows=0,invalid_rows=0,
+             validated_at=NULL,updated_at=now(),failure_message=NULL
+         WHERE id=$1`,
+        [
+          batchId,
+          fileName,
+          createHash('sha256').update(contents).digest('hex'),
+          contents,
+          inspection.format === 'CSV' ? contents : null,
+          inspection.format,
+          inspection.sheetName,
+          inspection.encoding,
+          inspection.delimiter,
+          contents.length,
+          importSourceSchemaVersion,
+          JSON.stringify(sourceOptions),
+          JSON.stringify(inspection.availableSheets),
+          serializeImportHeaders(inspection.parsed?.headers ?? []),
+          nextStatus,
+          inspection.parsed?.rows.length ?? 0,
+        ],
       );
-      const mappingWasAutomatic = canAutoValidateMappings(parsed.headers, fields, automaticMappings);
+      const mappingWasAutomatic = Boolean(inspection.parsed && canAutoValidateMappings(inspection.parsed.headers, fields, automaticMappings));
       if (mappingWasAutomatic) await validateSession(client, batchId);
+      await recordImportStage(client, {
+        batchId,
+        stage: 'ANALYSIS',
+        eventKey: inspection.selectionRequired ? 'SOURCE_SELECTION_REQUIRED' : 'SOURCE_PARSED',
+        draftRevision,
+        durationMs: analysisDuration,
+        rowCount: inspection.parsed?.rows.length ?? 0,
+        metadata: {
+          format: inspection.format,
+          columns: inspection.parsed?.headers.length ?? 0,
+          sheetCount: inspection.availableSheets.length,
+          mappingWasAutomatic,
+        },
+      });
       await recordActivity(client, {
         user,
         actionKey: 'IMPORT_FILE_UPLOADED',
-        source: 'csv-import',
-        reason: mappingWasAutomatic
-          ? 'CSV uploaded, confidently mapped, and validated automatically.'
-          : 'CSV uploaded. One or more column decisions require review.',
+        source: 'inventory-import',
+        reason: inspection.selectionRequired
+          ? `${inspection.format} uploaded. Choose the source options to continue.`
+          : mappingWasAutomatic
+            ? `${inspection.format} uploaded, confidently mapped, and validated automatically.`
+            : `${inspection.format} uploaded. One or more column decisions require review.`,
         recordType: 'import',
         recordId: batchId,
         recordLabel: fileName,
         routePath: `/import?session=${batchId}`,
         parentImportBatchId: batchId,
-        metadata: { rows: parsed.rows.length, columns: parsed.headers.length, mappingWasAutomatic },
+        metadata: { format: inspection.format, rows: inspection.parsed?.rows.length ?? 0, columns: inspection.parsed?.headers.length ?? 0, mappingWasAutomatic, draftRevision },
+      });
+      return { session: await sessionDetail(client, batchId) };
+    });
+  });
+
+  app.post('/api/v1/imports/:id/source-options', { preHandler: requirePermission('import.execute') }, async (request) => {
+    await verifyCsrf(request);
+    const user = (request as AuthenticatedRequest).inventoryUser;
+    const batchId = (request.params as { id: string }).id;
+    const body = request.body as { sheetName?: unknown; delimiter?: unknown; encoding?: unknown };
+    const options: ImportSourceOptions = {};
+    if (body.sheetName !== undefined) options.sheetName = cleanText(body.sheetName);
+    if (body.delimiter !== undefined) {
+      const delimiter = String(body.delimiter);
+      if (![',', ';', '\t'].includes(delimiter)) throw new AppError(422, 'CSV_DELIMITER_INVALID', 'Choose comma, semicolon, or tab as the delimiter.');
+      options.delimiter = delimiter as NonNullable<ImportSourceOptions['delimiter']>;
+    }
+    if (body.encoding !== undefined) {
+      const encoding = String(body.encoding);
+      if (!['utf-8', 'windows-1252'].includes(encoding)) throw new AppError(422, 'CSV_ENCODING_INVALID', 'Choose UTF-8 or Windows-1252 encoding.');
+      options.encoding = encoding as NonNullable<ImportSourceOptions['encoding']>;
+    }
+    return withTransaction(async (client) => {
+      const batch = await loadSessionContext(client, batchId, true);
+      requireSessionOwner(user, batch);
+      if (!batch.original_file || !batch.file_name) throw new AppError(422, 'IMPORT_FILE_REQUIRED', 'Upload a CSV or XLSX file first.');
+      if (['COMPLETED', 'CANCELLED'].includes(batch.status)) throw new AppError(409, 'IMPORT_SESSION_CLOSED', 'This import session is closed.');
+      const startedAt = Date.now();
+      const inspection = await inspectImportSource(String(batch.file_name), batch.original_file as Buffer, options);
+      const fields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
+      await client.query('DELETE FROM import_batch_rows WHERE batch_id=$1', [batchId]);
+      await client.query('DELETE FROM import_column_mappings WHERE batch_id=$1', [batchId]);
+      const nextStatus: SessionStatus = inspection.selectionRequired ? 'SOURCE_SELECTION' : 'MAPPING';
+      const draftRevision = await invalidateDraft(client, batchId, nextStatus);
+      const automaticMappings = inspection.parsed ? await stageParsedSource(client, batchId, inspection.parsed, fields) : [];
+      await client.query(
+        `UPDATE import_batches
+         SET source_sheet_name=$2,source_encoding=$3,source_delimiter=$4,source_options=$5::jsonb,
+             available_sheets=$6::jsonb,original_headers=$7::jsonb,status=$8,total_rows=$9,
+             valid_rows=0,warning_rows=0,invalid_rows=0,updated_at=now()
+         WHERE id=$1`,
+        [
+          batchId,
+          inspection.sheetName,
+          inspection.encoding,
+          inspection.delimiter,
+          JSON.stringify({ sheetName: inspection.sheetName, encoding: inspection.encoding, delimiter: inspection.delimiter, delimiterCandidates: inspection.delimiterCandidates }),
+          JSON.stringify(inspection.availableSheets),
+          serializeImportHeaders(inspection.parsed?.headers ?? []),
+          nextStatus,
+          inspection.parsed?.rows.length ?? 0,
+        ],
+      );
+      const mappingWasAutomatic = Boolean(inspection.parsed && canAutoValidateMappings(inspection.parsed.headers, fields, automaticMappings));
+      if (mappingWasAutomatic) await validateSession(client, batchId);
+      await recordImportStage(client, {
+        batchId,
+        stage: 'ANALYSIS',
+        eventKey: inspection.selectionRequired ? 'SOURCE_SELECTION_REQUIRED' : 'SOURCE_OPTIONS_APPLIED',
+        draftRevision,
+        durationMs: Date.now() - startedAt,
+        rowCount: inspection.parsed?.rows.length ?? 0,
+        metadata: { format: inspection.format, mappingWasAutomatic },
+      });
+      await recordActivity(client, {
+        user,
+        actionKey: 'IMPORT_SOURCE_OPTIONS_APPLIED',
+        source: 'inventory-import',
+        reason: 'Import source options were selected and the draft was rebuilt.',
+        recordType: 'import',
+        recordId: batchId,
+        recordLabel: batch.file_name,
+        routePath: `/import?session=${batchId}`,
+        parentImportBatchId: batchId,
+        metadata: { format: inspection.format, draftRevision },
       });
       return { session: await sessionDetail(client, batchId) };
     });
@@ -992,12 +1288,13 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     const batchId = (request.params as { id: string }).id;
     const body = request.body as { mappings?: MappingInput[] };
     if (!Array.isArray(body.mappings)) throw new AppError(422, 'MAPPINGS_REQUIRED', 'Column mappings are required.');
+    const mappings = body.mappings;
     return withTransaction(async (client) => {
-      requireSessionAccess(user, await loadSessionContext(client, batchId, true));
-      await saveMappings(client, batchId, body.mappings!);
+      requireSessionOwner(user, await loadSessionContext(client, batchId, true));
+      await saveMappings(client, batchId, mappings);
       await validateSession(client, batchId);
       const batch = await loadSessionContext(client, batchId);
-      await recordActivity(client, { user, actionKey: 'IMPORT_MAPPING_SAVED', source: 'csv-import', reason: 'CSV column mapping saved and validated.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { mappings: body.mappings } });
+      await recordActivity(client, { user, actionKey: 'IMPORT_MAPPING_SAVED', source: 'inventory-import', reason: 'Source column mapping saved and validated.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { mappedColumns: mappings.length } });
       return { session: await sessionDetail(client, batchId) };
     });
   });
@@ -1007,10 +1304,14 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     const user = (request as AuthenticatedRequest).inventoryUser;
     const batchId = (request.params as { id: string }).id;
     return withTransaction(async (client) => {
-      requireSessionAccess(user, await loadSessionContext(client, batchId, true));
+      const current = await loadSessionContext(client, batchId, true);
+      requireSessionOwner(user, current);
+      if (['AWAITING_APPROVAL', 'APPROVED', 'DECLINED'].includes(current.status)) {
+        throw new AppError(409, 'IMPORT_REOPEN_REQUIRED', 'Reopen this reviewed draft before revalidating it. Previous decisions must not carry into a new revision.');
+      }
       await validateSession(client, batchId);
       const batch = await loadSessionContext(client, batchId);
-      await recordActivity(client, { user, actionKey: 'IMPORT_VALIDATED', source: 'csv-import', reason: 'Import session fully revalidated.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { status: batch.status } });
+      await recordActivity(client, { user, actionKey: 'IMPORT_VALIDATED', source: 'inventory-import', reason: 'Import session fully revalidated.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { status: batch.status, draftRevision: Number(batch.draft_revision) } });
       return { session: await sessionDetail(client, batchId) };
     });
   });
@@ -1022,7 +1323,8 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
       requireSessionAccess(user, await loadSessionContext(client, batchId, true));
       await markStaleIfNeeded(client, batchId);
       const current = await loadSessionContext(client, batchId);
-      if (current.original_csv && !['COMPLETED', 'CANCELLED', 'DRAFT'].includes(current.status)) await validateSession(client, batchId);
+      const ownsSession = Number(current.created_by_user_id) === Number(user.id);
+      if (ownsSession && current.original_file && ['VALIDATING', 'NEEDS_REVALIDATION'].includes(current.status)) await validateSession(client, batchId);
       return { session: await sessionDetail(client, batchId) };
     });
   });
@@ -1034,7 +1336,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     const body = request.body as { values?: Values; fieldKey?: unknown; value?: unknown; included?: unknown };
     return withTransaction(async (client) => {
       const batch = await loadSessionContext(client, batchId, true);
-      requireSessionAccess(user, batch);
+      requireSessionOwner(user, batch);
       if (['COMPLETED', 'CANCELLED'].includes(batch.status)) throw new AppError(409, 'IMPORT_SESSION_CLOSED', 'This import session is closed.');
       const row = await client.query<{ corrected_values: Values; row_number: number; included: boolean }>('SELECT corrected_values,row_number,included FROM import_batch_rows WHERE id=$1 AND batch_id=$2 FOR UPDATE', [rowId, batchId]);
       if (!row.rows[0]) throw new AppError(404, 'IMPORT_ROW_NOT_FOUND', 'Staged row not found.');
@@ -1046,8 +1348,9 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
       const corrected = { ...row.rows[0].corrected_values, ...patchValues };
       const included = body.included === undefined ? row.rows[0].included : Boolean(body.included);
       await client.query('UPDATE import_batch_rows SET corrected_values=$2,included=$3,status=$4,updated_at=now() WHERE id=$1', [rowId, corrected, included, included ? 'PENDING' : 'EXCLUDED']);
+      await invalidateDraft(client, batchId);
       await validateSession(client, batchId);
-      await recordActivity(client, { user, actionKey: included ? 'IMPORT_ROW_CORRECTED' : 'IMPORT_ROW_EXCLUDED', source: 'csv-import', reason: included ? 'Staged row corrected during review.' : 'Staged row excluded from commit.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}&row=${rowId}`, parentImportBatchId: batchId, metadata: { rowId, rowNumber: row.rows[0].row_number, fields: Object.keys(patchValues), included } });
+      await recordActivity(client, { user, actionKey: included ? 'IMPORT_ROW_CORRECTED' : 'IMPORT_ROW_EXCLUDED', source: 'inventory-import', reason: included ? 'Staged row corrected during review.' : 'Staged row excluded from commit.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}&row=${rowId}`, parentImportBatchId: batchId, metadata: { rowId, rowNumber: row.rows[0].row_number, fields: Object.keys(patchValues), included } });
       return { session: await sessionDetail(client, batchId) };
     });
   });
@@ -1062,7 +1365,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     if (!fieldKey) throw new AppError(422, 'IMPORT_FIELD_REQUIRED', 'Choose the field to correct.');
     return withTransaction(async (client) => {
       const batch = await loadSessionContext(client, batchId, true);
-      requireSessionAccess(user, batch);
+      requireSessionOwner(user, batch);
       const fields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
       if (!fields.some((field) => field.fieldKey === fieldKey)) throw new AppError(422, 'IMPORT_FIELD_INVALID', 'This field is not enabled for the import profile.');
       const mappings = await loadMappings(client, batchId);
@@ -1078,8 +1381,9 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
         changed++;
       }
       if (!changed) throw new AppError(404, 'IMPORT_MATCHING_ROWS_NOT_FOUND', 'No included rows contain that source value.');
+      await invalidateDraft(client, batchId);
       await validateSession(client, batchId);
-      await recordActivity(client, { user, actionKey: 'IMPORT_ROWS_BULK_CORRECTED', source: 'csv-import', reason: 'A repeated staged value was corrected across the import session.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { fieldKey, sourceValue, value: body.value ?? '', changed } });
+      await recordActivity(client, { user, actionKey: 'IMPORT_ROWS_BULK_CORRECTED', source: 'inventory-import', reason: 'A repeated staged value was corrected across the import session.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { fieldKey, changed } });
       return { session: await sessionDetail(client, batchId), changed };
     });
   });
@@ -1096,7 +1400,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     if (reason.length < 3) throw new AppError(422, 'REASON_REQUIRED', 'Explain why this controlled value should be added.');
     return withTransaction(async (client) => {
       const batch = await loadSessionContext(client, batchId, true);
-      requireSessionAccess(user, batch);
+      requireSessionOwner(user, batch);
       const fields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
       const field = fields.find((item) => item.fieldKey === fieldKey);
       if (!field) throw new AppError(422, 'IMPORT_FIELD_INVALID', 'This field is not enabled for the import profile.');
@@ -1111,7 +1415,8 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
         } else {
           await client.query('UPDATE vendors SET active=true WHERE id=$1', [vendorId]);
         }
-        await recordActivity(client, { user, actionKey, source: 'csv-import', reason, recordType: 'vendor', recordId: vendorId, recordLabel: displayValue, routePath: '/admin?tab=vendors', parentImportBatchId: batchId, metadata: { batchId, fieldKey } });
+        await recordActivity(client, { user, actionKey, source: 'inventory-import', reason, recordType: 'vendor', recordId: vendorId, recordLabel: displayValue, routePath: '/admin?tab=vendors', parentImportBatchId: batchId, metadata: { batchId, fieldKey } });
+        await invalidateDraft(client, batchId);
         await validateSession(client, batchId);
         return { session: await sessionDetail(client, batchId) };
       }
@@ -1152,7 +1457,8 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
       } else {
         await client.query('UPDATE lookup_values SET active=true,updated_at=now() WHERE id=$1', [valueId]);
       }
-      await recordActivity(client, { user, actionKey, source: 'csv-import', reason, recordType: 'lookup', recordId: valueId!, recordLabel: displayValue, routePath: `/admin?tab=lookups&lookup=${encodeURIComponent(field.lookupKey)}`, parentImportBatchId: batchId, metadata: { batchId, fieldKey, lookupKey: field.lookupKey } });
+      await recordActivity(client, { user, actionKey, source: 'inventory-import', reason, recordType: 'lookup', recordId: valueId!, recordLabel: displayValue, routePath: `/admin?tab=lookups&lookup=${encodeURIComponent(field.lookupKey)}`, parentImportBatchId: batchId, metadata: { batchId, fieldKey, lookupKey: field.lookupKey } });
+      await invalidateDraft(client, batchId);
       await validateSession(client, batchId);
       return { session: await sessionDetail(client, batchId) };
     });
@@ -1178,23 +1484,145 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     return reply.send(`\uFEFF${csv}`);
   });
 
+  app.post('/api/v1/imports/:id/reviews', { preHandler: requirePermission('import.review') }, async (request) => {
+    await verifyCsrf(request);
+    const user = (request as AuthenticatedRequest).inventoryUser;
+    const batchId = (request.params as { id: string }).id;
+    const body = request.body as { decision?: unknown; reason?: unknown; draftRevision?: unknown; draftHash?: unknown };
+    const decision = String(body.decision ?? '').toUpperCase();
+    const reason = cleanText(body.reason);
+    const draftRevision = Number(body.draftRevision);
+    const draftHash = cleanText(body.draftHash);
+    if (!['ACCEPT', 'DECLINE'].includes(decision)) throw new AppError(422, 'IMPORT_REVIEW_DECISION_REQUIRED', 'Choose Accept or Decline.');
+    if (decision === 'DECLINE' && reason.length < 3) throw new AppError(422, 'IMPORT_REVIEW_REASON_REQUIRED', 'Explain why this import should be declined.');
+    if (!Number.isInteger(draftRevision) || !/^[0-9a-f]{64}$/.test(draftHash)) {
+      throw new AppError(422, 'IMPORT_REVIEW_REVISION_REQUIRED', 'Refresh the import and review its current revision before deciding.');
+    }
+    return withTransaction(async (client) => {
+      const batch = await loadSessionContext(client, batchId, true);
+      requireSessionAccess(user, batch);
+      if (Number(batch.created_by_user_id) === Number(user.id)) throw new AppError(403, 'IMPORT_SELF_REVIEW_BLOCKED', 'The importer cannot approve or decline their own import.');
+      if (!['AWAITING_APPROVAL', 'APPROVED'].includes(batch.status)) {
+        throw new AppError(409, 'IMPORT_NOT_REVIEWABLE', 'This import is not awaiting an administrator decision.');
+      }
+      if (Number(batch.draft_revision) !== draftRevision || batch.draft_hash !== draftHash) {
+        throw new AppError(409, 'IMPORT_DRAFT_CHANGED', 'The import changed after you opened it. Refresh and review the latest revision.');
+      }
+      const existing = await client.query(
+        'SELECT 1 FROM import_reviews WHERE batch_id=$1 AND draft_revision=$2 AND reviewer_user_id=$3',
+        [batchId, draftRevision, user.id],
+      );
+      if (existing.rowCount) throw new AppError(409, 'IMPORT_ALREADY_REVIEWED', 'You already reviewed this draft revision.');
+      await client.query(
+        `INSERT INTO import_reviews(batch_id,draft_revision,draft_hash,reviewer_user_id,decision,reason)
+         VALUES($1,$2,$3,$4,$5,$6)`,
+        [batchId, draftRevision, draftHash, user.id, decision, reason || null],
+      );
+      const counts = await client.query(
+        `SELECT count(*) FILTER(WHERE decision='ACCEPT')::int accepted,
+                count(*) FILTER(WHERE decision='DECLINE')::int declined
+           FROM import_reviews WHERE batch_id=$1 AND draft_revision=$2 AND draft_hash=$3`,
+        [batchId, draftRevision, draftHash],
+      );
+      const accepted = Number(counts.rows[0]?.accepted ?? 0);
+      const declined = Number(counts.rows[0]?.declined ?? 0);
+      const status: SessionStatus = declined > 0 ? 'DECLINED' : accepted >= 2 ? 'APPROVED' : 'AWAITING_APPROVAL';
+      await client.query('UPDATE import_batches SET status=$2,updated_at=now() WHERE id=$1', [batchId, status]);
+      await recordImportStage(client, {
+        batchId,
+        stage: 'REVIEW',
+        eventKey: decision === 'ACCEPT' ? 'DRAFT_ACCEPTED' : 'DRAFT_DECLINED',
+        draftRevision,
+        metadata: { accepted, declined, required: 2 },
+      });
+      await recordActivity(client, {
+        user,
+        actionKey: decision === 'ACCEPT' ? 'IMPORT_REVIEW_ACCEPTED' : 'IMPORT_REVIEW_DECLINED',
+        source: 'inventory-import',
+        reason: reason || 'Reviewed and accepted the current import draft.',
+        recordType: 'import',
+        recordId: batchId,
+        recordLabel: batch.file_name ?? 'Import session',
+        routePath: `/import?session=${batchId}`,
+        parentImportBatchId: batchId,
+        metadata: { draftRevision, decision, accepted, declined },
+      });
+      return { session: await sessionDetail(client, batchId) };
+    });
+  });
+
+  app.post('/api/v1/imports/:id/reopen', { preHandler: requirePermission('import.execute') }, async (request) => {
+    await verifyCsrf(request);
+    const user = (request as AuthenticatedRequest).inventoryUser;
+    const batchId = (request.params as { id: string }).id;
+    return withTransaction(async (client) => {
+      const batch = await loadSessionContext(client, batchId, true);
+      requireSessionOwner(user, batch);
+      if (!['AWAITING_APPROVAL', 'DECLINED', 'APPROVED'].includes(batch.status)) {
+        throw new AppError(409, 'IMPORT_REOPEN_UNAVAILABLE', 'This import does not need to be reopened.');
+      }
+      const draftRevision = await invalidateDraft(client, batchId);
+      await validateSession(client, batchId);
+      await recordActivity(client, {
+        user,
+        actionKey: 'IMPORT_DRAFT_REOPENED',
+        source: 'inventory-import',
+        reason: 'The importer reopened the draft for changes and new administrator reviews.',
+        recordType: 'import',
+        recordId: batchId,
+        recordLabel: batch.file_name ?? 'Import session',
+        routePath: `/import?session=${batchId}`,
+        parentImportBatchId: batchId,
+        metadata: { draftRevision },
+      });
+      return { session: await sessionDetail(client, batchId) };
+    });
+  });
+
   app.post('/api/v1/imports/:id/commit', { preHandler: requirePermission('import.execute') }, async (request) => {
     await verifyCsrf(request);
     const user = (request as AuthenticatedRequest).inventoryUser;
     const batchId = (request.params as { id: string }).id;
+    const body = request.body as { draftRevision?: unknown; draftHash?: unknown; idempotencyKey?: unknown };
+    const requestedRevision = Number(body.draftRevision);
+    const requestedHash = cleanText(body.draftHash);
+    const requestedIdempotencyKey = cleanText(body.idempotencyKey);
+    if (!Number.isInteger(requestedRevision) || !/^[0-9a-f]{64}$/.test(requestedHash) || !requestedIdempotencyKey) {
+      throw new AppError(422, 'IMPORT_COMMIT_CONTRACT_REQUIRED', 'Refresh the approved import before committing it.');
+    }
+    const commitStartedAt = Date.now();
     try {
       return await withTransaction(async (client) => {
-        requireSessionAccess(user, await loadSessionContext(client, batchId, true));
-        await markStaleIfNeeded(client, batchId);
-        let batch = await loadSessionContext(client, batchId, true);
-        requireModePermission(user, batch.mode as ImportMode);
-        if (batch.status === 'COMPLETED') return { session: await sessionDetail(client, batchId), idempotent: true, refresh: importRefreshTargets };
-        if (batch.status === 'NEEDS_REVALIDATION') {
-          await validateSession(client, batchId);
-          batch = await loadSessionContext(client, batchId, true);
+        const lockedBatch = await loadSessionContext(client, batchId, true);
+        requireSessionOwner(user, lockedBatch);
+        if (lockedBatch.idempotency_key !== requestedIdempotencyKey) throw new AppError(409, 'IMPORT_IDEMPOTENCY_KEY_CHANGED', 'The commit key does not match this import session. Refresh before retrying.');
+        if (lockedBatch.status === 'COMPLETED') {
+          return { session: await sessionDetail(client, batchId), idempotent: true, refresh: importRefreshTargets };
         }
-        if (batch.status !== 'READY') throw new AppError(422, 'IMPORT_NOT_READY', 'Resolve all mapping, configuration, and blocking row issues before commit.');
-        await client.query(`UPDATE import_batches SET status='COMMITTING',updated_at=now() WHERE id=$1`, [batchId]);
+        const stale = await markStaleIfNeeded(client, batchId);
+        if (stale) throw new AppError(409, 'IMPORT_CONTRACT_CHANGED', 'The import contract changed. Revalidate the new draft and obtain two new approvals.');
+        const batch = await loadSessionContext(client, batchId, true);
+        requireModePermission(user, batch.mode as ImportMode);
+        if (Number(batch.draft_revision) !== requestedRevision || batch.draft_hash !== requestedHash) {
+          throw new AppError(409, 'IMPORT_DRAFT_CHANGED', 'The import changed after it was approved. Refresh and obtain two new approvals.');
+        }
+        const reviews = await client.query(
+          `SELECT count(*) FILTER(WHERE decision='ACCEPT')::int accepted,
+                  count(*) FILTER(WHERE decision='DECLINE')::int declined,
+                  count(DISTINCT reviewer_user_id) FILTER(WHERE decision='ACCEPT')::int distinct_reviewers
+             FROM import_reviews WHERE batch_id=$1 AND draft_revision=$2 AND draft_hash=$3`,
+          [batchId, requestedRevision, requestedHash],
+        );
+        if (Number(reviews.rows[0]?.accepted ?? 0) < 2
+            || Number(reviews.rows[0]?.distinct_reviewers ?? 0) < 2
+            || Number(reviews.rows[0]?.declined ?? 0) > 0
+            || batch.status !== 'APPROVED') {
+          throw new AppError(409, 'IMPORT_APPROVALS_REQUIRED', 'Two distinct Privileged Administrators must accept this exact draft before the importer can commit it.');
+        }
+        await client.query("SELECT control_key FROM import_runtime_control WHERE control_key='GLOBAL' FOR UPDATE");
+        const importControl = await loadImportControl(client);
+        requireImportCommitAllowed(importControl, user);
+        await client.query(`UPDATE import_batches SET status='COMMITTING',verification_status='PENDING',verification_details='{}'::jsonb,updated_at=now() WHERE id=$1`, [batchId]);
         const rows = await client.query(
           `SELECT id,row_number,normalized_values,operation,target_asset_id,target_asset_revision
              FROM import_batch_rows WHERE batch_id=$1 AND included AND status IN ('VALID','WARNING') ORDER BY row_number FOR UPDATE`,
@@ -1202,21 +1630,25 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
         );
         if (!rows.rowCount) throw new AppError(422, 'IMPORT_NO_INCLUDED_ROWS', 'Include at least one valid row before commit.');
         const commitFields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
-        const parentEventId = await recordActivity(client, { user, actionKey: 'IMPORT_COMMIT_STARTED', source: 'csv-import', reason: `${batch.mode === 'CREATE' ? 'Create Assets' : 'Update Existing'} batch commit.`, recordType: 'import', recordId: batchId, recordLabel: batch.file_name, routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { rows: rows.rowCount, mode: batch.mode, idempotencyKey: batch.idempotency_key } });
+        const parentEventId = await recordActivity(client, { user, actionKey: 'IMPORT_COMMIT_STARTED', source: 'inventory-import', reason: `${batch.mode === 'CREATE' ? 'Create Assets' : 'Update Existing'} batch commit.`, recordType: 'import', recordId: batchId, recordLabel: batch.file_name, routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { rows: rows.rowCount, mode: batch.mode, idempotencyKey: batch.idempotency_key, draftRevision: requestedRevision } });
         for (const row of rows.rows) {
           let asset;
           if (batch.mode === 'CREATE') {
-            asset = await assetInternals.createAsset(client, Number(batch.profile_id), row.normalized_values, user, `Created by import ${batch.file_name}.`, 'csv-import', batchId);
+            asset = await assetInternals.createAsset(client, Number(batch.profile_id), row.normalized_values, user, `Created by import ${batch.file_name}.`, 'inventory-import', batchId);
           } else {
             const target = parseValidatedTarget(row.target_asset_id, row.target_asset_revision);
             if (!target) {
               throw new AppError(409, 'IMPORT_TARGET_STALE', `Row ${row.row_number} must be revalidated before commit.`);
             }
-            asset = await assetInternals.updateAsset(client, target.assetId, target.revision, row.normalized_values, user, `Updated by import ${batch.file_name}.`, 'csv-import', batchId);
+            asset = await assetInternals.updateAsset(client, target.assetId, target.revision, row.normalized_values, user, `Updated by import ${batch.file_name}.`, 'inventory-import', batchId);
           }
-          const mismatches = committedValueMismatches(commitFields, row.normalized_values, asset.values);
+          const mismatches = committedValueMismatchDetails(commitFields, row.normalized_values, asset.values);
           if (mismatches.length) {
-            throw new AppError(409, 'IMPORT_COMMIT_VERIFICATION_FAILED', `Row ${row.row_number} did not match the staged values after storage. The entire import was rolled back; reopen the session and revalidate.`, { fields: mismatches });
+            throw new AppError(409, 'IMPORT_COMMIT_VERIFICATION_FAILED', `Row ${row.row_number} did not match the staged values after storage. The entire import was rolled back and imports were locked.`, {
+              mismatchFields: mismatches,
+              rowNumber: Number(row.row_number),
+              draftRevision: requestedRevision,
+            });
           }
           await client.query(`UPDATE import_batch_rows SET status='COMMITTED',committed_asset_id=$2,updated_at=now() WHERE id=$1`, [row.id, asset.id]);
           await client.query(
@@ -1225,16 +1657,42 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
             [batchId, row.id, asset.id, batch.mode, asset.revision],
           );
         }
-        await client.query(`UPDATE import_batches SET status='COMPLETED',committed_at=now(),completed_at=now(),updated_at=now() WHERE id=$1`, [batchId]);
-        await recordActivity(client, { user, actionKey: 'IMPORT_COMPLETED', source: 'csv-import', reason: 'All included rows committed in one transaction.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name, routePath: `/import?session=${batchId}`, parentEventId, parentImportBatchId: batchId, metadata: { rows: rows.rowCount, mode: batch.mode } });
+        const durationMs = Date.now() - commitStartedAt;
+        await client.query(
+          `UPDATE import_batches
+           SET status='COMPLETED',verification_status='PASSED',verification_details=$2::jsonb,
+               committed_at=now(),completed_at=now(),updated_at=now()
+           WHERE id=$1`,
+          [batchId, JSON.stringify({ verifiedRows: rows.rowCount, mismatchFields: [] })],
+        );
+        await recordImportStage(client, { batchId, stage: 'COMMIT', eventKey: 'COMMIT_VERIFIED', draftRevision: requestedRevision, durationMs, rowCount: rows.rowCount, metadata: { mode: batch.mode } });
+        await recordActivity(client, { user, actionKey: 'IMPORT_COMPLETED', source: 'inventory-import', reason: 'All included rows committed and read back in one transaction.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name, routePath: `/import?session=${batchId}`, parentEventId, parentImportBatchId: batchId, metadata: { rows: rows.rowCount, mode: batch.mode, draftRevision: requestedRevision, verificationStatus: 'PASSED' } });
         return { session: await sessionDetail(client, batchId), idempotent: false, refresh: importRefreshTargets };
       });
     } catch (error) {
-      const conflict = error instanceof AppError && error.statusCode === 409;
-      await pool.query(
-        `UPDATE import_batches SET status=$2,failure_message=$3,updated_at=now() WHERE id=$1 AND status<>'COMPLETED'`,
-        [batchId, conflict ? 'NEEDS_REVALIDATION' : 'FAILED', error instanceof Error ? error.message : 'Import commit failed.'],
-      ).catch(() => undefined);
+      if (error instanceof AppError && error.code === 'IMPORT_COMMIT_VERIFICATION_FAILED') {
+        const details = error.details as { mismatchFields: ImportMismatchField[]; rowNumber: number; draftRevision: number };
+        await disableImportsAfterVerificationFailure({
+          batchId,
+          draftRevision: details.draftRevision,
+          rowNumber: details.rowNumber,
+          mismatches: details.mismatchFields,
+        });
+      } else if (error instanceof AppError && ['IMPORT_TARGET_STALE', 'IMPORT_CONTRACT_CHANGED'].includes(error.code)) {
+        await pool.query(
+          `UPDATE import_batches
+           SET status='NEEDS_REVALIDATION',draft_revision=draft_revision+1,draft_hash=NULL,
+               verification_status='NOT_RUN',verification_details='{}'::jsonb,failure_message=$2,updated_at=now()
+           WHERE id=$1 AND status NOT IN ('COMPLETED','CANCELLED')`,
+          [batchId, error.message],
+        ).catch(() => undefined);
+      } else if (!(error instanceof AppError) || error.statusCode >= 500) {
+        await pool.query(
+          `UPDATE import_batches SET status='FAILED',failure_message=$2,updated_at=now()
+           WHERE id=$1 AND status NOT IN ('COMPLETED','CANCELLED')`,
+          [batchId, error instanceof Error ? error.message : 'Import commit failed.'],
+        ).catch(() => undefined);
+      }
       throw error;
     }
   });
@@ -1245,10 +1703,10 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     const batchId = (request.params as { id: string }).id;
     return withTransaction(async (client) => {
       const batch = await loadSessionContext(client, batchId, true);
-      requireSessionAccess(user, batch);
+      requireSessionOwner(user, batch);
       if (batch.status === 'COMPLETED') throw new AppError(409, 'IMPORT_COMPLETED', 'A completed import cannot be cancelled.');
       await client.query(`UPDATE import_batches SET status='CANCELLED',updated_at=now() WHERE id=$1`, [batchId]);
-      await recordActivity(client, { user, actionKey: 'IMPORT_CANCELLED', source: 'csv-import', reason: 'Import session cancelled.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}`, parentImportBatchId: batchId });
+      await recordActivity(client, { user, actionKey: 'IMPORT_CANCELLED', source: 'inventory-import', reason: 'Import session cancelled.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}`, parentImportBatchId: batchId });
       return { session: await sessionDetail(client, batchId) };
     });
   });
@@ -1272,4 +1730,7 @@ export const importInternals = {
   requireSessionAccess,
   reconcileModelGroup,
   committedValueMismatches,
+  committedValueMismatchDetails,
+  calculateDraftHash,
+  stableJson,
 };

@@ -74,6 +74,17 @@ describe('complete import workflow contract', () => {
     );
   });
 
+  it('allows an independent import reviewer to open another importer session', () => {
+    assert.doesNotThrow(() => importInternals.requireSessionAccess(
+      { id: 2, displayName: 'Reviewer', initials: 'RV', roles: ['privileged_administrator'], permissions: ['import.review'] },
+      { created_by_user_id: 1 },
+    ));
+    assert.throws(() => importInternals.requireSessionAccess(
+      { id: 3, displayName: 'Operator', initials: 'OP', roles: ['user'], permissions: ['import.execute'] },
+      { created_by_user_id: 1 },
+    ), /cannot access another user's import session/i);
+  });
+
   it('parses UTF-8 BOM, quoted commas, Windows line endings, and blank rows', () => {
     const csv = Buffer.from('\ufeffNVBugs #,Serial #,Notes\r\n9000001,SYN-001,"Lab, validation"\r\n\r\n', 'utf8');
     const result = importInternals.parseCsv(csv);
@@ -367,6 +378,26 @@ describe('complete import workflow contract', () => {
 
     assert.deepEqual(importInternals.committedValueMismatches(fields, { serial_number: 'SER-1', board_sku: 'P2022' }, { serial_number: 'SER-1', board_sku: 'P2022' }), []);
     assert.deepEqual(importInternals.committedValueMismatches(fields, { serial_number: 'SER-1', board_sku: 'P2022' }, { serial_number: 'SER-1', board_sku: null }), ['board_sku']);
+  });
+
+  it('treats a PostgreSQL DATE and its canonical import string as the same day', () => {
+    const dateField = field(39, 'date_received', 'Date Received', true, [], { dataType: 'date', storageTarget: 'assets.date_received' });
+    assert.deepEqual(
+      importInternals.committedValueMismatchDetails(
+        [dateField],
+        { date_received: '2026-08-13' },
+        { date_received: new Date(2026, 7, 13) },
+      ),
+      [],
+    );
+    assert.deepEqual(
+      importInternals.committedValueMismatchDetails(
+        [dateField],
+        { date_received: '2026-08-13' },
+        { date_received: new Date(2026, 7, 14) },
+      ),
+      [{ fieldKey: 'date_received', expectedType: 'string', actualType: 'date' }],
+    );
   });
 
   it('blocks unknown required owners and vendors while offering approved matches', async () => {

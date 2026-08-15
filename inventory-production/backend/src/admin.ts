@@ -8,6 +8,7 @@ import type { AuthenticatedRequest, SessionUser } from './types.js';
 import { readMaintenanceState, writeMaintenanceState, type MaintenanceState } from './maintenance.js';
 import { isLifecycleStatusKey } from './lifecycle.js';
 import { isSystemRequiredField } from './requiredFields.js';
+import { loadImportControl, setImportControl, type ImportModeControl } from './importGovernance.js';
 
 const keyPattern = /^[A-Z][A-Z0-9_]{1,63}$/;
 const fieldKeyPattern = /^[a-z][a-z0-9_]{1,63}$/;
@@ -55,7 +56,7 @@ async function adminEvent(client: DbClient, user: SessionUser, input: { action: 
 
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/admin/health', { preHandler: requirePermission('admin.system') }, async () => {
-    const [counts, incomplete, dependencies, maintenance] = await Promise.all([
+    const [counts, incomplete, dependencies, maintenance, importControl] = await Promise.all([
       pool.query(`SELECT
         (SELECT count(*)::int FROM categories WHERE active) categories,
         (SELECT count(*)::int FROM asset_profiles WHERE active) profiles,
@@ -70,8 +71,41 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         FROM field_definitions fd LEFT JOIN profile_fields pf ON pf.field_definition_id=fd.id
         GROUP BY fd.id ORDER BY fd.field_key`),
       readMaintenanceState(),
+      loadImportControl(),
     ]);
-    return { counts: counts.rows[0], incompleteProfiles: incomplete.rows, fieldUsage: dependencies.rows, maintenance };
+    return { counts: counts.rows[0], incompleteProfiles: incomplete.rows, fieldUsage: dependencies.rows, maintenance, importControl };
+  });
+
+  app.post('/api/v1/admin/import-control', { preHandler: requirePermission('admin.system') }, async (request) => {
+    await verifyCsrf(request);
+    const user = (request as AuthenticatedRequest).inventoryUser;
+    const body = request.body as { mode?: unknown; reason?: unknown };
+    const mode = String(body.mode ?? '') as ImportModeControl;
+    if (!['DISABLED', 'CANARY', 'ENABLED'].includes(mode)) {
+      throw new AppError(422, 'IMPORT_MODE_REQUIRED', 'Choose Disabled, Canary, or Enabled.');
+    }
+    const reason = requiredReason(body.reason);
+    return withTransaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('inventory-project-import-control'))");
+      const before = await loadImportControl(client);
+      if (before.mode === mode && before.reason === reason) return { importControl: before, changed: false };
+      const after = await setImportControl(client, {
+        mode,
+        reason,
+        changedByUserId: user.id,
+        changeSource: 'admin',
+      });
+      await adminEvent(client, user, {
+        action: `IMPORT_CONTROL_${mode}`,
+        type: 'system',
+        id: 'import-control',
+        label: 'Import commit availability',
+        reason,
+        before,
+        after,
+      });
+      return { importControl: after, changed: true };
+    });
   });
 
   app.post('/api/v1/admin/maintenance', { preHandler: requirePermission('admin.system') }, async (request) => {

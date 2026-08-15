@@ -1,4 +1,4 @@
-# Inventory Project 1.3
+# Inventory Project 1.4
 
 Inventory Project is a PostgreSQL-backed inventory application served by IIS with a Fastify API running as a Windows service.
 
@@ -31,5 +31,7 @@ Run support scripts from an elevated PowerShell window. State-changing scripts a
 Configuration is stored in `Config`. API/service and operations logs are stored in `Logs`.
 
 The complete import-session workflow, validation classes, correction options, and support procedure are documented in `IMPORT-WORKFLOW.md`.
+
+Release 1.4 adds governed CSV/XLSX imports, a server-enforced import safety mode, protected draft revisions, and two independent administrator reviews. Import commits remain `DISABLED` until the reliability gates and organizational sign-offs in `quality/GATE-EVIDENCE.md` are complete.
 
 Production releases use a frozen full baseline for clean installation and small component-aware deltas for routine updates. See `RELEASES.md`.

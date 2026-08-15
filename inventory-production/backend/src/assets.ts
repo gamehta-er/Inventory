@@ -11,6 +11,7 @@ import { canonicalizeValues, loadProfileFields, validateValues } from './registr
 import { appendRegistryFilters } from './filtering.js';
 import { normalizeNVBugs, referenceInsertionOrder, splitReferences } from './references.js';
 import type { AuthenticatedRequest, FieldDefinition, SessionUser } from './types.js';
+import { csvCell } from './csvSafety.js';
 import {
   appendLifecycleFilter,
   assertOperationStatus,
@@ -357,11 +358,6 @@ function changesFrom(oldValues: Values, nextValues: Values, fields: FieldDefinit
     const after = nextValues[field.fieldKey] ?? null;
     return JSON.stringify(before) === JSON.stringify(after) ? [] : [{ fieldKey:field.fieldKey, fieldLabel:field.label, before, after }];
   });
-}
-
-function csvCell(value: unknown): string {
-  const text = value === null || value === undefined ? '' : String(value);
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {

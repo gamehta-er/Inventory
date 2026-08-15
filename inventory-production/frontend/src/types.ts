@@ -241,15 +241,40 @@ export type ImportMode = 'CREATE' | 'UPDATE';
 
 export type ImportSessionStatus =
   | 'DRAFT'
+  | 'SOURCE_SELECTION'
   | 'MAPPING'
   | 'VALIDATING'
   | 'NEEDS_ATTENTION'
+  | 'AWAITING_APPROVAL'
+  | 'DECLINED'
+  | 'APPROVED'
   | 'READY'
   | 'COMMITTING'
   | 'COMPLETED'
   | 'FAILED'
+  | 'VERIFICATION_FAILED'
   | 'CANCELLED'
   | 'NEEDS_REVALIDATION';
+
+export interface ImportControl {
+  mode: 'DISABLED' | 'CANARY' | 'ENABLED';
+  reason: string;
+  changedAt: string;
+  changedByUserId: number | null;
+  changedByName: string | null;
+  changeSource: string;
+}
+
+export interface ImportReview {
+  id: number;
+  draftRevision: number;
+  draftHash: string;
+  reviewerUserId: number;
+  reviewerName: string;
+  decision: 'ACCEPT' | 'DECLINE';
+  reason: string | null;
+  createdAt: string;
+}
 
 export interface ImportMappingIssue {
   severity: 'WARNING' | 'ERROR';
@@ -321,12 +346,27 @@ export interface ImportSession {
   categoryKey: string;
   mode: ImportMode;
   fileName: string | null;
+  fileSha256: string | null;
+  fileSizeBytes: number | null;
+  sourceFormat: 'CSV' | 'XLSX' | null;
+  sourceSheetName: string | null;
+  sourceEncoding: string | null;
+  sourceDelimiter: string | null;
+  sourceSchemaVersion: string;
+  sourceOptions: Record<string, unknown>;
+  availableSheets: Array<{ name: string; rowCount: number }>;
+  draftRevision: number;
+  draftHash: string | null;
+  idempotencyKey: string;
+  verificationStatus: 'NOT_RUN' | 'PENDING' | 'PASSED' | 'FAILED';
+  verificationDetails: Record<string, unknown>;
   status: ImportSessionStatus;
   totalRows: number;
   validRows: number;
   warningRows: number;
   invalidRows: number;
   createdBy: string;
+  createdByUserId: number;
   createdAt: string;
   updatedAt: string;
   validatedAt: string | null;
@@ -337,6 +377,11 @@ export interface ImportSession {
   fields: FieldDefinition[];
   rows: ImportRow[];
   results: ImportCommitResult[];
+  reviews: ImportReview[];
+  approvalProgress: { accepted: number; declined: number; required: number };
+  reviewSummary: { includedRows: number; excludedRows: number; createRows: number; updateRows: number; warningRows: number; changedFields: number };
+  stageEvents: Array<Record<string, unknown>>;
+  importControl: ImportControl;
 }
 
 export interface ImportSessionSummary {

@@ -1,6 +1,6 @@
 {
   "name": "inventory-project-production",
-  "version": "1.3.16",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -15,8 +15,12 @@
     "dev": "concurrently -k -n API,WEB -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "npm --workspace backend run dev",
     "dev:web": "npm --workspace frontend run dev",
-    "check": "npm --workspace backend run check && npm --workspace frontend run check",
+    "check": "npm --workspace backend run check && npm --workspace frontend run check && tsc -p tsconfig.quality.json --noEmit",
     "test": "npm --workspace backend run test && npm --workspace frontend run test",
+    "test:database": "node --import tsx --test backend/test/integration/**/*.test.ts",
+    "fixtures:build": "node test/fixtures/build-import-fixtures.mjs",
+    "test:e2e": "npm run fixtures:build && playwright test",
+    "evidence:write": "node test/evidence/write-reliability-evidence.mjs",
     "build": "npm --workspace backend run build && npm --workspace frontend run build",
     "package:baseline": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File operations/Build-Production-Package.ps1",
     "package:delta": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File operations/Build-Delta-Package.ps1",
@@ -26,6 +30,7 @@
     "node": ">=24.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "concurrently": "^9.2.1"
   }
 }

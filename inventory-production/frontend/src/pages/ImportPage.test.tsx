@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api';
 import type { FieldDefinition, ImportIssue, ImportSession } from '../types';
 import { changedImportValues, editableRowValues, ImportIssueCard, ImportPage } from './ImportPage';
@@ -8,7 +8,7 @@ import { changedImportValues, editableRowValues, ImportIssueCard, ImportPage } f
 const mockedState = vi.hoisted(() => ({
   session: {
     user: { id: 1, displayName: 'Gaurav Mehta', initials: 'GM', roles: ['privileged_administrator'], permissions: [] },
-    permissions: { 'import.lookup.resolve': true },
+    permissions: { 'import.lookup.resolve': true, 'import.review': false },
     categories: [{ id: 1, key: 'GPU', name: 'GPU', description: '', icon: 'gpu', profileId: 10, profileKey: 'GPU', profileName: 'GPU', version: 1, assetCount: 0 }],
     statuses: [],
     health: {},
@@ -20,9 +20,22 @@ const mockedState = vi.hoisted(() => ({
   invalidateInventory: vi.fn(),
 }));
 
+const enabledImportControl = {
+  mode: 'ENABLED' as const,
+  reason: 'Test imports are enabled.',
+  changedAt: '2026-08-11T00:00:00Z',
+  changedByUserId: 1,
+  changedByName: 'Gaurav Mehta',
+  changeSource: 'test',
+};
+
 vi.mock('../state/AppState', () => ({
   useAppState: () => mockedState,
 }));
+
+beforeEach(() => {
+  vi.spyOn(api, 'importControl').mockResolvedValue(enabledImportControl);
+});
 
 afterEach(() => {
   cleanup();
@@ -31,6 +44,8 @@ afterEach(() => {
   mockedState.refreshSession.mockClear();
   mockedState.refreshRegistry.mockClear();
   mockedState.invalidateInventory.mockClear();
+  mockedState.session.user = { id: 1, displayName: 'Gaurav Mehta', initials: 'GM', roles: ['privileged_administrator'], permissions: [] };
+  mockedState.session.permissions['import.review'] = false;
 });
 
 const approvedArchitectures = [
@@ -96,12 +111,27 @@ function importSession(overrides: Partial<ImportSession> = {}): ImportSession {
     categoryKey: 'GPU',
     mode: 'CREATE',
     fileName: null,
+    fileSha256: null,
+    fileSizeBytes: null,
+    sourceFormat: null,
+    sourceSheetName: null,
+    sourceEncoding: null,
+    sourceDelimiter: null,
+    sourceSchemaVersion: 'inventory-import-v2',
+    sourceOptions: {},
+    availableSheets: [],
+    draftRevision: 0,
+    draftHash: null,
+    idempotencyKey: '11111111-1111-4111-8111-111111111111',
+    verificationStatus: 'NOT_RUN',
+    verificationDetails: {},
     status: 'DRAFT',
     totalRows: 0,
     validRows: 0,
     warningRows: 0,
     invalidRows: 0,
     createdBy: 'Gaurav Mehta',
+    createdByUserId: 1,
     createdAt: '2026-08-11T00:00:00Z',
     updatedAt: '2026-08-11T00:00:00Z',
     validatedAt: null,
@@ -112,6 +142,11 @@ function importSession(overrides: Partial<ImportSession> = {}): ImportSession {
     fields: [serialField],
     rows: [],
     results: [],
+    reviews: [],
+    approvalProgress: { accepted: 0, declined: 0, required: 2 },
+    reviewSummary: { includedRows: 0, excludedRows: 0, createRows: 0, updateRows: 0, warningRows: 0, changedFields: 0 },
+    stageEvents: [],
+    importControl: enabledImportControl,
     ...overrides,
   };
 }
@@ -286,8 +321,8 @@ describe('ImportPage workflow', () => {
 
     const view = render(<MemoryRouter initialEntries={['/import?session=saved-session-42']}><ImportPage /></MemoryRouter>);
 
-    expect(await view.findByText('Choose a CSV to analyze')).toBeTruthy();
-    expect(view.getByText(/original CSV is stored with this session/i)).toBeTruthy();
+    expect(await view.findByText('Choose CSV or Excel data')).toBeTruthy();
+    expect(view.getByText(/original file and its hash stay with this session/i)).toBeTruthy();
     expect(loadSession).toHaveBeenCalledWith('saved-session-42');
   });
 
@@ -295,7 +330,9 @@ describe('ImportPage workflow', () => {
     const draftSession = importSession();
     const readySession = importSession({
       fileName: 'gpu-assets.csv',
-      status: 'READY',
+      status: 'AWAITING_APPROVAL',
+      draftRevision: 1,
+      draftHash: 'draft-hash-1',
       totalRows: 1,
       validRows: 1,
       headers: [{ sourceIndex: 0, header: 'Serial #', fieldKey: 'serial_number', ignored: false }],
@@ -313,7 +350,7 @@ describe('ImportPage workflow', () => {
     const view = render(<MemoryRouter initialEntries={['/import']}><ImportPage /></MemoryRouter>);
     const input = await waitFor(() => view.container.querySelector('input[type="file"]') as HTMLInputElement);
     fireEvent.change(input, { target: { files: [new File(['Serial #\r\nSYN-GPU-000001\r\n'], 'gpu-assets.csv', { type: 'text/csv' })] } });
-    fireEvent.click(view.getByRole('button', { name: /analyze csv/i }));
+    fireEvent.click(view.getByRole('button', { name: /analyze file/i }));
 
     await waitFor(() => expect(createSession).toHaveBeenCalledWith(10, 'CREATE'));
     await waitFor(() => expect(uploadFile).toHaveBeenCalledWith('import-session-1', expect.any(File)));
@@ -325,7 +362,14 @@ describe('ImportPage workflow', () => {
     const draft = importSession();
     const mapping = importSession({
       fileName: 'gpu-assets.csv',
-      status: 'READY',
+      status: 'APPROVED',
+      draftRevision: 2,
+      draftHash: 'approved-draft-hash',
+      approvalProgress: { accepted: 2, declined: 0, required: 2 },
+      reviews: [
+        { id: 1, draftRevision: 2, draftHash: 'approved-draft-hash', reviewerUserId: 2, reviewerName: 'Igor Margulis', decision: 'ACCEPT', reason: null, createdAt: '2026-08-11T00:01:10Z' },
+        { id: 2, draftRevision: 2, draftHash: 'approved-draft-hash', reviewerUserId: 3, reviewerName: 'Monica Martin', decision: 'ACCEPT', reason: null, createdAt: '2026-08-11T00:01:20Z' },
+      ],
       totalRows: 1,
       validRows: 1,
       headers: [{ sourceIndex: 0, header: 'Serial #', fieldKey: 'serial_number', ignored: false }],
@@ -379,7 +423,7 @@ describe('ImportPage workflow', () => {
     });
     fireEvent.change(fileInput, { target: { files: [new File(['Serial #\r\nSYN-GPU-000001\r\n'], 'gpu-assets.csv', { type: 'text/csv' })] } });
     const uploadButton = await waitFor(() => {
-      const button = view.getByRole('button', { name: /analyze csv/i }) as HTMLButtonElement;
+      const button = view.getByRole('button', { name: /analyze file/i }) as HTMLButtonElement;
       expect(button.disabled).toBe(false);
       return button;
     });
@@ -389,10 +433,109 @@ describe('ImportPage workflow', () => {
     fireEvent.click(view.getByRole('button', { name: /commit 1 new assets/i }));
 
     expect(await view.findByText('Import completed')).toBeTruthy();
-    await waitFor(() => expect(commitImport).toHaveBeenCalledWith('import-session-1'));
+    await waitFor(() => expect(commitImport).toHaveBeenCalledWith('import-session-1', {
+      draftRevision: 2,
+      draftHash: 'approved-draft-hash',
+      idempotencyKey: '11111111-1111-4111-8111-111111111111',
+    }));
     expect(mockedState.invalidateInventory).toHaveBeenCalledTimes(1);
     expect(mockedState.refreshSession).toHaveBeenCalledTimes(1);
     expect(mockedState.refreshRegistry).toHaveBeenCalledTimes(1);
     expect(api.imports).toHaveBeenCalled();
+  });
+
+  it('keeps an approved draft locked while the server import mode is disabled', async () => {
+    const disabledControl = { ...enabledImportControl, mode: 'DISABLED' as const, reason: 'Reliability gates are still running.' };
+    const approved = importSession({
+      status: 'APPROVED',
+      fileName: 'gpu-assets.xlsx',
+      sourceFormat: 'XLSX',
+      sourceSheetName: 'Assets',
+      draftRevision: 4,
+      draftHash: 'locked-draft-hash',
+      totalRows: 1,
+      validRows: 1,
+      rows: [{
+        id: 'row-locked', row_number: 2, source_values: { '0': 'SYN-GPU-000002' }, corrected_values: {},
+        normalized_values: { serial_number: 'SYN-GPU-000002' }, included: true, operation: 'CREATE',
+        target_asset_id: null, target_asset_revision: null, before_values: null,
+        after_values: { serial_number: 'SYN-GPU-000002' }, status: 'VALID', committed_asset_id: null, issues: [],
+      }],
+      approvalProgress: { accepted: 2, declined: 0, required: 2 },
+      importControl: disabledControl,
+    });
+    vi.mocked(api.importControl).mockResolvedValue(disabledControl);
+    vi.spyOn(api, 'imports').mockResolvedValue([]);
+    vi.spyOn(api, 'importSession').mockResolvedValue(approved);
+
+    const view = render(<MemoryRouter initialEntries={['/import?session=import-session-1']}><ImportPage /></MemoryRouter>);
+
+    expect(await view.findByText('Commits locked')).toBeTruthy();
+    const commitButton = view.getByRole('button', { name: /commit 1 new assets/i }) as HTMLButtonElement;
+    expect(commitButton.disabled).toBe(true);
+    expect(view.getByText(/two approvals complete, but commits are disabled/i)).toBeTruthy();
+  });
+
+  it('lets the importer reopen an approved draft and clearly warns that approvals reset', async () => {
+    const approved = importSession({
+      status: 'APPROVED',
+      fileName: 'gpu-assets.csv',
+      draftRevision: 4,
+      draftHash: 'approved-draft-hash',
+      totalRows: 1,
+      validRows: 1,
+      approvalProgress: { accepted: 2, declined: 0, required: 2 },
+    });
+    const reopened = importSession({
+      ...approved,
+      status: 'AWAITING_APPROVAL',
+      draftRevision: 5,
+      draftHash: 'reopened-draft-hash',
+      approvalProgress: { accepted: 0, declined: 0, required: 2 },
+    });
+    vi.spyOn(api, 'imports').mockResolvedValue([]);
+    vi.spyOn(api, 'importSession').mockResolvedValue(approved);
+    const reopenImport = vi.spyOn(api, 'reopenImport').mockResolvedValue(reopened);
+
+    const view = render(<MemoryRouter initialEntries={['/import?session=import-session-1']}><ImportPage /></MemoryRouter>);
+
+    expect(await view.findByText(/reopening resets both approvals/i)).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: /reopen to adjust/i }));
+    await waitFor(() => expect(reopenImport).toHaveBeenCalledWith('import-session-1'));
+    expect(await view.findByText(/all decisions for this revision reset automatically/i)).toBeTruthy();
+  });
+
+  it('lets a different privileged administrator accept the exact protected revision', async () => {
+    mockedState.session.user = { id: 2, displayName: 'Igor Margulis', initials: 'IM', roles: ['privileged_administrator'], permissions: [] };
+    mockedState.session.permissions['import.review'] = true;
+    const awaitingReview = importSession({
+      createdByUserId: 1,
+      status: 'AWAITING_APPROVAL',
+      fileName: 'gpu-assets.csv',
+      draftRevision: 3,
+      draftHash: 'review-draft-hash',
+      totalRows: 1,
+      validRows: 1,
+    });
+    const accepted = importSession({
+      ...awaitingReview,
+      reviews: [{ id: 1, draftRevision: 3, draftHash: 'review-draft-hash', reviewerUserId: 2, reviewerName: 'Igor Margulis', decision: 'ACCEPT', reason: null, createdAt: '2026-08-11T00:01:10Z' }],
+      approvalProgress: { accepted: 1, declined: 0, required: 2 },
+    });
+    vi.spyOn(api, 'imports').mockResolvedValue([]);
+    vi.spyOn(api, 'importSession').mockResolvedValue(awaitingReview);
+    const reviewImport = vi.spyOn(api, 'reviewImport').mockResolvedValue(accepted);
+
+    const view = render(<MemoryRouter initialEntries={['/import?session=import-session-1']}><ImportPage /></MemoryRouter>);
+    fireEvent.click(await view.findByRole('button', { name: /accept this draft/i }));
+
+    await waitFor(() => expect(reviewImport).toHaveBeenCalledWith('import-session-1', {
+      decision: 'ACCEPT',
+      reason: undefined,
+      draftRevision: 3,
+      draftHash: 'review-draft-hash',
+    }));
+    expect(await view.findByText(/your decision is recorded/i)).toBeTruthy();
+
   });
 });

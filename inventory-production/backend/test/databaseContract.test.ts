@@ -7,6 +7,7 @@ const projectFile = (path: string) => fileURLToPath(new URL(`../../${path}`, imp
 const baseline = await readFile(projectFile('database/001-production-baseline.sql'), 'utf8');
 const schemaMigration = await readFile(projectFile('database/Migrations/006-invmgmt-schema.sql'), 'utf8');
 const lifecycleCategoryMigration = await readFile(projectFile('database/Migrations/008-separate-lifecycle-from-categories.sql'), 'utf8');
+const importReliabilityMigration = await readFile(projectFile('database/Migrations/009-governed-import-reliability.sql'), 'utf8');
 const dbSource = await readFile(projectFile('backend/src/db.ts'), 'utf8');
 const appSource = await readFile(projectFile('backend/src/app.ts'), 'utf8');
 const versionSource = await readFile(projectFile('backend/src/version.ts'), 'utf8');
@@ -22,7 +23,7 @@ const migratedTables = migrationTableBlock
 
 describe('Framework v1.0 PostgreSQL boundary', () => {
   it('DATA-001 moves every baseline application table to invmgmt', () => {
-    assert.equal(baselineTables.length, 37);
+    assert.equal(baselineTables.length, 40);
     assert.deepEqual(migratedTables, baselineTables);
     assert.match(schemaMigration, /CREATE SCHEMA IF NOT EXISTS invmgmt AUTHORIZATION inventory_owner/);
     assert.match(schemaMigration, /public_inventory_count <> 0/);
@@ -45,7 +46,7 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
     }
     assert.match(lifecycleCategoryMigration, /SET active=false/);
     assert.match(lifecycleCategoryMigration, /COMMIT;/);
-    assert.match(versionSource, /requiredSchemaContract = '008-separate-lifecycle-from-categories'/);
+    assert.match(versionSource, /requiredSchemaContract = '009-governed-import-reliability'/);
   });
 
   it('DATA-015 separates owner and runtime privileges', () => {
@@ -69,7 +70,7 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
 
   it('IMPORT-014 verifies runtime access to every persistent Import workflow table', async () => {
     const databaseContract = await readFile(projectFile('database/Test-DatabaseContract.sql'), 'utf8');
-    for (const table of ['import_batches', 'import_column_mappings', 'import_batch_rows', 'import_validation_issues', 'import_commit_results']) {
+    for (const table of ['import_batches', 'import_column_mappings', 'import_batch_rows', 'import_validation_issues', 'import_commit_results', 'import_runtime_control', 'import_reviews', 'import_stage_events']) {
       assert.match(databaseContract, new RegExp(`'${table}'`));
     }
     assert.match(databaseContract, /has_table_privilege/);
@@ -77,13 +78,24 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
   });
 
   it('IMPORT-001 persists resumable sessions, source files, mappings, rows, issues, and idempotent results', () => {
-    for (const table of ['import_batches', 'import_column_mappings', 'import_batch_rows', 'import_validation_issues', 'import_commit_results']) {
+    for (const table of ['import_batches', 'import_column_mappings', 'import_batch_rows', 'import_validation_issues', 'import_commit_results', 'import_runtime_control', 'import_reviews', 'import_stage_events']) {
       assert.match(baseline, new RegExp(`CREATE TABLE ${table}`));
     }
     assert.match(baseline, /profile_version integer NOT NULL/);
-    assert.match(baseline, /original_csv bytea/);
+    assert.match(baseline, /original_file bytea/);
+    assert.match(baseline, /draft_hash text/);
+    assert.match(baseline, /'import\.review'/);
     assert.match(baseline, /idempotency_key uuid NOT NULL DEFAULT gen_random_uuid\(\) UNIQUE/);
     assert.match(baseline, /CREATE INDEX import_batches_resume_idx ON import_batches\(created_by_user_id, status, updated_at DESC\)/);
+  });
+
+  it('IMPORT-014 adds a locked, revisioned, two-administrator reliability boundary', () => {
+    assert.match(importReliabilityMigration, /'DISABLED','Reliability release requires verified gates/);
+    assert.match(importReliabilityMigration, /CREATE TABLE IF NOT EXISTS import_reviews/);
+    assert.match(importReliabilityMigration, /reviewer_user_id/);
+    assert.match(importReliabilityMigration, /reject_import_evidence_mutation/);
+    assert.match(importReliabilityMigration, /'009-governed-import-reliability'/);
+    assert.match(versionSource, /requiredImportContract = '009-governed-import-reliability'/);
   });
 
   it('OPS-003 packages and installs the complete ordered migration chain', () => {

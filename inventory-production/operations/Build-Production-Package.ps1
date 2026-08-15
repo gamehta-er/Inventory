@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.3.3',
+    [string]$Version = '1.4.0',
     [string]$OutputRoot,
     [Parameter(Mandatory)][string]$ReleaseEvidencePath
 )

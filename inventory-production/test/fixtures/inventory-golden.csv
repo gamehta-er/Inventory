@@ -1,0 +1,2 @@
+NVBugs #,Date Received,Model #,Serial #,Product Name,Status,Owner / Assignee,Vendor,Notes
+900001,2026-08-13,CI-SATA-1TB,CI-CSV-000001,1TB SATA SSD,AVAILABLE,Gaurav Mehta,NVIDIA Lab Supply,Governed CSV reliability fixture

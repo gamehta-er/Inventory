@@ -5,6 +5,7 @@ import { recordActivity } from './activity.js';
 import type { AuthenticatedRequest } from './types.js';
 import { appendRegistryFilters } from './filtering.js';
 import { appendLifecycleFilter, lifecycleGroups } from './lifecycle.js';
+import { csvCell } from './csvSafety.js';
 
 type Query = Record<string, string | undefined>;
 
@@ -158,11 +159,6 @@ const dimensions: Record<string, { key: string; label: string }> = {
   project: { key: "COALESCE(NULLIF(btrim(a.project),''),'__UNASSIGNED__')", label: "COALESCE(NULLIF(btrim(a.project),''),'Unassigned')" },
 };
 
-function csvCell(value: unknown): string {
-  const normalized = value instanceof Date ? value.toISOString().slice(0, 10) : value;
-  return `"${String(normalized ?? '').replaceAll('"', '""')}"`;
-}
-
 async function exportFields(profileIds: number[]) {
   if (!profileIds.length) return [];
   const result = await pool.query(`SELECT fd.field_key,fd.field_label,min(pf.display_order)::int display_order
@@ -261,12 +257,12 @@ export async function registerReportRoutes(app: FastifyInstance): Promise<void> 
       const inventory = await buildReportResult(client, 'inventory', { ...query, page: '1', limit: '8' });
       const canViewImports = user.permissions.includes('import.execute');
       const canViewActivity = user.permissions.includes('activity.view');
-      const canManageImports = user.permissions.includes('admin.profile');
+      const canManageImports = user.permissions.includes('import.review') || user.permissions.includes('admin.profile');
 
       const importCounts = canViewImports ? await client.query(`SELECT
-          count(*) FILTER(WHERE b.status IN ('DRAFT','MAPPING','VALIDATING','NEEDS_ATTENTION','READY','COMMITTING','FAILED','NEEDS_REVALIDATION'))::int open,
-          count(*) FILTER(WHERE b.status IN ('NEEDS_ATTENTION','FAILED','NEEDS_REVALIDATION'))::int needs_attention,
-          count(*) FILTER(WHERE b.status='READY')::int ready
+          count(*) FILTER(WHERE b.status IN ('DRAFT','SOURCE_SELECTION','MAPPING','VALIDATING','NEEDS_ATTENTION','AWAITING_APPROVAL','DECLINED','APPROVED','READY','COMMITTING','FAILED','VERIFICATION_FAILED','NEEDS_REVALIDATION'))::int open,
+          count(*) FILTER(WHERE b.status IN ('NEEDS_ATTENTION','DECLINED','FAILED','VERIFICATION_FAILED','NEEDS_REVALIDATION'))::int needs_attention,
+          count(*) FILTER(WHERE b.status='APPROVED')::int ready
         FROM import_batches b
         WHERE b.created_by_user_id=$1 OR $2::boolean`, [user.id, canManageImports]) : { rows: [{ open: 0, needs_attention: 0, ready: 0 }] };
       const recentImports = canViewImports ? await client.query(`SELECT b.id,b.mode,b.file_name,b.status,b.total_rows,b.valid_rows,b.warning_rows,b.invalid_rows,b.created_at,b.updated_at,

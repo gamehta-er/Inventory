@@ -34,12 +34,16 @@ The Activity page is the business audit ledger. Service logs are for operational
 
 ## Import support
 
-1. Open the saved import session; unfinished sessions are revalidated against the current profile and controlled values.
-2. Review Mapping before row-level validation. Duplicate headers, duplicate field mappings, and unmapped required fields must be resolved there.
-3. Use the linked row and field issue to select an approved value, edit the staged row, exclude the row, or add an authorized controlled value with a reason.
-4. Configuration errors link to the affected Admin profile field. Fix the mapping, then return to the session and revalidate.
-5. Download the validation report when issues need to be corrected in the source CSV.
-6. Do not retry a failed commit by creating another session. Reopen the existing session; commit retries are idempotent.
+1. Confirm the Import Commit Control in Admin. Keep it `DISABLED` during investigation, repair, and evidence collection.
+2. Open the saved import session; unfinished legacy sessions are marked `NEEDS_REVALIDATION` against the current profile and controlled values.
+3. Confirm the CSV delimiter/encoding or XLSX worksheet when the source requires a choice.
+4. Review column decisions before row validation. Duplicate headers, duplicate field mappings, and unmapped required fields must be resolved there.
+5. Use the linked row and field issue to select an approved value, edit the staged row, exclude the row, or add an authorized controlled value with a reason.
+6. Configuration errors link to the affected Admin profile field. Fix the mapping, then return to the session and revalidate.
+7. Download the validation report when issues need to be corrected in the source file.
+8. Send the protected revision to two distinct Privileged Administrators. The importer cannot approve it; a decline requires a reason; any draft change clears prior approvals.
+9. The importer commits only after both approvals and only when the global mode permits it.
+10. A retry of the same successful commit is idempotent. After `VERIFICATION_FAILED`, preserve the evidence and upload the required data into a fresh governed session; do not reuse the failed draft.
 
 Completed sessions contain direct links to created or updated assets. Import commits also refresh Search, Inventory, Reports, Activity, history, and category totals in the active browser session.
 

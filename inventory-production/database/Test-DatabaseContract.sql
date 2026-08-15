@@ -32,8 +32,8 @@ BEGIN
     WHERE n.nspname = 'invmgmt'
       AND c.relkind IN ('r', 'p');
 
-    IF application_table_count <> 37 THEN
-        RAISE EXCEPTION 'DATA-001: expected 37 application tables, found %', application_table_count;
+    IF application_table_count <> 40 THEN
+        RAISE EXCEPTION 'DATA-001: expected 40 application tables, found %', application_table_count;
     END IF;
 
     SELECT count(*)
@@ -107,7 +107,8 @@ BEGIN
             'import_column_mappings',
             'import_batch_rows',
             'import_validation_issues',
-            'import_commit_results'
+            'import_commit_results',
+            'import_runtime_control'
         ]) AS import_table(table_name)
         WHERE NOT has_table_privilege(
             'inventory_app',
@@ -116,6 +117,25 @@ BEGIN
         )
     ) THEN
         RAISE EXCEPTION 'IMPORT-014: runtime role cannot operate every Import workflow table';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM unnest(ARRAY['import_reviews','import_stage_events']) AS evidence_table(table_name)
+        WHERE NOT has_table_privilege(
+            'inventory_app',
+            format('invmgmt.%I', evidence_table.table_name),
+            'SELECT,INSERT'
+        )
+    ) THEN
+        RAISE EXCEPTION 'IMPORT-014: runtime role cannot append governed Import evidence';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM invmgmt.import_runtime_control
+        WHERE control_key='GLOBAL' AND mode IN ('DISABLED','CANARY','ENABLED')
+    ) THEN
+        RAISE EXCEPTION 'IMPORT-014: global Import runtime control is missing';
     END IF;
 
     IF (SELECT count(*) FROM invmgmt.field_definitions WHERE active) <> 19 THEN
@@ -153,9 +173,9 @@ BEGIN
 
     IF NOT EXISTS (
         SELECT 1 FROM invmgmt.schema_migrations
-        WHERE migration_key = '006-invmgmt-schema'
+        WHERE migration_key = '009-governed-import-reliability'
     ) THEN
-        RAISE EXCEPTION 'DATA-014: invmgmt migration is not recorded';
+        RAISE EXCEPTION 'DATA-014: governed Import reliability migration is not recorded';
     END IF;
 END;
 $$;

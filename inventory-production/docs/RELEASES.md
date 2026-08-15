@@ -1,5 +1,11 @@
 # Inventory Project Releases
 
+## 1.4.0 import reliability release
+
+Release 1.4.0 adds migration `009-governed-import-reliability`, canonical CSV/XLSX parsing, field-aware PostgreSQL readback verification, redacted mismatch telemetry, immutable revision-bound reviews, and a server-enforced import safety mode. It requires Node.js 24 and the `inventory-production` GitHub reliability check against PostgreSQL 18.
+
+Deploy 1.4.0 to the disposable test server with import commits `DISABLED`. Do not promote `CANARY` or `ENABLED` until every gate in `quality/GATE-EVIDENCE.md` has evidence and the named Product, Engineering, QA, and Data Owner reviewers approve reopening.
+
 ## Release model
 
 Inventory Project uses two package types:

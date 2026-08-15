@@ -1,0 +1,120 @@
+name: inventory-production
+
+on:
+  push:
+    branches: ["main", "codex/**"]
+    paths:
+      - "inventory-production/**"
+      - ".github/workflows/inventory-production.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "inventory-production/**"
+      - ".github/workflows/inventory-production.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inventory-production-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory-production:
+    name: inventory-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: inventory-production
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: inventory_project
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d inventory_project"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: 3020
+      DATABASE_URL: postgresql://inventory_app:inventory_app_ci_password@127.0.0.1:5432/inventory_project
+      DATABASE_ADMIN_URL: postgresql://postgres:postgres_ci_password@127.0.0.1:5432/inventory_project
+      COOKIE_SECRET: inventory-ci-cookie-secret-at-least-32-characters
+      COOKIE_SECURE: "false"
+      ALLOWED_ORIGIN: http://127.0.0.1:3021
+      UPLOAD_ROOT: ${{ runner.temp }}/inventory-uploads
+      PGPASSWORD: postgres_ci_password
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: inventory-production/package-lock.json
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Audit production dependency tree
+        run: npm audit --audit-level=moderate
+
+      - name: Install Chromium for reliability journeys
+        run: npx playwright install --with-deps chromium
+
+      - name: Create the application role and run every migration
+        run: |
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f test/database/bootstrap-ci.sql
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f database/001-production-baseline.sql
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f database/Migrations/002-import-lookup-resolution.sql
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f database/Migrations/003-import-remediation.sql
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f database/Migrations/004-import-controlled-list-mappings.sql
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f database/005-complete-import-workflow.sql
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f database/Migrations/006-invmgmt-schema.sql
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f database/Migrations/007-gpu-model-reference-data.sql
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f database/Migrations/008-separate-lifecycle-from-categories.sql
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f database/Migrations/009-governed-import-reliability.sql
+          psql "$DATABASE_ADMIN_URL" -X -v ON_ERROR_STOP=1 -f database/Test-DatabaseContract.sql
+
+      - name: Check production types
+        run: npm run check
+
+      - name: Run unit and interaction tests
+        run: npm run test
+
+      - name: Build the production application
+        run: npm run build
+
+      - name: Run real PostgreSQL integration tests
+        env:
+          INTEGRATION_DATABASE_URL: postgresql://inventory_app:inventory_app_ci_password@127.0.0.1:5432/inventory_project
+        run: npm run test:database
+
+      - name: Run governed CSV and XLSX browser journeys
+        run: npm run test:e2e
+
+      - name: Write redacted reliability evidence
+        if: always()
+        continue-on-error: true
+        run: npm run evidence:write
+
+      - name: Upload reliability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-import-reliability-${{ github.run_number }}
+          path: inventory-production/quality-artifacts/
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,8 +1,10 @@
 import pg from 'pg';
 import { config } from './config.js';
 import { requiredImportContract, requiredSchemaContract } from './version.js';
+import { databaseDateText } from './databaseValues.js';
 
 const { Pool } = pg;
+pg.types.setTypeParser(1082, databaseDateText);
 
 export const pool = new Pool({
   connectionString: config.DATABASE_URL,
@@ -80,7 +82,22 @@ export async function ready(): Promise<boolean> {
           current_user,
           to_regclass('invmgmt.import_commit_results'),
           'SELECT,INSERT,UPDATE,DELETE'
-        ) AS import_results_access
+        ) AS import_results_access,
+        has_table_privilege(
+          current_user,
+          to_regclass('invmgmt.import_runtime_control'),
+          'SELECT,INSERT,UPDATE,DELETE'
+        ) AS import_control_access,
+        has_table_privilege(
+          current_user,
+          to_regclass('invmgmt.import_reviews'),
+          'SELECT,INSERT'
+        ) AS import_reviews_access,
+        has_table_privilege(
+          current_user,
+          to_regclass('invmgmt.import_stage_events'),
+          'SELECT,INSERT'
+        ) AS import_events_access
     `, [requiredSchemaContract, requiredImportContract]);
     const contract = result.rows[0];
     return Boolean(
@@ -94,6 +111,9 @@ export async function ready(): Promise<boolean> {
       && contract?.import_rows_access
       && contract?.import_issues_access
       && contract?.import_results_access
+      && contract?.import_control_access
+      && contract?.import_reviews_access
+      && contract?.import_events_access
     );
   } catch {
     return false;

@@ -13,3 +13,5 @@ tools/__pycache__/
 *.zip
 *.bak
 *.tmp
+quality-artifacts/
+test/fixtures/generated/

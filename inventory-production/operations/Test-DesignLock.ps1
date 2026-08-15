@@ -19,6 +19,7 @@ $CommandCenterRequestPath = Join-Path $ProjectRoot 'framework\design-change-requ
 $HardwareSearchRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-003-nvidia-hardware-search.md'
 $LabelRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-004-label-content-and-centering.md'
 $SearchRecoveryRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-005-search-criteria-recovery.md'
+$ImportReliabilityRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-006-governed-import-reliability.md'
 $StylesPath = Join-Path $ProjectRoot 'frontend\src\styles.css'
 $AppPath = Join-Path $ProjectRoot 'frontend\src\App.tsx'
 $Results = [System.Collections.Generic.List[object]]::new()
@@ -31,7 +32,7 @@ function Add-Result([string]$Check, [bool]$Passed, [string]$Detail) {
     })
 }
 
-foreach ($Path in @($LockPath, $ApprovalPath, $DocumentPath, $ChangeRequestPath, $CommandCenterRequestPath, $HardwareSearchRequestPath, $LabelRequestPath, $SearchRecoveryRequestPath, $StylesPath, $AppPath)) {
+foreach ($Path in @($LockPath, $ApprovalPath, $DocumentPath, $ChangeRequestPath, $CommandCenterRequestPath, $HardwareSearchRequestPath, $LabelRequestPath, $SearchRecoveryRequestPath, $ImportReliabilityRequestPath, $StylesPath, $AppPath)) {
     Add-Result "Required design artifact: $(Split-Path -Leaf $Path)" (Test-Path -LiteralPath $Path -PathType Leaf) $Path
 }
 
@@ -60,6 +61,8 @@ $LabelRequest = Get-Content -LiteralPath $LabelRequestPath -Raw
 Add-Result 'Approved Label Content and Print Centering design change' ($LabelRequest.Contains('| Status | APPROVED |') -and $LabelRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-004'
 $SearchRecoveryRequest = Get-Content -LiteralPath $SearchRecoveryRequestPath -Raw
 Add-Result 'Approved Search Criteria Recovery design change' ($SearchRecoveryRequest.Contains('| Status | APPROVED |') -and $SearchRecoveryRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-005'
+$ImportReliabilityRequest = Get-Content -LiteralPath $ImportReliabilityRequestPath -Raw
+Add-Result 'Approved Governed Import Reliability design change' ($ImportReliabilityRequest.Contains('| Status | APPROVED |') -and $ImportReliabilityRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-006'
 
 $DocumentHash = (Get-FileHash -LiteralPath $DocumentPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $LockHash = (Get-FileHash -LiteralPath $LockPath -Algorithm SHA256).Hash.ToLowerInvariant()

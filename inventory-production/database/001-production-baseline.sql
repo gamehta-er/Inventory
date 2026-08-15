@@ -350,9 +350,27 @@ CREATE TABLE import_batches (
     file_name text,
     file_sha256 text,
     original_csv bytea,
+    original_file bytea,
+    source_format text CHECK (source_format IS NULL OR source_format IN ('CSV','XLSX')),
+    source_sheet_name text,
+    source_encoding text,
+    source_delimiter text,
+    source_schema_version text NOT NULL DEFAULT 'inventory-import-v2',
+    file_size_bytes bigint CHECK (
+        file_size_bytes IS NULL OR (
+            file_size_bytes >= 0
+            AND (source_schema_version = 'inventory-import-v1' OR file_size_bytes <= 10485760)
+        )
+    ),
+    source_options jsonb NOT NULL DEFAULT '{}'::jsonb,
+    available_sheets jsonb NOT NULL DEFAULT '[]'::jsonb,
     original_headers jsonb NOT NULL DEFAULT '[]'::jsonb,
     mapping_revision integer NOT NULL DEFAULT 0,
-    status text NOT NULL CHECK (status IN ('DRAFT','MAPPING','VALIDATING','NEEDS_ATTENTION','READY','COMMITTING','COMPLETED','FAILED','CANCELLED','NEEDS_REVALIDATION')),
+    draft_revision integer NOT NULL DEFAULT 0 CHECK (draft_revision >= 0),
+    draft_hash text CHECK (draft_hash IS NULL OR draft_hash ~ '^[0-9a-f]{64}$'),
+    verification_status text NOT NULL DEFAULT 'NOT_RUN' CHECK (verification_status IN ('NOT_RUN','PENDING','PASSED','FAILED')),
+    verification_details jsonb NOT NULL DEFAULT '{}'::jsonb,
+    status text NOT NULL CHECK (status IN ('DRAFT','SOURCE_SELECTION','MAPPING','VALIDATING','NEEDS_ATTENTION','AWAITING_APPROVAL','DECLINED','APPROVED','READY','COMMITTING','COMPLETED','FAILED','VERIFICATION_FAILED','CANCELLED','NEEDS_REVALIDATION')),
     total_rows integer NOT NULL DEFAULT 0,
     valid_rows integer NOT NULL DEFAULT 0,
     warning_rows integer NOT NULL DEFAULT 0,
@@ -425,8 +443,47 @@ CREATE TABLE import_commit_results (
     created_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (batch_id, import_row_id)
 );
+
+CREATE TABLE import_runtime_control (
+    control_key text PRIMARY KEY CHECK (control_key = 'GLOBAL'),
+    mode text NOT NULL CHECK (mode IN ('DISABLED','CANARY','ENABLED')),
+    reason text NOT NULL CHECK (length(btrim(reason)) > 0),
+    changed_by_user_id bigint REFERENCES application_users(id) ON DELETE RESTRICT,
+    change_source text NOT NULL,
+    changed_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE import_reviews (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    batch_id uuid NOT NULL REFERENCES import_batches(id) ON DELETE RESTRICT,
+    draft_revision integer NOT NULL CHECK (draft_revision > 0),
+    draft_hash text NOT NULL CHECK (draft_hash ~ '^[0-9a-f]{64}$'),
+    reviewer_user_id bigint NOT NULL REFERENCES application_users(id) ON DELETE RESTRICT,
+    decision text NOT NULL CHECK (decision IN ('ACCEPT','DECLINE')),
+    reason text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (batch_id,draft_revision,reviewer_user_id),
+    CHECK (decision <> 'DECLINE' OR length(btrim(COALESCE(reason,''))) > 0)
+);
+
+CREATE TABLE import_stage_events (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    batch_id uuid REFERENCES import_batches(id) ON DELETE RESTRICT,
+    stage text NOT NULL,
+    event_key text NOT NULL,
+    draft_revision integer CHECK (draft_revision IS NULL OR draft_revision >= 0),
+    row_number integer CHECK (row_number IS NULL OR row_number > 0),
+    duration_ms integer CHECK (duration_ms IS NULL OR duration_ms >= 0),
+    row_count integer CHECK (row_count IS NULL OR row_count >= 0),
+    mismatch_fields jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(mismatch_fields) = 'array'),
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(metadata) = 'object'),
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE INDEX import_batches_resume_idx ON import_batches(created_by_user_id, status, updated_at DESC);
 CREATE INDEX import_batch_rows_review_idx ON import_batch_rows(batch_id, included, status, row_number);
+CREATE INDEX import_reviews_current_idx ON import_reviews(batch_id,draft_revision,created_at);
+CREATE INDEX import_stage_events_batch_idx ON import_stage_events(batch_id,created_at);
 
 CREATE TABLE saved_reports (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -489,6 +546,48 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION validate_import_review()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    current_batch import_batches%ROWTYPE;
+BEGIN
+    SELECT * INTO current_batch FROM import_batches WHERE id=NEW.batch_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Import session does not exist'; END IF;
+    IF current_batch.created_by_user_id=NEW.reviewer_user_id THEN
+        RAISE EXCEPTION 'The importer cannot review their own import';
+    END IF;
+    IF current_batch.draft_hash IS NULL
+       OR current_batch.draft_revision<>NEW.draft_revision
+       OR current_batch.draft_hash<>NEW.draft_hash THEN
+        RAISE EXCEPTION 'Review revision and hash must match the current import draft';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM application_user_roles user_role
+        JOIN application_users reviewer ON reviewer.id=user_role.user_id AND reviewer.active
+        JOIN roles role ON role.id=user_role.role_id
+        JOIN role_permissions role_permission ON role_permission.role_id=role.id
+        JOIN permissions permission ON permission.id=role_permission.permission_id
+        WHERE user_role.user_id=NEW.reviewer_user_id
+          AND role.role_key='privileged_administrator'
+          AND role.active
+          AND permission.permission_key='import.review'
+    ) THEN
+        RAISE EXCEPTION 'Reviewer must be a Privileged Administrator with import.review permission';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION reject_import_evidence_mutation()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'Import review and stage evidence is append-only';
+END;
+$$;
+
 CREATE TRIGGER activity_events_immutable
 BEFORE UPDATE OR DELETE ON activity_events
 FOR EACH ROW EXECUTE FUNCTION reject_activity_mutation();
@@ -496,6 +595,18 @@ FOR EACH ROW EXECUTE FUNCTION reject_activity_mutation();
 CREATE TRIGGER activity_changes_immutable
 BEFORE UPDATE OR DELETE ON activity_field_changes
 FOR EACH ROW EXECUTE FUNCTION reject_activity_mutation();
+
+CREATE TRIGGER import_reviews_validate
+BEFORE INSERT ON import_reviews
+FOR EACH ROW EXECUTE FUNCTION validate_import_review();
+
+CREATE TRIGGER import_reviews_immutable
+BEFORE UPDATE OR DELETE ON import_reviews
+FOR EACH ROW EXECUTE FUNCTION reject_import_evidence_mutation();
+
+CREATE TRIGGER import_stage_events_immutable
+BEFORE UPDATE OR DELETE ON import_stage_events
+FOR EACH ROW EXECUTE FUNCTION reject_import_evidence_mutation();
 
 INSERT INTO roles(role_key, role_name, description) VALUES
 ('user','User','Search, view, history, and label printing.'),
@@ -512,6 +623,7 @@ INSERT INTO permissions(permission_key, permission_name, description) VALUES
 ('asset.relationship','Manage relationships','Create and remove asset relationships.'),
 ('model.image','Manage model images','Upload, replace, and remove model images.'),
 ('import.execute','Run imports','Stage, validate, and commit imports.'),
+('import.review','Review imports','Accept or decline a governed import draft before commit.'),
 ('import.lookup.resolve','Resolve import dropdowns','Approve controlled dropdown values while resolving staged import errors.'),
 ('report.view','View reports','View management reports and drilldowns.'),
 ('report.export','Export reports','Export governed report results.'),
@@ -543,6 +655,9 @@ INSERT INTO application_user_roles(user_id, role_id)
 SELECT u.id, r.id FROM application_users u CROSS JOIN roles r
 WHERE u.display_name IN ('Igor Margulis','Monica Martin','Gaurav Mehta')
   AND r.role_key IN ('super_user','privileged_administrator');
+
+INSERT INTO import_runtime_control(control_key,mode,reason,change_source)
+VALUES ('GLOBAL','DISABLED','Reliability release requires verified gates and named sign-offs.','baseline');
 
 INSERT INTO lookup_lists(lookup_key, lookup_name, description) VALUES
 ('ASSET_STATUS','Asset Status','Controlled inventory lifecycle values.'),

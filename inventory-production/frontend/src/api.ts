@@ -9,6 +9,7 @@ import type {
   AssetSummaryCounts,
   AuthState,
   FieldDefinition,
+  ImportControl,
   ImportCommitResult,
   ImportHeader,
   ImportIssue,
@@ -376,6 +377,18 @@ function normalizeCommitResult(value: unknown): ImportCommitResult {
   };
 }
 
+function normalizeImportControl(value: unknown): ImportControl {
+  const data = object(value);
+  return {
+    mode: text(data.mode, 'DISABLED') as ImportControl['mode'],
+    reason: text(data.reason, 'Import commits are unavailable.'),
+    changedAt: text(data.changedAt ?? data.changed_at),
+    changedByUserId: data.changedByUserId === null || data.changed_by_user_id === null ? null : count(data.changedByUserId ?? data.changed_by_user_id) || null,
+    changedByName: nullableText(data.changedByName ?? data.changed_by_name),
+    changeSource: text(data.changeSource ?? data.change_source),
+  };
+}
+
 export function normalizeImportSessionResponse(payload: unknown): ImportSession {
   const envelope = object(payload);
   const data = object(envelope.session ?? payload);
@@ -391,12 +404,30 @@ export function normalizeImportSessionResponse(payload: unknown): ImportSession 
     categoryKey: text(data.categoryKey ?? data.category_key),
     mode: text(data.mode, 'CREATE') as ImportMode,
     fileName: nullableText(data.fileName ?? data.file_name),
+    fileSha256: nullableText(data.fileSha256 ?? data.file_sha256),
+    fileSizeBytes: data.fileSizeBytes === null || data.file_size_bytes === null ? null : count(data.fileSizeBytes ?? data.file_size_bytes) || null,
+    sourceFormat: nullableText(data.sourceFormat ?? data.source_format) as ImportSession['sourceFormat'],
+    sourceSheetName: nullableText(data.sourceSheetName ?? data.source_sheet_name),
+    sourceEncoding: nullableText(data.sourceEncoding ?? data.source_encoding),
+    sourceDelimiter: nullableText(data.sourceDelimiter ?? data.source_delimiter),
+    sourceSchemaVersion: text(data.sourceSchemaVersion ?? data.source_schema_version),
+    sourceOptions: object(data.sourceOptions ?? data.source_options),
+    availableSheets: list(data.availableSheets ?? data.available_sheets).map((item) => {
+      const sheet = object(item);
+      return { name: text(sheet.name), rowCount: count(sheet.rowCount ?? sheet.row_count) };
+    }),
+    draftRevision: count(data.draftRevision ?? data.draft_revision),
+    draftHash: nullableText(data.draftHash ?? data.draft_hash),
+    idempotencyKey: text(data.idempotencyKey ?? data.idempotency_key),
+    verificationStatus: text(data.verificationStatus ?? data.verification_status, 'NOT_RUN') as ImportSession['verificationStatus'],
+    verificationDetails: object(data.verificationDetails ?? data.verification_details),
     status: text(data.status, 'DRAFT') as ImportSessionStatus,
     totalRows: count(data.totalRows ?? data.total_rows),
     validRows: count(data.validRows ?? data.valid_rows),
     warningRows: count(data.warningRows ?? data.warning_rows),
     invalidRows: count(data.invalidRows ?? data.invalid_rows),
     createdBy: text(data.createdBy ?? data.created_by),
+    createdByUserId: count(data.createdByUserId ?? data.created_by_user_id),
     createdAt: text(data.createdAt ?? data.created_at),
     updatedAt: text(data.updatedAt ?? data.updated_at),
     validatedAt: nullableText(data.validatedAt ?? data.validated_at),
@@ -407,6 +438,34 @@ export function normalizeImportSessionResponse(payload: unknown): ImportSession 
     fields: list(data.fields).map(normalizeFieldDefinition),
     rows: list(data.rows).map(normalizeImportRow),
     results: list(data.results).map(normalizeCommitResult),
+    reviews: list(data.reviews).map((item) => {
+      const review = object(item);
+      return {
+        id: count(review.id),
+        draftRevision: count(review.draftRevision ?? review.draft_revision),
+        draftHash: text(review.draftHash ?? review.draft_hash),
+        reviewerUserId: count(review.reviewerUserId ?? review.reviewer_user_id),
+        reviewerName: text(review.reviewerName ?? review.reviewer_name),
+        decision: text(review.decision, 'ACCEPT') as 'ACCEPT' | 'DECLINE',
+        reason: nullableText(review.reason),
+        createdAt: text(review.createdAt ?? review.created_at),
+      };
+    }),
+    approvalProgress: {
+      accepted: count(object(data.approvalProgress ?? data.approval_progress).accepted),
+      declined: count(object(data.approvalProgress ?? data.approval_progress).declined),
+      required: count(object(data.approvalProgress ?? data.approval_progress).required, 2),
+    },
+    reviewSummary: {
+      includedRows: count(object(data.reviewSummary ?? data.review_summary).includedRows ?? object(data.reviewSummary ?? data.review_summary).included_rows),
+      excludedRows: count(object(data.reviewSummary ?? data.review_summary).excludedRows ?? object(data.reviewSummary ?? data.review_summary).excluded_rows),
+      createRows: count(object(data.reviewSummary ?? data.review_summary).createRows ?? object(data.reviewSummary ?? data.review_summary).create_rows),
+      updateRows: count(object(data.reviewSummary ?? data.review_summary).updateRows ?? object(data.reviewSummary ?? data.review_summary).update_rows),
+      warningRows: count(object(data.reviewSummary ?? data.review_summary).warningRows ?? object(data.reviewSummary ?? data.review_summary).warning_rows),
+      changedFields: count(object(data.reviewSummary ?? data.review_summary).changedFields ?? object(data.reviewSummary ?? data.review_summary).changed_fields),
+    },
+    stageEvents: list(data.stageEvents ?? data.stage_events).map(object),
+    importControl: normalizeImportControl(data.importControl ?? data.import_control),
   };
 }
 
@@ -543,6 +602,7 @@ export const api = {
   labels: async (assetIds: number[], fields?: LabelFieldKey[]) => list(object(await request<unknown>('/labels/print', { method: 'POST', body: JSON.stringify({ assetIds, fields }) })).labels).map(normalizeLabelData),
   exportAssets: (assetIds: number[]) => downloadRequest('/assets/export', { method: 'POST', body: JSON.stringify({ assetIds }) }, 'inventory-assets.csv'),
   imports: async () => normalizeImportSessionListResponse(await request<unknown>('/imports')),
+  importControl: async () => normalizeImportControl(object(await request<unknown>('/imports/control')).importControl),
   importSession: async (id: string) => normalizeImportSessionResponse(await request<unknown>(`/imports/${id}`)),
   createImportSession: async (profileId: number, mode: ImportMode) =>
     normalizeImportSessionResponse(await request<unknown>('/imports', { method: 'POST', body: JSON.stringify({ profileId, mode }) })),
@@ -550,6 +610,8 @@ export const api = {
     const form = new FormData(); form.set('file', file);
     return normalizeImportSessionResponse(await request<unknown>(`/imports/${id}/file`, { method: 'POST', body: form }));
   },
+  applyImportSourceOptions: async (id: string, options: { sheetName?: string; delimiter?: ',' | ';' | '\t'; encoding?: 'utf-8' | 'windows-1252' }) =>
+    normalizeImportSessionResponse(await request<unknown>(`/imports/${id}/source-options`, { method: 'POST', body: JSON.stringify(options) })),
   saveImportMappings: async (id: string, mappings: Array<{ sourceIndex: number; fieldKey?: string; ignored?: boolean }>) =>
     normalizeImportSessionResponse(await request<unknown>(`/imports/${id}/mappings`, { method: 'PUT', body: JSON.stringify({ mappings }) })),
   validateImport: async (id: string) =>
@@ -562,8 +624,11 @@ export const api = {
   },
   addImportLookup: async (batchId: string, fieldKey: string, value: string, reason: string) =>
     normalizeImportSessionResponse(await request<unknown>(`/imports/${batchId}/lookups`, { method: 'POST', body: JSON.stringify({ fieldKey, value, reason }) })),
-  commitImport: async (id: string) => {
-    const response = await request<unknown>(`/imports/${id}/commit`, { method: 'POST', body: '{}' });
+  reviewImport: async (id: string, body: { decision: 'ACCEPT' | 'DECLINE'; reason?: string; draftRevision: number; draftHash: string }) =>
+    normalizeImportSessionResponse(await request<unknown>(`/imports/${id}/reviews`, { method: 'POST', body: JSON.stringify(body) })),
+  reopenImport: async (id: string) => normalizeImportSessionResponse(await request<unknown>(`/imports/${id}/reopen`, { method: 'POST', body: '{}' })),
+  commitImport: async (id: string, body: { draftRevision: number; draftHash: string; idempotencyKey: string }) => {
+    const response = await request<unknown>(`/imports/${id}/commit`, { method: 'POST', body: JSON.stringify(body) });
     const data = object(response);
     return {
       session: normalizeImportSessionResponse(response),
@@ -573,7 +638,7 @@ export const api = {
   },
   cancelImport: async (id: string) => normalizeImportSessionResponse(await request<unknown>(`/imports/${id}/cancel`, { method: 'POST', body: '{}' })),
   importValidationUrl: (id: string) => `${API}/imports/${id}/validation.csv`,
-  importTemplateUrl: (profileId: number) => `${API}/profiles/${profileId}/import-template.csv`,
+  importTemplateUrl: (profileId: number, format: 'csv' | 'xlsx' = 'csv') => `${API}/profiles/${profileId}/import-template.${format}`,
   reports: async () => list(object(await request<unknown>('/reports')).reports).map((item) => {
     const data = object(item);
     return { id: text(data.id), name: text(data.name), description: text(data.description) };
@@ -585,6 +650,10 @@ export const api = {
   setMaintenance: async (enabled: boolean, reason: string) => {
     const response = object(await request<unknown>('/admin/maintenance', { method: 'POST', body: JSON.stringify({ enabled, reason }) }));
     return { maintenance: object(response.maintenance), changed: boolean(response.changed) };
+  },
+  setImportControl: async (mode: ImportControl['mode'], reason: string) => {
+    const response = object(await request<unknown>('/admin/import-control', { method: 'POST', body: JSON.stringify({ mode, reason }) }));
+    return { importControl: normalizeImportControl(response.importControl ?? response.import_control), changed: boolean(response.changed) };
   },
   adminProfiles: async () => list(object(await request<unknown>('/admin/profiles')).profiles).map(object),
   adminUsers: async () => {

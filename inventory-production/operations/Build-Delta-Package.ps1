@@ -245,12 +245,13 @@ $Manifest = [ordered]@{
         web = $ToVersion
         api = $ToVersion
     }
-    requiredImportContractVersion = '005-complete-import-workflow'
+    requiredImportContractVersion = '009-governed-import-reliability'
     requiredSchemaMigrations = @(
         '005-complete-import-workflow',
         '006-invmgmt-schema',
         '007-gpu-model-reference-data',
-        '008-separate-lifecycle-from-categories'
+        '008-separate-lifecycle-from-categories',
+        '009-governed-import-reliability'
     )
     conformance = [ordered]@{
         frameworkVersion = [string]$ReleaseEvidence.frameworkVersion

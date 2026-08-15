@@ -1,3 +1,3 @@
-export const releaseVersion = '1.3.16';
-export const requiredImportContract = '005-complete-import-workflow';
-export const requiredSchemaContract = '008-separate-lifecycle-from-categories';
+export const releaseVersion = '1.4.0';
+export const requiredImportContract = '009-governed-import-reliability';
+export const requiredSchemaContract = '009-governed-import-reliability';
