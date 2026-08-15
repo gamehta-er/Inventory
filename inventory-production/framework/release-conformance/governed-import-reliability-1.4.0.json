@@ -1,0 +1,128 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.4.0",
+  "changeId": "DCR-2026-006-GOVERNED-IMPORT-RELIABILITY",
+  "scope": "Deliver canonical CSV and XLSX imports with revision-bound two-administrator review, server-enforced commit control, atomic PostgreSQL verification, redacted failure evidence, and a required GitHub reliability gate while keeping imports disabled until test-server and organizational approval gates pass.",
+  "requirements": [
+    {
+      "requirementId": "GOV-005",
+      "status": "PASSED",
+      "evidence": [
+        "framework/design-change-requests/DCR-2026-006-governed-import-reliability.md records the approved change, affected surfaces, deployment condition, and rollback condition.",
+        "docs/quality/GATE-EVIDENCE.md keeps test-server and named organizational approval gates separate from automated evidence."
+      ]
+    },
+    {
+      "requirementId": "GOV-006",
+      "status": "PASSED",
+      "evidence": [
+        "Required inventory-production GitHub run 17 passed at commit e702401eb2040e6c4803157e9a006dddde706755.",
+        "operations/Build-Delta-Package.ps1 and operations/Test-Delta-Package.ps1 require a versioned, hash-verified component delta and immutable migration IDs."
+      ]
+    },
+    {
+      "requirementId": "AUTH-003",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts resolves importer, reviewer, permissions, and commit authority from the authenticated server session.",
+        "Backend authorization tests reject importer self-review and unauthorized direct API actions."
+      ]
+    },
+    {
+      "requirementId": "AUTH-006",
+      "status": "PASSED",
+      "evidence": [
+        "database/009-governed-import-reliability.sql grants import.review only through the Privileged Administrator role.",
+        "The browser journey requires two distinct non-importing Privileged Administrators on the same revision and hash."
+      ]
+    },
+    {
+      "requirementId": "DATA-013",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/integration/importReliability.database.test.ts verifies revision locking, immutable reviews, idempotent concurrent retries, typed readback, and complete rollback in PostgreSQL 18.",
+        "e2e/import-reliability.spec.ts reconciles the committed correction through database, API, Search, and export."
+      ]
+    },
+    {
+      "requirementId": "DATA-014",
+      "status": "PASSED",
+      "evidence": [
+        "database/009-governed-import-reliability.sql is transactional, forward-only, uniquely journaled, and marks existing open sessions NEEDS_REVALIDATION.",
+        "The PostgreSQL 18 GitHub job applies migrations and passes the database contract before integration tests."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-001",
+      "status": "PASSED",
+      "evidence": [
+        "Draft source metadata, rows, mappings, revisions, hashes, reviews, stage events, and results are persisted in PostgreSQL.",
+        "The browser correction remains intact through filtering, page navigation, review, commit, readback, Search, and export."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-004",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importSources.test.ts covers UTF-8, Windows-1252, delimiters, malformed quoting, null bytes, formula injection, XLSX sheets, hidden sheets, merged headers, and formula rejection.",
+        "Equivalent golden CSV and XLSX inputs produce the same canonical draft in automated tests."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-006",
+      "status": "PASSED",
+      "evidence": [
+        "Backend source and workflow tests block duplicate headers, duplicate field mappings, duplicate serials, duplicate unique profile values, and unmapped required fields.",
+        "Mapping decisions are revisioned and any mutation invalidates earlier approvals."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-013",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/ImportPage.test.tsx covers row correction, inclusion changes, approval progress, and commit gating.",
+        "e2e/import-reliability.spec.ts proves a corrected Product Name survives revalidation, filtering, navigation, review, commit, API readback, Search, and export."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-014",
+      "status": "PASSED",
+      "evidence": [
+        "The commit endpoint rechecks mode, permission, draft revision, draft hash, two current approvals, and idempotency under a PostgreSQL lock.",
+        "PostgreSQL integration forces a mid-batch asset/model failure and verifies that no inventory row remains; concurrent retries produce one commit result."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-015",
+      "status": "PASSED",
+      "evidence": [
+        "The governed browser journey verifies completed data through Inventory API, Search, and CSV export after manual importer commit.",
+        "Frontend state invalidation refreshes Search, Inventory, Reports, Activity, import history, and category totals after commit."
+      ]
+    },
+    {
+      "requirementId": "OPS-004",
+      "status": "PASSED",
+      "evidence": [
+        "Release 1.4.0 is delivered through the existing component-delta updater from the confirmed installed release 1.3.16.",
+        "The full baseline remains reserved for clean installation and disaster recovery."
+      ]
+    },
+    {
+      "requirementId": "OPS-005",
+      "status": "PASSED",
+      "evidence": [
+        "The updater verifies installed version, package hashes, complete target component manifests, required migration IDs, and version contracts before publishing.",
+        "Failure handling restores switched application components and preserves the pre-update maintenance state."
+      ]
+    },
+    {
+      "requirementId": "OPS-009",
+      "status": "PASSED",
+      "evidence": [
+        "The release workflow verifies liveness, PostgreSQL readiness, schema migration, API build, frontend build, and browser access.",
+        "The updater requires direct API readiness, IIS readiness, published web/API version compatibility, and all application routes after deployment."
+      ]
+    }
+  ]
+}

@@ -6,6 +6,7 @@ This directory is the review home for Inventory Project import reliability.
 - `IMPORT-RELIABILITY-PLAN.md` is the readable delivery and reopening plan.
 - `GATE-EVIDENCE.md` is the authoritative gate register. Automation can mark an evidence-backed gate `PASSED`; a named reviewer must separately mark it `SIGNED OFF`.
 - `INVENTORY-FIXTURE-MATRIX.md` translates generic spreadsheet cases into inventory-shaped CSV/XLSX scenarios.
+- `TEST-SERVER-EVIDENCE-2026-08-14.md` records the sanitized, hash-linked pre-deployment state of `10.176.177.149`; the private evidence bundle remains outside Git.
 
 Automated evidence is created by the required GitHub workflow named `inventory-production` and retained as a workflow artifact for 30 days. The current baseline is [run 16](https://github.com/gamehta-er/Inventory/actions/runs/31865283886), commit `c30049b`, with artifact digest `sha256:8d46ac50a9e2eb0262c7391c03ace32040b830915e469ae0f87297f419b02d06`.
 
