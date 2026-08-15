@@ -17,7 +17,7 @@
     "dev:web": "npm --workspace frontend run dev",
     "check": "npm --workspace backend run check && npm --workspace frontend run check && tsc -p tsconfig.quality.json --noEmit",
     "test": "npm --workspace backend run test && npm --workspace frontend run test",
-    "test:database": "node --import tsx --test backend/test/integration/**/*.test.ts",
+    "test:database": "node --import tsx --test \"backend/test/integration/**/*.test.ts\"",
     "fixtures:build": "node test/fixtures/build-import-fixtures.mjs",
     "test:e2e": "npm run fixtures:build && playwright test",
     "evidence:write": "node test/evidence/write-reliability-evidence.mjs",
