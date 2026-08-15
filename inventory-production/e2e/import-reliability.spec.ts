@@ -100,7 +100,8 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       await importer.page.getByLabel(/Product Name/).fill(correctedProductName);
       await importer.page.getByRole('button', { name: 'Save Changes And Revalidate' }).click();
       await expect(importer.page.getByRole('dialog')).toContainText(correctedProductName);
-      await importer.page.getByRole('button', { name: 'Close' }).click();
+      await importer.page.keyboard.press('Escape');
+      await expect(importer.page.getByRole('dialog')).toBeHidden();
       await expect(importer.page.getByRole('heading', { name: '0 of 2 approvals' })).toBeVisible();
       await importer.page.getByRole('tab', { name: /Ready/ }).click();
       await expect(importer.page.getByText(correctedProductName, { exact: true })).toBeVisible();
@@ -111,7 +112,8 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       await expect(importer.page.getByText(correctedProductName, { exact: true })).toBeVisible();
       await importer.page.getByRole('button', { name: 'Review', exact: true }).click();
       await expect(importer.page.getByRole('dialog')).toContainText(correctedProductName);
-      await importer.page.getByRole('button', { name: 'Close' }).click();
+      await importer.page.keyboard.press('Escape');
+      await expect(importer.page.getByRole('dialog')).toBeHidden();
       await importer.page.screenshot({ path: resolve(screenshotRoot, 'csv-correction-retained.png'), fullPage: true });
 
       const [correctedDraft] = await administratorQuery<{
