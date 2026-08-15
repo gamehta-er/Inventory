@@ -69,6 +69,14 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
     }
   });
 
+  it('DATA-008 verifies uniqueness from PostgreSQL index definitions instead of fragile object names', () => {
+    assert.match(databaseContract, /pg_get_indexdef\(unique_index\.indexrelid\)/);
+    assert.match(databaseContract, /position\('\(serial_number\)'/);
+    assert.match(databaseContract, /position\('\(asset_tag\)'/);
+    assert.match(databaseContract, /pg_get_expr\(unique_index\.indpred,unique_index\.indrelid\).*btrim\(asset_tag\)/s);
+    assert.doesNotMatch(databaseContract, /assets_asset_tag_unique'\)/);
+  });
+
   it('ARCH-005 pins API queries to invmgmt without runtime schema creation', () => {
     assert.match(dbSource, /search_path=invmgmt,public/);
     assert.match(dbSource, /to_regclass\('invmgmt\.assets'\)/);

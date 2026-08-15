@@ -172,8 +172,29 @@ BEGIN
         RAISE EXCEPTION 'DATA-010: lifecycle status contract is invalid: %', status_values;
     END IF;
 
-    IF to_regclass('invmgmt.assets_serial_number_key') IS NULL
-       OR to_regclass('invmgmt.assets_asset_tag_unique') IS NULL THEN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_index unique_index
+        JOIN pg_class asset_table ON asset_table.oid=unique_index.indrelid
+        JOIN pg_namespace asset_schema ON asset_schema.oid=asset_table.relnamespace
+        WHERE asset_schema.nspname='invmgmt'
+          AND asset_table.relname='assets'
+          AND unique_index.indisunique
+          AND unique_index.indpred IS NULL
+          AND position('(serial_number)' IN pg_get_indexdef(unique_index.indexrelid))>0
+    ) OR NOT EXISTS (
+        SELECT 1
+        FROM pg_index unique_index
+        JOIN pg_class asset_table ON asset_table.oid=unique_index.indrelid
+        JOIN pg_namespace asset_schema ON asset_schema.oid=asset_table.relnamespace
+        WHERE asset_schema.nspname='invmgmt'
+          AND asset_table.relname='assets'
+          AND unique_index.indisunique
+          AND unique_index.indpred IS NOT NULL
+          AND position('(asset_tag)' IN pg_get_indexdef(unique_index.indexrelid))>0
+          AND pg_get_expr(unique_index.indpred,unique_index.indrelid) ILIKE '%asset_tag IS NOT NULL%'
+          AND pg_get_expr(unique_index.indpred,unique_index.indrelid) ILIKE '%btrim(asset_tag)%'
+    ) THEN
         RAISE EXCEPTION 'DATA-008: serial or populated asset-tag uniqueness is missing';
     END IF;
 
