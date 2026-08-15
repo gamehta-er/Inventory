@@ -41,7 +41,8 @@ async function signedInPage(browser: Browser, displayName: string): Promise<{ co
   await page.goto('/');
   await page.getByLabel(/Team member/).selectOption({ label: displayName });
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByRole('heading', { name: /Find the exact hardware/i })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
+  await expect(page.locator('.identity').getByText(displayName, { exact: true })).toBeVisible();
   return { context, page };
 }
 
@@ -136,7 +137,7 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
         result_count: 1,
       }]);
 
-      await importer.page.goto('/');
+      await importer.page.goto('/search');
       await importer.page.getByLabel('Search inventory').fill(serialNumber);
       await importer.page.getByRole('button', { name: 'Search inventory' }).click();
       await expect(importer.page.getByRole('heading', { name: '1 asset found' })).toBeVisible();
