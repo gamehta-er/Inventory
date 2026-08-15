@@ -108,7 +108,22 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       await expect(commitButton).toBeEnabled();
       const commitStarted = Date.now();
       await commitButton.click();
-      await expect(importer.page.getByRole('heading', { name: 'Import completed' })).toBeVisible();
+      try {
+        await expect(importer.page.getByRole('heading', { name: 'Import completed' })).toBeVisible();
+      } catch (failure) {
+        const [diagnostic] = await administratorQuery<{
+          status: string;
+          verification_status: string;
+          verification_details: Record<string, unknown>;
+          failure_message: string | null;
+        }>(`
+          SELECT status,verification_status,verification_details,failure_message
+          FROM invmgmt.import_batches
+          WHERE id=$1::uuid
+        `, [batchId]);
+        const alerts = await importer.page.getByRole('alert').allTextContents();
+        throw new Error(`Import commit did not complete: ${JSON.stringify({ alerts, diagnostic })}`, { cause: failure });
+      }
       timings.commitMs = Date.now() - commitStarted;
       expect(timings.commitMs).toBeLessThan(120_000);
       await importer.page.screenshot({ path: resolve(screenshotRoot, 'csv-commit-complete.png'), fullPage: true });
