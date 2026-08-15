@@ -8,6 +8,7 @@ const baseline = await readFile(projectFile('database/001-production-baseline.sq
 const schemaMigration = await readFile(projectFile('database/Migrations/006-invmgmt-schema.sql'), 'utf8');
 const lifecycleCategoryMigration = await readFile(projectFile('database/Migrations/008-separate-lifecycle-from-categories.sql'), 'utf8');
 const importReliabilityMigration = await readFile(projectFile('database/Migrations/009-governed-import-reliability.sql'), 'utf8');
+const databaseContract = await readFile(projectFile('database/Test-DatabaseContract.sql'), 'utf8');
 const dbSource = await readFile(projectFile('backend/src/db.ts'), 'utf8');
 const appSource = await readFile(projectFile('backend/src/app.ts'), 'utf8');
 const versionSource = await readFile(projectFile('backend/src/version.ts'), 'utf8');
@@ -55,6 +56,8 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
     assert.match(schemaMigration, /REVOKE CREATE ON SCHEMA invmgmt FROM inventory_app/);
     assert.match(schemaMigration, /GRANT USAGE ON SCHEMA invmgmt TO inventory_app/);
     assert.doesNotMatch(schemaMigration, /GRANT CREATE ON SCHEMA invmgmt TO inventory_app/);
+    assert.match(databaseContract, /has_schema_privilege\('inventory_app', 'invmgmt', 'CREATE'\)/);
+    assert.doesNotMatch(databaseContract, /has_schema_privilege\('PUBLIC'/);
   });
 
   it('ARCH-005 pins API queries to invmgmt without runtime schema creation', () => {

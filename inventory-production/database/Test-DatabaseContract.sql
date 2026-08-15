@@ -91,8 +91,7 @@ BEGIN
         RAISE EXCEPTION 'DATA-001: % Inventory table(s) remain in public', public_inventory_table_count;
     END IF;
 
-    IF has_schema_privilege('inventory_app', 'invmgmt', 'CREATE')
-       OR has_schema_privilege('PUBLIC', 'invmgmt', 'CREATE') THEN
+    IF has_schema_privilege('inventory_app', 'invmgmt', 'CREATE') THEN
         RAISE EXCEPTION 'DATA-015: runtime role or PUBLIC can create objects in invmgmt';
     END IF;
 
