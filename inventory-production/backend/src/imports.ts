@@ -301,11 +301,9 @@ function closestLabels(rows: Array<{ label: string }>, source: string): string[]
 }
 
 async function entityOptions(client: DbClient): Promise<Record<string, Array<{ id: number; value: string; label: string }>>> {
-  const [locations, owners, vendors] = await Promise.all([
-    client.query('SELECT id,full_path label FROM locations WHERE active ORDER BY full_path'),
-    client.query('SELECT id,display_name label FROM application_users WHERE active ORDER BY display_name'),
-    client.query('SELECT id,vendor_name label FROM vendors WHERE active ORDER BY vendor_name'),
-  ]);
+  const locations = await client.query('SELECT id,full_path label FROM locations WHERE active ORDER BY full_path');
+  const owners = await client.query('SELECT id,display_name label FROM application_users WHERE active ORDER BY display_name');
+  const vendors = await client.query('SELECT id,vendor_name label FROM vendors WHERE active ORDER BY vendor_name');
   const convert = (rows: Array<{ id: number; label: string }>) => rows.map((row) => ({ id: Number(row.id), value: row.label, label: row.label }));
   return { location: convert(locations.rows), owner: convert(owners.rows), vendor: convert(vendors.rows) };
 }
@@ -609,23 +607,30 @@ async function invalidateDraft(client: DbClient, batchId: string, status: Sessio
 async function stageParsedSource(client: DbClient, batchId: string, parsed: ParsedImportSource, fields: FieldDefinition[]): Promise<MappingInput[]> {
   await client.query('DELETE FROM import_batch_rows WHERE batch_id=$1', [batchId]);
   await client.query('DELETE FROM import_column_mappings WHERE batch_id=$1', [batchId]);
-  for (let index = 0; index < parsed.rows.length; index++) {
-    const source = Object.fromEntries(parsed.headers.map((_header, sourceIndex) => [String(sourceIndex), parsed.rows[index]![sourceIndex] ?? '']));
-    await client.query(
-      `INSERT INTO import_batch_rows(batch_id,row_number,source_values,normalized_values,status)
-       VALUES($1,$2,$3,'{}'::jsonb,'PENDING')`,
-      [batchId, parsed.rowNumbers[index] ?? index + 2, source],
-    );
-  }
+  const stagedRows = parsed.rows.map((row, index) => ({
+    rowNumber: parsed.rowNumbers[index] ?? index + 2,
+    sourceValues: Object.fromEntries(parsed.headers.map((_header, sourceIndex) => [String(sourceIndex), row[sourceIndex] ?? ''])),
+  }));
+  await client.query(
+    `INSERT INTO import_batch_rows(batch_id,row_number,source_values,normalized_values,status)
+     SELECT $1,source.row_number,source.source_values,'{}'::jsonb,'PENDING'
+       FROM jsonb_to_recordset($2::jsonb) AS source(row_number integer,source_values jsonb)
+      ORDER BY source.row_number`,
+    [batchId, JSON.stringify(stagedRows.map((row) => ({ row_number: row.rowNumber, source_values: row.sourceValues })))],
+  );
   const automaticMappings = autoMappings(parsed.headers, fields);
-  for (const mapping of automaticMappings) {
-    const field = fields.find((item) => item.fieldKey === mapping.fieldKey)!;
-    await client.query(
-      `INSERT INTO import_column_mappings(batch_id,source_header,source_index,field_definition_id,ignored)
-       VALUES($1,$2,$3,$4,false)`,
-      [batchId, parsed.headers[mapping.sourceIndex], mapping.sourceIndex, field.id],
-    );
-  }
+  const mappedColumns = automaticMappings.map((mapping) => ({
+    source_header: parsed.headers[mapping.sourceIndex],
+    source_index: mapping.sourceIndex,
+    field_definition_id: fields.find((item) => item.fieldKey === mapping.fieldKey)!.id,
+  }));
+  await client.query(
+    `INSERT INTO import_column_mappings(batch_id,source_header,source_index,field_definition_id,ignored)
+     SELECT $1,mapping.source_header,mapping.source_index,mapping.field_definition_id,false
+       FROM jsonb_to_recordset($2::jsonb)
+         AS mapping(source_header text,source_index integer,field_definition_id bigint)`,
+    [batchId, JSON.stringify(mappedColumns)],
+  );
   return automaticMappings;
 }
 
@@ -687,6 +692,7 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
   }>(`SELECT id,row_number,source_values,corrected_values,included FROM import_batch_rows WHERE batch_id=$1 ORDER BY row_number FOR UPDATE`, [batchId]);
 
   const prepared: PreparedImportRow[] = [];
+  const normalizationCache = new Map<string, { value: unknown; issues: Issue[] }>();
 
   for (const staged of rows.rows) {
     if (!staged.included) {
@@ -730,7 +736,12 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
         else values[field.fieldKey] = null;
         continue;
       }
-      const normalized = await normalizeField(client, field, rawByField[field.fieldKey]);
+      const cacheKey = `${field.id}\u0000${cleanText(rawByField[field.fieldKey])}`;
+      let normalized = normalizationCache.get(cacheKey);
+      if (!normalized) {
+        normalized = await normalizeField(client, field, rawByField[field.fieldKey]);
+        normalizationCache.set(cacheKey, normalized);
+      }
       values[field.fieldKey] = normalized.value;
       issues.push(...normalized.issues);
     }
@@ -812,28 +823,65 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
     }
   }
 
+  await client.query(
+    'DELETE FROM import_validation_issues WHERE import_row_id IN (SELECT id FROM import_batch_rows WHERE batch_id=$1)',
+    [batchId],
+  );
   const counts = { valid: 0, warning: 0, invalid: 0 };
+  const rowUpdates: Array<Record<string, unknown>> = [];
+  const issueInserts: Array<Record<string, unknown>> = [];
   for (const row of prepared) {
-    await client.query('DELETE FROM import_validation_issues WHERE import_row_id=$1', [row.id]);
     if (!row.included) {
-      await client.query(`UPDATE import_batch_rows SET status='EXCLUDED',normalized_values='{}'::jsonb,operation=NULL,target_asset_id=NULL,target_asset_revision=NULL,before_values=NULL,after_values=NULL,updated_at=now() WHERE id=$1`, [row.id]);
+      rowUpdates.push({ id: row.id, normalized_values: {}, status: 'EXCLUDED', operation: null, target_asset_id: null, target_asset_revision: null, before_values: null, after_values: null });
       continue;
     }
     const status = classifyImportRow(row.issues);
     if (status === 'VALID') counts.valid++;
     else if (status === 'WARNING') counts.warning++;
     else counts.invalid++;
-    await client.query(
-      `UPDATE import_batch_rows SET normalized_values=$2,status=$3,operation=$4,target_asset_id=$5,target_asset_revision=$6,before_values=$7,after_values=$8,updated_at=now() WHERE id=$1`,
-      [row.id, row.values, status, batch.mode, row.targetAssetId, row.targetRevision, row.beforeValues, row.values],
-    );
+    rowUpdates.push({
+      id: row.id,
+      normalized_values: row.values,
+      status,
+      operation: batch.mode,
+      target_asset_id: row.targetAssetId,
+      target_asset_revision: row.targetRevision,
+      before_values: row.beforeValues,
+      after_values: row.values,
+    });
     for (const issue of row.issues) {
-      await client.query(
-        `INSERT INTO import_validation_issues(import_row_id,field_key,severity,issue_code,message,source_value,suggested_values)
-         VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)`,
-        [row.id, issue.fieldKey ?? null, issue.severity, issue.code, issue.message, issue.sourceValue ?? null, serializeImportIssueSuggestions(issue.suggestedValues)],
-      );
+      issueInserts.push({
+        import_row_id: row.id,
+        field_key: issue.fieldKey ?? null,
+        severity: issue.severity,
+        issue_code: issue.code,
+        message: issue.message,
+        source_value: issue.sourceValue ?? null,
+        suggested_values: issue.suggestedValues ?? [],
+      });
     }
+  }
+  await client.query(
+    `UPDATE import_batch_rows AS target
+        SET normalized_values=staged.normalized_values,status=staged.status,operation=staged.operation,
+            target_asset_id=staged.target_asset_id,target_asset_revision=staged.target_asset_revision,
+            before_values=staged.before_values,after_values=staged.after_values,updated_at=now()
+       FROM jsonb_to_recordset($2::jsonb) AS staged(
+         id uuid,normalized_values jsonb,status text,operation text,target_asset_id bigint,
+         target_asset_revision integer,before_values jsonb,after_values jsonb
+       )
+      WHERE target.batch_id=$1 AND target.id=staged.id`,
+    [batchId, JSON.stringify(rowUpdates)],
+  );
+  if (issueInserts.length) {
+    await client.query(
+      `INSERT INTO import_validation_issues(import_row_id,field_key,severity,issue_code,message,source_value,suggested_values)
+       SELECT issue.import_row_id,issue.field_key,issue.severity,issue.issue_code,issue.message,issue.source_value,issue.suggested_values
+         FROM jsonb_to_recordset($1::jsonb) AS issue(
+           import_row_id uuid,field_key text,severity text,issue_code text,message text,source_value text,suggested_values jsonb
+         )`,
+      [JSON.stringify(issueInserts)],
+    );
   }
 
   const status: SessionStatus = counts.invalid > 0 ? 'NEEDS_ATTENTION' : 'AWAITING_APPROVAL';
@@ -1738,5 +1786,6 @@ export const importInternals = {
   committedValueMismatches,
   committedValueMismatchDetails,
   calculateDraftHash,
+  stageParsedSource,
   stableJson,
 };

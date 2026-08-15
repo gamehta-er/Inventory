@@ -51,6 +51,28 @@ const standardFields = [
 ];
 
 describe('complete import workflow contract', () => {
+  it('stages 1,000 source rows with a fixed number of structured database operations', async () => {
+    const calls: Array<{ text: string; values?: unknown[] }> = [];
+    const client = {
+      query: async (text: string, values?: unknown[]) => {
+        calls.push({ text, values });
+        return { rows: [], rowCount: 0 };
+      },
+    } as Parameters<typeof importInternals.stageParsedSource>[0];
+    const rows = Array.from({ length: 1_000 }, (_value, index) => [`SER-${index + 1}`]);
+
+    await importInternals.stageParsedSource(
+      client,
+      '11111111-1111-4111-8111-111111111111',
+      { headers: ['Serial #'], rows, rowNumbers: rows.map((_row, index) => index + 2) },
+      [field(44, 'serial_number', 'Serial #', true, ['Serial #'], { storageTarget: 'assets.serial_number' })],
+    );
+
+    assert.equal(calls.length, 4);
+    assert.equal(JSON.parse(String(calls[2]?.values?.[1])).length, 1_000);
+    assert.equal(JSON.parse(String(calls[3]?.values?.[1])).length, 1);
+  });
+
   it('generates the template from every enabled profile field, including administrator-added fields', () => {
     const template = importInternals.buildImportTemplate([
       ...standardFields,
