@@ -147,10 +147,23 @@ describe('governed import PostgreSQL 18 boundary', { skip: integrationDatabaseUr
       );
       await client.query('ROLLBACK TO SAVEPOINT duplicate_review');
 
+      const immutableTrigger = await client.query<{ trigger_definition: string; procedure_name: string }>(`
+        SELECT pg_get_triggerdef(trigger.oid) AS trigger_definition,
+               procedure.proname AS procedure_name
+        FROM pg_trigger trigger
+        JOIN pg_proc procedure ON procedure.oid=trigger.tgfoid
+        WHERE trigger.tgrelid='import_reviews'::regclass
+          AND trigger.tgname='import_reviews_immutable'
+          AND NOT trigger.tgisinternal
+      `);
+      assert.equal(immutableTrigger.rowCount, 1);
+      assert.match(immutableTrigger.rows[0]!.trigger_definition, /BEFORE UPDATE OR DELETE/i);
+      assert.equal(immutableTrigger.rows[0]!.procedure_name, 'reject_import_evidence_mutation');
+
       await client.query('SAVEPOINT mutate_review');
       await assert.rejects(
         client.query('UPDATE import_reviews SET reason=$2 WHERE batch_id=$1', [batchId, 'Changed after review']),
-        (error: unknown) => error instanceof Error && /append-only/i.test(error.message),
+        (error: unknown) => error instanceof Error && /permission denied for table import_reviews/i.test(error.message),
       );
       await client.query('ROLLBACK TO SAVEPOINT mutate_review');
 

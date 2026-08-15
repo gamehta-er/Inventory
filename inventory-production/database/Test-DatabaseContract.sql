@@ -130,6 +130,23 @@ BEGIN
         RAISE EXCEPTION 'IMPORT-014: runtime role cannot append governed Import evidence';
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+        FROM unnest(ARRAY['import_reviews','import_stage_events']) AS evidence_table(table_name)
+        WHERE has_table_privilege(
+            'inventory_app',
+            format('invmgmt.%I', evidence_table.table_name),
+            'UPDATE'
+        )
+        OR has_table_privilege(
+            'inventory_app',
+            format('invmgmt.%I', evidence_table.table_name),
+            'DELETE'
+        )
+    ) THEN
+        RAISE EXCEPTION 'IMPORT-014: runtime role can mutate append-only Import evidence';
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1 FROM invmgmt.import_runtime_control
         WHERE control_key='GLOBAL' AND mode IN ('DISABLED','CANARY','ENABLED')

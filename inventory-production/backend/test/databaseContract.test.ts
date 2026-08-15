@@ -106,6 +106,7 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
       assert.match(databaseContract, new RegExp(`'${table}'`));
     }
     assert.match(databaseContract, /has_table_privilege/);
+    assert.match(databaseContract, /runtime role can mutate append-only Import evidence/);
     assert.match(databaseContract, /IMPORT-014/);
     assert.match(importsSource, /id bigint,normalized_values jsonb/);
     assert.match(importsSource, /import_row_id bigint,field_key text/);
