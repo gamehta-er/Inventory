@@ -55,4 +55,6 @@ Product, Engineering, QA, and the Data Owner approve reopening. Monitor the firs
 
 ## Current Position
 
-The application controls and automated test harness are implemented in release `1.4.0`. Local unit, interaction, type, and canonical-source tests have passed. Real PostgreSQL 18, Playwright, deployment, canary, and organizational sign-offs remain evidence-driven gates and must not be inferred from implementation status.
+The application controls and automated test harness are implemented in release `1.4.0`. Required [GitHub run 16](https://github.com/gamehta-er/Inventory/actions/runs/31865283886) passed at commit `c30049b` with 108 backend tests, 47 frontend tests, four PostgreSQL 18 integration tests, and three Chromium journeys. G01-G11 and G13 now have reviewable automated evidence.
+
+The live test server remains a separate gate. Preserve the failed-session evidence, deploy with imports `DISABLED`, measure analysis and commit on `10.176.177.149`, complete the approved canary and rollback rehearsal, assign first-five monitoring, and obtain Product, Engineering, QA, and Data Owner sign-off. G12 and G14 remain `NOT RUN`; implementation and CI success must not be treated as permission to reopen imports.
