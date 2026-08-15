@@ -147,8 +147,15 @@ describe('governed import PostgreSQL 18 boundary', { skip: integrationDatabaseUr
       );
       await client.query('ROLLBACK TO SAVEPOINT duplicate_review');
 
-      const immutableTrigger = await client.query<{ trigger_definition: string; procedure_name: string }>(`
-        SELECT pg_get_triggerdef(trigger.oid) AS trigger_definition,
+      const immutableTrigger = await client.query<{
+        is_before: boolean;
+        on_delete: boolean;
+        on_update: boolean;
+        procedure_name: string;
+      }>(`
+        SELECT (trigger.tgtype & 2) = 2 AS is_before,
+               (trigger.tgtype & 8) = 8 AS on_delete,
+               (trigger.tgtype & 16) = 16 AS on_update,
                procedure.proname AS procedure_name
         FROM pg_trigger trigger
         JOIN pg_proc procedure ON procedure.oid=trigger.tgfoid
@@ -157,8 +164,12 @@ describe('governed import PostgreSQL 18 boundary', { skip: integrationDatabaseUr
           AND NOT trigger.tgisinternal
       `);
       assert.equal(immutableTrigger.rowCount, 1);
-      assert.match(immutableTrigger.rows[0]!.trigger_definition, /BEFORE UPDATE OR DELETE/i);
-      assert.equal(immutableTrigger.rows[0]!.procedure_name, 'reject_import_evidence_mutation');
+      assert.deepEqual(immutableTrigger.rows[0], {
+        is_before: true,
+        on_delete: true,
+        on_update: true,
+        procedure_name: 'reject_import_evidence_mutation',
+      });
 
       await client.query('SAVEPOINT mutate_review');
       await assert.rejects(
