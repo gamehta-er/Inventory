@@ -217,9 +217,19 @@ BEGIN
 
     IF NOT EXISTS (
         SELECT 1 FROM invmgmt.schema_migrations
-        WHERE migration_key = '010-simplified-import-workflow'
+        WHERE migration_key = '011-guided-import-corrections'
     ) THEN
-        RAISE EXCEPTION 'DATA-014: simplified Import workflow migration is not recorded';
+        RAISE EXCEPTION 'DATA-014: guided Import correction migration is not recorded';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM invmgmt.import_batch_rows row
+        JOIN invmgmt.import_batches batch ON batch.id=row.batch_id
+        WHERE NOT row.included
+          AND batch.status NOT IN ('COMPLETED','CANCELLED')
+    ) THEN
+        RAISE EXCEPTION 'IMPORT-013: an open Import draft still contains an excluded row';
     END IF;
 
     IF NOT EXISTS (

@@ -38,10 +38,10 @@ The Activity page is the business audit ledger. Service logs are for operational
 2. Open the saved import session; unfinished legacy sessions are marked `NEEDS_REVALIDATION` against the current profile and controlled values.
 3. Confirm the CSV delimiter/encoding or XLSX worksheet when the source requires a choice.
 4. Review column decisions before row validation. Duplicate headers, duplicate field mappings, and unmapped required fields must be resolved there.
-5. Use the linked row and field issue to select an approved value, edit the staged row, exclude the row, or add an authorized controlled value with a reason.
+5. The first blocked row opens automatically. Correct the highlighted field, select an approved value, bulk-correct matching rows, or add an authorized controlled value with a reason. Rows cannot be skipped.
 6. Configuration errors link to the affected Admin profile field. Fix the mapping, then return to the session and revalidate.
 7. Download the validation report when issues need to be corrected in the source file.
-8. When the preview is clean, select **Import**. No administrator approval is required.
+8. Use **Validate Changes** and **Import** from the bottom action area. No administrator approval is required.
 9. A retry of the same successful import is idempotent. After `VERIFICATION_FAILED`, preserve the evidence and upload the required data into a fresh session; do not reuse the failed draft.
 
 Completed sessions contain direct links to created or updated assets. Import commits also refresh Search, Inventory, Reports, Activity, history, and category totals in the active browser session.

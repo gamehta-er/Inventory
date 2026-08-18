@@ -412,7 +412,7 @@ button.button,
 .import-shell { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); align-items: start; gap: 16px; }
 .import-sidebar { position: sticky; top: calc(var(--header-height) + 18px); display: grid; gap: 16px; padding: 16px; }
 .import-workspace { min-width: 0; padding: 20px; }
-.import-mode-heading, .import-session-header, .import-step-heading, .import-review-actions, .import-template-actions { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.import-mode-heading, .import-session-header, .import-step-heading, .import-template-actions { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .import-mode-heading .eyebrow { margin: 8px 0 0; }
 .import-progress { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 18px; }
 .import-progress__step { display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; min-height: 38px; padding: 8px; border-bottom: 3px solid var(--line); color: var(--muted); font-size: 11px; }
@@ -483,8 +483,10 @@ button.button,
 .mapping-row select { width: 100%; }
 .import-sticky-actions { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 2px -20px -20px; padding: 13px 20px; border-top: 1px solid var(--line); background: rgba(255, 255, 255, .96); box-shadow: 0 -10px 24px rgba(18, 33, 25, .06); backdrop-filter: blur(8px); }
 .import-sticky-actions span { color: var(--muted); font-size: 12px; }
-
-.import-review-actions { justify-content: flex-end; flex-wrap: wrap; }
+.import-sticky-actions--review { align-items: flex-end; }
+.import-review-utilities, .import-submit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.import-submit-actions { justify-content: flex-end; margin-left: auto; }
+.import-submit-actions span { max-width: 330px; text-align: right; }
 .import-approval-panel { display: grid; gap: 13px; padding: 16px 0; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
 .import-approval-panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .import-approval-panel h3 { margin: 3px 0 4px; }
@@ -503,7 +505,7 @@ button.button,
 .import-review-decision { display: grid; grid-template-columns: auto minmax(240px,1fr) auto; align-items: end; gap: 10px; }
 .import-review-note { margin: 0; padding: 10px 12px; border-left: 3px solid var(--info); background: var(--info-soft); color: var(--ink); font-size: 12px; line-height: 1.45; }
 .import-review-note--action { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-left-color: var(--danger); background: var(--danger-soft); }
-.batch-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
+.batch-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; }
 .batch-kpis span { border: 1px solid var(--line); }
 .batch-kpis span:nth-child(1) strong { color: var(--green-dark); }
 .batch-kpis span:nth-child(2) strong { color: var(--warning); }
@@ -521,6 +523,9 @@ button.button,
 .import-row-editor { padding: 14px; border-bottom: 1px solid var(--line); background: #fbfcfb; }
 .import-row-editor .form-grid { margin-bottom: 12px; }
 .import-row-editor .field small { line-height: 1.4; }
+.import-row-editor .field--needs-fix { padding: 10px; border: 1px solid #efaaa2; border-radius: 7px; background: #fff6f4; }
+.import-row-editor .field--needs-fix .field__label { color: var(--danger); }
+.import-row-editor .field--needs-fix [aria-invalid="true"]:focus { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(180, 35, 24, .12); }
 .import-row__footer { display: flex; justify-content: flex-end; padding: 9px 14px; border-top: 1px solid var(--line); }
 .import-diff { margin: 12px 14px 0; padding: 12px; border: 1px solid #bdd7ea; border-radius: 7px; background: #f6fbff; }
 .import-diff > strong { display: block; margin-bottom: 8px; }
@@ -563,7 +568,9 @@ button.button,
 .import-table tbody tr { transition: background 120ms ease; }
 .import-table tbody tr:hover { background: #fbfdfb; }
 .import-table tbody tr:last-child td { border-bottom: 0; }
-.import-table tr.is-excluded { opacity: .6; }
+.import-table tr.is-needs-action { background: #fff6f4; box-shadow: inset 4px 0 0 var(--danger); }
+.import-table tr.is-needs-action:hover { background: #fff1ef; }
+.import-table tr.is-needs-action td:nth-last-child(2) { color: var(--danger); font-weight: 700; }
 .import-table td:nth-child(2) strong { display: block; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .import-table td:last-child { text-align: right; }
 .import-table-empty { display: grid; min-height: 130px; place-items: center; align-content: center; gap: 4px; color: var(--muted); font-size: 11px; }
@@ -1022,6 +1029,8 @@ button.button,
   .mapping-row { grid-template-columns: 1fr; }
   .import-sticky-actions { position: static; align-items: stretch; flex-direction: column; margin-inline: -15px; margin-bottom: -15px; padding-inline: 15px; }
   .import-sticky-actions .button { width: 100%; }
+  .import-review-utilities, .import-submit-actions { display: grid; width: 100%; margin-left: 0; }
+  .import-submit-actions span { max-width: none; text-align: left; }
   .import-diff span { grid-template-columns: 1fr; padding-bottom: 7px; border-bottom: 1px solid #dce9f1; }
   .report-view-tabs { grid-template-columns: 1fr; border-bottom: 0; }
   .report-view-tabs button { min-height: 54px; border-bottom: 1px solid var(--line); border-left: 3px solid transparent; }
@@ -1066,8 +1075,6 @@ button.button,
   .import-workspace { padding: 15px; }
   .recent-list { grid-template-columns: 1fr; }
   .mode-picker { grid-template-columns: 1fr; }
-  .import-review-actions { display: grid; grid-template-columns: 1fr; }
-  .import-review-actions .button { width: 100%; }
   .import-row > header { align-items: flex-start; flex-direction: column; }
   .file-picker--smart { grid-template-columns: auto minmax(0,1fr); min-height: 112px; }
   .file-picker--smart > b { grid-column: 1 / -1; text-align: center; }

@@ -6,7 +6,7 @@ Inventory Project imports are persistent, profile-driven sessions. CSV and XLSX 
 
 The API owns one global mode:
 
-- **DISABLED** permits upload, source selection, mapping, correction, exclusion, and preview, but rejects every import.
+- **DISABLED** permits upload, source selection, mapping, correction, and preview, but rejects every import.
 - **CANARY** permits only authorized test users to import.
 - **ENABLED** permits the importer to import a clean preview directly.
 
@@ -27,10 +27,10 @@ In Update Existing mode, a mapped blank optional cell clears the current value. 
 4. For CSV, confirm the detected delimiter/encoding only when ambiguous. For XLSX, choose one visible worksheet when the workbook has several. Formula cells are rejected; convert them to literal values first.
 5. Review explicit column decisions only when needed. Labels, field keys, and configured aliases map automatically; ambiguous or unknown columns require a user decision.
 6. Validate the complete batch.
-7. Correct, exclude, restore, or bulk-correct staged rows without re-uploading. The row editor submits only fields changed during that edit, so a stale editor cannot erase corrections made elsewhere in the session.
-8. Select **Import** to save all included rows in one PostgreSQL transaction and view the result.
+7. Correct or bulk-correct staged rows without re-uploading. Rows cannot be skipped; every blocking issue must be fixed. The first blocked row opens automatically, its exact field is highlighted and focused, and the row editor submits only fields changed during that edit.
+8. Use the bottom action area to validate changes, download the validation report, cancel the draft, or select **Import**. Import saves every row in one PostgreSQL transaction and shows the result.
 
-Sessions can be resumed. Upload, mapping, correction, inclusion, profile, and controlled-value changes increment an internal draft revision so a stale browser cannot import older data. A profile or controlled-value change marks unfinished work for revalidation, and opening the session replaces obsolete validation results.
+Sessions can be resumed. Upload, mapping, correction, profile, and controlled-value changes increment an internal draft revision so a stale browser cannot import older data. A profile or controlled-value change marks unfinished work for revalidation, and opening the session replaces obsolete validation results.
 
 ## Validation results
 
@@ -59,7 +59,7 @@ Adding a controlled value writes activity and automatically revalidates matching
 
 ## Import guarantees
 
-All included rows save atomically. Under a database lock, the server rechecks the safety mode, importer, permissions, current preview revision/hash, and idempotency key. A database or revision conflict rolls back the entire batch. Before reporting success, the server compares every staged field with the stored asset using field-aware canonical values; any mismatch rolls back the entire batch, records redacted mismatch keys/types, and disables imports. Repeating a successful import does not create duplicate assets. The completion view links directly to every created or updated asset, and the active UI refreshes inventory-dependent pages automatically.
+Every row saves atomically. Under a database lock, the server rechecks the safety mode, importer, permissions, current preview revision/hash, and idempotency key. A database or revision conflict rolls back the entire batch. Before reporting success, the server compares every staged field with the stored asset using field-aware canonical values; any mismatch rolls back the entire batch, records redacted mismatch keys/types, and disables imports. Repeating a successful import does not create duplicate assets. The completion view links directly to every created or updated asset, and the active UI refreshes inventory-dependent pages automatically.
 
 ## API
 

@@ -1388,11 +1388,14 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     const user = (request as AuthenticatedRequest).inventoryUser;
     const { id: batchId, rowId } = request.params as { id: string; rowId: string };
     const body = request.body as { values?: Values; fieldKey?: unknown; value?: unknown; included?: unknown };
+    if (body.included !== undefined) {
+      throw new AppError(422, 'IMPORT_ROW_EXCLUSION_REMOVED', 'Rows cannot be skipped. Correct every highlighted row before importing.');
+    }
     return withTransaction(async (client) => {
       const batch = await loadSessionContext(client, batchId, true);
       requireSessionOwner(user, batch);
       if (['COMPLETED', 'CANCELLED'].includes(batch.status)) throw new AppError(409, 'IMPORT_SESSION_CLOSED', 'This import session is closed.');
-      const row = await client.query<{ corrected_values: Values; row_number: number; included: boolean }>('SELECT corrected_values,row_number,included FROM import_batch_rows WHERE id=$1 AND batch_id=$2 FOR UPDATE', [rowId, batchId]);
+      const row = await client.query<{ corrected_values: Values; row_number: number }>('SELECT corrected_values,row_number FROM import_batch_rows WHERE id=$1 AND batch_id=$2 FOR UPDATE', [rowId, batchId]);
       if (!row.rows[0]) throw new AppError(404, 'IMPORT_ROW_NOT_FOUND', 'Staged row not found.');
       const fields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
       const patchValues = body.values && typeof body.values === 'object' && !Array.isArray(body.values) ? body.values : body.fieldKey ? { [String(body.fieldKey)]: body.value ?? '' } : {};
@@ -1400,11 +1403,10 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
         if (!fields.some((field) => field.fieldKey === fieldKey)) throw new AppError(422, 'IMPORT_FIELD_INVALID', `Field "${fieldKey}" is not enabled for this import profile.`);
       }
       const corrected = { ...row.rows[0].corrected_values, ...patchValues };
-      const included = body.included === undefined ? row.rows[0].included : Boolean(body.included);
-      await client.query('UPDATE import_batch_rows SET corrected_values=$2,included=$3,status=$4,updated_at=now() WHERE id=$1', [rowId, corrected, included, included ? 'PENDING' : 'EXCLUDED']);
+      await client.query("UPDATE import_batch_rows SET corrected_values=$2,included=true,status='PENDING',updated_at=now() WHERE id=$1", [rowId, corrected]);
       await invalidateDraft(client, batchId);
       await validateSession(client, batchId);
-      await recordActivity(client, { user, actionKey: included ? 'IMPORT_ROW_CORRECTED' : 'IMPORT_ROW_EXCLUDED', source: 'inventory-import', reason: included ? 'Staged row corrected during review.' : 'Staged row excluded from commit.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}&row=${rowId}`, parentImportBatchId: batchId, metadata: { rowId, rowNumber: row.rows[0].row_number, fields: Object.keys(patchValues), included } });
+      await recordActivity(client, { user, actionKey: 'IMPORT_ROW_CORRECTED', source: 'inventory-import', reason: 'Staged row corrected during preview.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}&row=${rowId}`, parentImportBatchId: batchId, metadata: { rowId, rowNumber: row.rows[0].row_number, fields: Object.keys(patchValues) } });
       return { session: await sessionDetail(client, batchId) };
     });
   });

@@ -108,13 +108,15 @@ test.describe.serial('simple CSV and XLSX import journeys', () => {
       await importer.page.locator('input[type="file"]').setInputFiles(csvPath);
       const analysisStarted = Date.now();
       await importer.page.getByRole('button', { name: 'Preview file' }).click();
-      await expect(importer.page.getByRole('heading', { name: /1 source row, 1 included/i })).toBeVisible();
+      await expect(importer.page.getByRole('heading', { name: /1 source row/i })).toBeVisible();
       timings.analysisMs = Date.now() - analysisStarted;
       expect(timings.analysisMs).toBeLessThan(60_000);
       batchId = sessionIdFrom(importer.page);
       const sessionUrl = importer.page.url();
       await expect(importer.page.locator('.import-session-header .status')).toHaveText('Ready');
       await expect(importer.page.getByRole('button', { name: /Import 1 Asset/i })).toBeEnabled();
+      await expect(importer.page.getByRole('tab', { name: /Excluded/i })).toHaveCount(0);
+      await expect(importer.page.getByRole('button', { name: /Exclude Row/i })).toHaveCount(0);
       await importer.page.screenshot({ path: resolve(screenshotRoot, 'csv-ready-preview.png'), fullPage: true });
 
       await importer.page.getByRole('button', { name: 'View', exact: true }).click();

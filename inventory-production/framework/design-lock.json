@@ -38,8 +38,8 @@
   "lockedFiles": [
     {
       "path": "frontend/src/styles.css",
-      "bytes": 92019,
-      "sha256": "7c247bd681708e9a838391e1dac8f358a8a43fa7772e118b011e4d65c17f783a"
+      "bytes": 92845,
+      "sha256": "6adb2869e5fffc4693f55dc9e9e2b628717718bc3e08740f0fb2549d406145ea"
     },
     {
       "path": "frontend/public/brand/nvidia-logo.png",
@@ -133,5 +133,5 @@
     "designChanges": "Require a Design Change Request approved by Gaurav Mehta before implementation.",
     "versioning": "A debug attempt never creates a Design System revision or product release version."
   },
-  "latestApprovedDesignChange": "DCR-2026-007-simple-import-workflow"
+  "latestApprovedDesignChange": "DCR-2026-008-guided-import-corrections"
 }

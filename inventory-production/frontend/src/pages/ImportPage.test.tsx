@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api';
@@ -35,6 +35,9 @@ vi.mock('../state/AppState', () => ({
 
 beforeEach(() => {
   vi.spyOn(api, 'importControl').mockResolvedValue(enabledImportControl);
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 0));
+  vi.stubGlobal('cancelAnimationFrame', (handle: number) => window.clearTimeout(handle));
 });
 
 afterEach(() => {
@@ -46,6 +49,7 @@ afterEach(() => {
   mockedState.invalidateInventory.mockClear();
   mockedState.session.user = { id: 1, displayName: 'Gaurav Mehta', initials: 'GM', roles: ['privileged_administrator'], permissions: [] };
   mockedState.session.permissions['import.review'] = false;
+  vi.unstubAllGlobals();
 });
 
 const approvedArchitectures = [
@@ -361,7 +365,7 @@ describe('ImportPage workflow', () => {
 
     await waitFor(() => expect(createSession).toHaveBeenCalledWith(10, 'CREATE'));
     await waitFor(() => expect(uploadFile).toHaveBeenCalledWith('import-session-1', expect.any(File)));
-    expect(await view.findByText(/1 source row, 1 included/i)).toBeTruthy();
+    expect(await view.findByText(/1 source row/i)).toBeTruthy();
     expect(view.queryByRole('button', { name: /save mapping and validate/i })).toBeNull();
   });
 
@@ -431,7 +435,7 @@ describe('ImportPage workflow', () => {
     });
     fireEvent.click(uploadButton);
 
-    expect(await view.findByText(/1 source row, 1 included/i)).toBeTruthy();
+    expect(await view.findByText(/1 source row/i)).toBeTruthy();
     fireEvent.click(view.getByRole('button', { name: /import 1 asset/i }));
 
     expect(await view.findByText('Import completed')).toBeTruthy();
@@ -499,5 +503,56 @@ describe('ImportPage workflow', () => {
     expect(await view.findByRole('button', { name: /import 1 asset/i })).toBeTruthy();
     expect(view.queryByText(/administrator review/i)).toBeNull();
     expect(view.queryByRole('button', { name: /accept this draft/i })).toBeNull();
+  });
+
+  it('opens and focuses the first required correction, removes exclusion, and keeps workflow actions at the bottom', async () => {
+    const requiredIssue = issue({
+      fieldKey: 'serial_number',
+      fieldLabel: 'Serial #',
+      code: 'REQUIRED_FIELD_EMPTY',
+      message: 'Serial # is required.',
+      sourceValue: '',
+      lookupKey: undefined,
+      lookupName: undefined,
+      approvedValues: undefined,
+      suggestedValues: undefined,
+    });
+    const blocked = importSession({
+      status: 'NEEDS_ATTENTION',
+      fileName: 'needs-fixing.csv',
+      draftRevision: 3,
+      totalRows: 1,
+      invalidRows: 1,
+      rows: [{
+        id: 'row-needs-fix', row_number: 2, source_values: { '0': '' }, corrected_values: {},
+        normalized_values: { serial_number: null }, included: true, operation: 'CREATE',
+        target_asset_id: null, target_asset_revision: null, before_values: null,
+        after_values: { serial_number: null }, status: 'BLOCKED', committed_asset_id: null, issues: [requiredIssue],
+      }],
+    });
+    vi.spyOn(api, 'imports').mockResolvedValue([]);
+    vi.spyOn(api, 'importSession').mockResolvedValue(blocked);
+
+    const view = render(<MemoryRouter initialEntries={['/import?session=import-session-1']}><ImportPage /></MemoryRouter>);
+    const dialog = await view.findByRole('dialog');
+    const focusedIssue = within(dialog).getByText('Serial # is required.').closest('li');
+    await waitFor(() => expect(document.activeElement).toBe(focusedIssue));
+
+    expect(view.getByRole('tab', { name: /Needs action\s*1/i }).getAttribute('aria-selected')).toBe('true');
+    expect(view.queryByRole('tab', { name: /Excluded/i })).toBeNull();
+    expect(view.queryByRole('button', { name: /Exclude Row/i })).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Edit Row' }));
+    const serialInput = within(dialog).getByLabelText(/Serial #/);
+    await waitFor(() => expect(document.activeElement).toBe(serialInput));
+    expect(serialInput.getAttribute('aria-invalid')).toBe('true');
+    expect(within(dialog).getAllByText('Serial # is required.').some((element) => element.classList.contains('field__error'))).toBe(true);
+
+    const review = view.container.querySelector('.import-review');
+    const footer = view.container.querySelector('.import-sticky-actions--review');
+    expect(footer).toBeTruthy();
+    expect(review?.lastElementChild).toBe(footer);
+    expect(footer?.contains(view.getByRole('button', { name: 'Validate Changes' }))).toBe(true);
+    expect(footer?.contains(view.getByRole('button', { name: /Import 1 Asset/i }))).toBe(true);
   });
 });

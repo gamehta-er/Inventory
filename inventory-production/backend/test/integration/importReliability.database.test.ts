@@ -40,6 +40,7 @@ describe('simple and reliable import PostgreSQL 18 boundary', { skip: integratio
       '008-separate-lifecycle-from-categories',
       '009-governed-import-reliability',
       '010-simplified-import-workflow',
+      '011-guided-import-corrections',
     ]);
     const control = await database.pool.query<{ mode: string }>(
       "SELECT mode FROM import_runtime_control WHERE control_key='GLOBAL'",
@@ -52,6 +53,14 @@ describe('simple and reliable import PostgreSQL 18 boundary', { skip: integratio
       WHERE permission.permission_key='import.review'
     `);
     assert.equal(legacyReviewAssignments.rows[0]?.count, '0');
+    const openExcludedRows = await database.pool.query<{ count: string }>(`
+      SELECT count(*)::text AS count
+      FROM import_batch_rows row
+      JOIN import_batches batch ON batch.id=row.batch_id
+      WHERE NOT row.included
+        AND batch.status NOT IN ('COMPLETED','CANCELLED')
+    `);
+    assert.equal(openExcludedRows.rows[0]?.count, '0');
   });
 
   it('returns PostgreSQL DATE values as the same canonical day used by imports', async () => {

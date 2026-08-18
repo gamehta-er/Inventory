@@ -1,0 +1,89 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.4.2",
+  "changeId": "DCR-2026-008-GUIDED-IMPORT-CORRECTIONS",
+  "scope": "Remove row exclusion, guide operators to the first blocking field, and place validation and import controls in one bottom action area while retaining atomic and verified PostgreSQL storage.",
+  "requirements": [
+    {
+      "requirementId": "GOV-005",
+      "status": "PASSED",
+      "evidence": [
+        "framework/design-change-requests/DCR-2026-008-guided-import-corrections.md records the approved change and supersedes the exclusion allowance.",
+        "operations/Test-DesignLock.ps1 verifies DCR-2026-008 and the updated locked stylesheet."
+      ]
+    },
+    {
+      "requirementId": "AUTH-003",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts continues to require import.execute, CSRF verification, and the authenticated session owner for corrections and import.",
+        "Direct import still checks the preview revision, hash, idempotency key, and runtime safety mode under a database lock."
+      ]
+    },
+    {
+      "requirementId": "DATA-014",
+      "status": "PASSED",
+      "evidence": [
+        "database/Migrations/011-guided-import-corrections.sql is transactional, advisory-locked, ordered after migration 010, and uniquely journaled.",
+        "database/Test-DatabaseContract.sql requires migration 011 and rejects skipped rows in open drafts."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-001",
+      "status": "PASSED",
+      "evidence": [
+        "Persistent CSV/XLSX sessions, source choices, mappings, row corrections, and resumable URLs remain unchanged.",
+        "frontend/src/pages/ImportPage.test.tsx verifies saved-session resume and direct preview."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-012",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/ImportPage.tsx automatically opens the first blocking row and focuses its exact issue field.",
+        "The row editor marks the field aria-invalid, displays the validation message inline, scrolls it into view, and moves to the next draft issue after correction."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-013",
+      "status": "PASSED",
+      "evidence": [
+        "The UI has no Excluded filter, Exclude Row, or Restore Row control and groups workflow actions at the bottom.",
+        "backend/src/imports.ts returns IMPORT_ROW_EXCLUSION_REMOVED for direct API exclusion attempts, while migration 011 restores skipped rows in open drafts.",
+        "All 47 frontend tests passed, including automatic issue focus, invalid-field highlighting, exclusion removal, and bottom action placement."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-014",
+      "status": "PASSED",
+      "evidence": [
+        "Every row must be valid before READY and the commit remains one locked PostgreSQL transaction.",
+        "All 110 backend tests passed, including migration and exclusion-removal contract coverage."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-015",
+      "status": "PASSED",
+      "evidence": [
+        "Completion still refreshes Search, Inventory, Reports, Activity, import history, and category totals.",
+        "The Results step and direct links to imported assets are unchanged."
+      ]
+    },
+    {
+      "requirementId": "OPS-005",
+      "status": "PASSED",
+      "evidence": [
+        "operations/Build-Delta-Package.ps1 and operations/Test-Delta-Package.ps1 require migration and contract 011-guided-import-corrections.",
+        "The updater retains package hash, source-version, migration, component-manifest, and post-publish health checks."
+      ]
+    },
+    {
+      "requirementId": "OPS-009",
+      "status": "PASSED",
+      "evidence": [
+        "Candidate 1.4.2 passes backend and frontend TypeScript checks.",
+        "Backend and frontend unit suites pass before package construction."
+      ]
+    }
+  ]
+}

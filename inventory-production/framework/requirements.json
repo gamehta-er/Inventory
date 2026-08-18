@@ -451,7 +451,7 @@
     {
       "id": "IMPORT-013",
       "area": "Import",
-      "statement": "Users may edit, exclude, restore, bulk-correct, and export validation issues without re-uploading.",
+      "statement": "Users may edit, bulk-correct, and export validation issues without re-uploading; every source row must be corrected before import and cannot be skipped.",
       "requiredEvidence": "Session operation tests."
     },
     {

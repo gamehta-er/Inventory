@@ -1,5 +1,11 @@
 # Inventory Project Releases
 
+## 1.4.2 guided correction release
+
+Release 1.4.2 removes row exclusion from the active import UI and API. Every source row must be corrected before import. The first blocking issue opens automatically, the exact field is highlighted and focused, the Needs action filter activates automatically, and validation/import controls are grouped in the bottom action area.
+
+Migration `011-guided-import-corrections` restores previously skipped rows in open drafts and forces complete revalidation. Completed and cancelled sessions remain unchanged as historical evidence. Atomic storage, typed readback verification, rollback, idempotency, and the emergency import switch are unchanged.
+
 ## 1.4.1 simple import release
 
 Release 1.4.1 replaces the two-administrator approval workflow with three visible steps: **Upload**, **Preview & fix**, and **Results**. A clean preview can be imported directly by its owner. CSV/XLSX parsing, row correction, internal revision/hash protection, idempotency, one-transaction storage, field-aware database readback, and automatic rollback remain in place.

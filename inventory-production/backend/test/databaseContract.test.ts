@@ -10,6 +10,7 @@ const schemaMigration = await readFile(projectFile('database/Migrations/006-invm
 const lifecycleCategoryMigration = await readFile(projectFile('database/Migrations/008-separate-lifecycle-from-categories.sql'), 'utf8');
 const importReliabilityMigration = await readFile(projectFile('database/Migrations/009-governed-import-reliability.sql'), 'utf8');
 const simplifiedImportMigration = await readFile(projectFile('database/Migrations/010-simplified-import-workflow.sql'), 'utf8');
+const guidedCorrectionMigration = await readFile(projectFile('database/Migrations/011-guided-import-corrections.sql'), 'utf8');
 const databaseContract = await readFile(projectFile('database/Test-DatabaseContract.sql'), 'utf8');
 const dbSource = await readFile(projectFile('backend/src/db.ts'), 'utf8');
 const appSource = await readFile(projectFile('backend/src/app.ts'), 'utf8');
@@ -60,7 +61,7 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
     }
     assert.match(lifecycleCategoryMigration, /SET active=false/);
     assert.match(lifecycleCategoryMigration, /COMMIT;/);
-    assert.match(versionSource, /requiredSchemaContract = '010-simplified-import-workflow'/);
+    assert.match(versionSource, /requiredSchemaContract = '011-guided-import-corrections'/);
   });
 
   it('DATA-015 separates owner and runtime privileges', () => {
@@ -142,7 +143,18 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
     assert.match(importsSource, /counts\.invalid > 0 \? 'NEEDS_ATTENTION' : 'READY'/);
     assert.match(importsSource, /batch\.status !== 'READY'/);
     assert.doesNotMatch(importsSource, /IMPORT_APPROVALS_REQUIRED/);
-    assert.match(versionSource, /requiredImportContract = '010-simplified-import-workflow'/);
+    assert.match(versionSource, /requiredImportContract = '011-guided-import-corrections'/);
+  });
+
+  it('IMPORT-013 requires correction of every row and restores skipped rows in open drafts', () => {
+    assert.match(guidedCorrectionMigration, /WHERE NOT row\.included/);
+    assert.match(guidedCorrectionMigration, /batch\.status NOT IN \('COMPLETED','CANCELLED'\)/);
+    assert.match(guidedCorrectionMigration, /SET included=true/);
+    assert.match(guidedCorrectionMigration, /status='NEEDS_REVALIDATION'/);
+    assert.match(guidedCorrectionMigration, /'011-guided-import-corrections'/);
+    assert.match(importsSource, /IMPORT_ROW_EXCLUSION_REMOVED/);
+    assert.match(importsSource, /Rows cannot be skipped\. Correct every highlighted row before importing\./);
+    assert.doesNotMatch(importsSource, /actionKey: included \? 'IMPORT_ROW_CORRECTED' : 'IMPORT_ROW_EXCLUDED'/);
   });
 
   it('OPS-003 packages and installs the complete ordered migration chain', () => {

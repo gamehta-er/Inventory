@@ -621,7 +621,7 @@ export const api = {
     normalizeImportSessionResponse(await request<unknown>(`/imports/${id}/mappings`, { method: 'PUT', body: JSON.stringify({ mappings }) })),
   validateImport: async (id: string) =>
     normalizeImportSessionResponse(await request<unknown>(`/imports/${id}/validate`, { method: 'POST', body: '{}' })),
-  updateImportRow: async (batchId: string, rowId: string, body: { values?: Record<string, unknown>; fieldKey?: string; value?: unknown; included?: boolean }) =>
+  updateImportRow: async (batchId: string, rowId: string, body: { values?: Record<string, unknown>; fieldKey?: string; value?: unknown }) =>
     normalizeImportSessionResponse(await request<unknown>(`/imports/${batchId}/rows/${rowId}`, { method: 'PATCH', body: JSON.stringify(body) })),
   bulkCorrectImport: async (batchId: string, fieldKey: string, sourceValue: string, value: unknown) => {
     const response = await request<unknown>(`/imports/${batchId}/corrections/bulk`, { method: 'POST', body: JSON.stringify({ fieldKey, sourceValue, value }) });
