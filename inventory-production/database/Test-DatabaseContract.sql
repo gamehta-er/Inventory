@@ -217,9 +217,16 @@ BEGIN
 
     IF NOT EXISTS (
         SELECT 1 FROM invmgmt.schema_migrations
-        WHERE migration_key = '009-governed-import-reliability'
+        WHERE migration_key = '010-simplified-import-workflow'
     ) THEN
-        RAISE EXCEPTION 'DATA-014: governed Import reliability migration is not recorded';
+        RAISE EXCEPTION 'DATA-014: simplified Import workflow migration is not recorded';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM invmgmt.import_runtime_control
+        WHERE control_key='GLOBAL' AND mode='ENABLED'
+    ) THEN
+        RAISE EXCEPTION 'IMPORT-015: simple Import workflow is not enabled';
     END IF;
 END;
 $$;

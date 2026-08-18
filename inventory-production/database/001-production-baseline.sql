@@ -657,7 +657,7 @@ WHERE u.display_name IN ('Igor Margulis','Monica Martin','Gaurav Mehta')
   AND r.role_key IN ('super_user','privileged_administrator');
 
 INSERT INTO import_runtime_control(control_key,mode,reason,change_source)
-VALUES ('GLOBAL','DISABLED','Reliability release requires verified gates and named sign-offs.','baseline');
+VALUES ('GLOBAL','ENABLED','Simple preview, fix, and import workflow is enabled.','baseline');
 
 INSERT INTO lookup_lists(lookup_key, lookup_name, description) VALUES
 ('ASSET_STATUS','Asset Status','Controlled inventory lifecycle values.'),

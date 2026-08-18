@@ -20,6 +20,7 @@ $HardwareSearchRequestPath = Join-Path $ProjectRoot 'framework\design-change-req
 $LabelRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-004-label-content-and-centering.md'
 $SearchRecoveryRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-005-search-criteria-recovery.md'
 $ImportReliabilityRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-006-governed-import-reliability.md'
+$SimpleImportRequestPath = Join-Path $ProjectRoot 'framework\design-change-requests\DCR-2026-007-simple-import-workflow.md'
 $StylesPath = Join-Path $ProjectRoot 'frontend\src\styles.css'
 $AppPath = Join-Path $ProjectRoot 'frontend\src\App.tsx'
 $Results = [System.Collections.Generic.List[object]]::new()
@@ -32,7 +33,7 @@ function Add-Result([string]$Check, [bool]$Passed, [string]$Detail) {
     })
 }
 
-foreach ($Path in @($LockPath, $ApprovalPath, $DocumentPath, $ChangeRequestPath, $CommandCenterRequestPath, $HardwareSearchRequestPath, $LabelRequestPath, $SearchRecoveryRequestPath, $ImportReliabilityRequestPath, $StylesPath, $AppPath)) {
+foreach ($Path in @($LockPath, $ApprovalPath, $DocumentPath, $ChangeRequestPath, $CommandCenterRequestPath, $HardwareSearchRequestPath, $LabelRequestPath, $SearchRecoveryRequestPath, $ImportReliabilityRequestPath, $SimpleImportRequestPath, $StylesPath, $AppPath)) {
     Add-Result "Required design artifact: $(Split-Path -Leaf $Path)" (Test-Path -LiteralPath $Path -PathType Leaf) $Path
 }
 
@@ -63,6 +64,8 @@ $SearchRecoveryRequest = Get-Content -LiteralPath $SearchRecoveryRequestPath -Ra
 Add-Result 'Approved Search Criteria Recovery design change' ($SearchRecoveryRequest.Contains('| Status | APPROVED |') -and $SearchRecoveryRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-005'
 $ImportReliabilityRequest = Get-Content -LiteralPath $ImportReliabilityRequestPath -Raw
 Add-Result 'Approved Governed Import Reliability design change' ($ImportReliabilityRequest.Contains('| Status | APPROVED |') -and $ImportReliabilityRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-006'
+$SimpleImportRequest = Get-Content -LiteralPath $SimpleImportRequestPath -Raw
+Add-Result 'Approved Simple Import Workflow design change' ($SimpleImportRequest.Contains('| Status | APPROVED |') -and $SimpleImportRequest.Contains('| Approved by | Gaurav Mehta |')) 'DCR-2026-007'
 
 $DocumentHash = (Get-FileHash -LiteralPath $DocumentPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $LockHash = (Get-FileHash -LiteralPath $LockPath -Algorithm SHA256).Hash.ToLowerInvariant()

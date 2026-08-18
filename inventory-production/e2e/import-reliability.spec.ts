@@ -14,7 +14,7 @@ const adminDatabaseUrl = process.env.DATABASE_ADMIN_URL;
 const { Client } = pg;
 
 async function administratorQuery<T extends pg.QueryResultRow>(text: string, values: unknown[] = []): Promise<T[]> {
-  if (!adminDatabaseUrl) throw new Error('DATABASE_ADMIN_URL is required for governed import browser tests.');
+  if (!adminDatabaseUrl) throw new Error('DATABASE_ADMIN_URL is required for import browser tests.');
   const client = new Client({ connectionString: adminDatabaseUrl });
   await client.connect();
   try {
@@ -86,13 +86,13 @@ test.beforeAll(async () => {
   await mkdir(screenshotRoot, { recursive: true });
 });
 
-test.describe.serial('governed CSV and XLSX import journeys', () => {
-  test('commits one CSV only after two independent reviews and reconciles every read surface', async ({ browser }, testInfo) => {
-    await setImportMode('DISABLED', 'CI starts with import commits locked.');
+test.describe.serial('simple CSV and XLSX import journeys', () => {
+  test('previews, fixes, imports, and reconciles one CSV across every read surface', async ({ browser }, testInfo) => {
+    await setImportMode('ENABLED', 'CI exercises the direct preview-and-import workflow.');
     const contexts: BrowserContext[] = [];
     const timings: Record<string, number> = {};
     const serialNumber = `CI-CSV-${process.env.GITHUB_RUN_ID ?? 'LOCAL'}-${process.env.GITHUB_RUN_ATTEMPT ?? '0'}-${testInfo.retry}-${Date.now()}`;
-    const correctedProductName = '1TB SATA SSD - Reviewed Import';
+    const correctedProductName = '1TB SATA SSD - Corrected Import';
     const goldenCsv = await readFile(resolve(fixtureRoot, 'inventory-golden.csv'), 'utf8');
     const csvContents = Buffer.from(goldenCsv.replace('CI-CSV-000001', serialNumber), 'utf8');
     const csvPath = resolve(evidenceRoot, 'working', `inventory-golden-${testInfo.retry}.csv`);
@@ -105,34 +105,25 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       const importer = await signedInPage(browser, 'Gaurav Mehta');
       contexts.push(importer.context);
       await importer.page.goto('/import');
-      await expect(importer.page.getByText('Commits locked', { exact: true })).toBeVisible();
       await importer.page.locator('input[type="file"]').setInputFiles(csvPath);
       const analysisStarted = Date.now();
-      await importer.page.getByRole('button', { name: 'Analyze file' }).click();
+      await importer.page.getByRole('button', { name: 'Preview file' }).click();
       await expect(importer.page.getByRole('heading', { name: /1 source row, 1 included/i })).toBeVisible();
       timings.analysisMs = Date.now() - analysisStarted;
       expect(timings.analysisMs).toBeLessThan(60_000);
       batchId = sessionIdFrom(importer.page);
       const sessionUrl = importer.page.url();
-      await expect(importer.page.locator('.import-session-header .status')).toHaveText('Awaiting Approval');
-      const lockedCommit = importer.page.getByRole('button', { name: /Commit 1 New Assets/i });
-      await expect(lockedCommit).toBeDisabled();
-      await importer.page.screenshot({ path: resolve(screenshotRoot, 'csv-awaiting-approval.png'), fullPage: true });
+      await expect(importer.page.locator('.import-session-header .status')).toHaveText('Ready');
+      await expect(importer.page.getByRole('button', { name: /Import 1 Asset/i })).toBeEnabled();
+      await importer.page.screenshot({ path: resolve(screenshotRoot, 'csv-ready-preview.png'), fullPage: true });
 
-      const firstReviewer = await signedInPage(browser, 'Igor Margulis');
-      contexts.push(firstReviewer.context);
-      await firstReviewer.page.goto(sessionUrl);
-      await firstReviewer.page.getByRole('button', { name: 'Accept this draft' }).click();
-      await expect(firstReviewer.page.getByRole('heading', { name: '1 of 2 approvals' })).toBeVisible();
-
-      await importer.page.getByRole('button', { name: 'Review', exact: true }).click();
+      await importer.page.getByRole('button', { name: 'View', exact: true }).click();
       await importer.page.getByRole('button', { name: 'Edit Row' }).click();
       await importer.page.getByLabel(/Product Name/).fill(correctedProductName);
       await importer.page.getByRole('button', { name: 'Save Changes And Revalidate' }).click();
       await expect(importer.page.getByRole('dialog')).toContainText(correctedProductName);
       await importer.page.keyboard.press('Escape');
       await expect(importer.page.getByRole('dialog')).toBeHidden();
-      await expect(importer.page.getByRole('heading', { name: '0 of 2 approvals' })).toBeVisible();
       await importer.page.getByRole('tab', { name: /Ready/ }).click();
       await expect(importer.page.getByText(correctedProductName, { exact: true })).toBeVisible();
 
@@ -140,7 +131,7 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       await expect(importer.page.getByRole('heading', { name: 'Inventory command center' })).toBeVisible();
       await importer.page.goto(sessionUrl);
       await expect(importer.page.getByText(correctedProductName, { exact: true })).toBeVisible();
-      await importer.page.getByRole('button', { name: 'Review', exact: true }).click();
+      await importer.page.getByRole('button', { name: 'View', exact: true }).click();
       await expect(importer.page.getByRole('dialog')).toContainText(correctedProductName);
       await importer.page.keyboard.press('Escape');
       await expect(importer.page.getByRole('dialog')).toBeHidden();
@@ -168,34 +159,7 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
         idempotencyKey: correctedDraft!.idempotency_key,
       };
 
-      await firstReviewer.page.goto(sessionUrl);
-      await firstReviewer.page.getByRole('button', { name: 'Accept this draft' }).click();
-      await expect(firstReviewer.page.getByRole('heading', { name: '1 of 2 approvals' })).toBeVisible();
-
-      const secondReviewer = await signedInPage(browser, 'Monica Martin');
-      contexts.push(secondReviewer.context);
-      await secondReviewer.page.goto(sessionUrl);
-      await secondReviewer.page.getByRole('button', { name: 'Accept this draft' }).click();
-      await expect(secondReviewer.page.getByRole('heading', { name: '2 of 2 approvals' })).toBeVisible();
-      await secondReviewer.page.screenshot({ path: resolve(screenshotRoot, 'csv-two-approvals.png'), fullPage: true });
-
-      const [reviewLedger] = await administratorQuery<{
-        current_acceptances: number;
-        recorded_decisions: number;
-      }>(`
-        SELECT count(*) FILTER(
-                 WHERE review.decision='ACCEPT'
-                   AND review.draft_revision=batch.draft_revision
-                   AND review.draft_hash=batch.draft_hash
-               )::int AS current_acceptances,
-               count(*)::int AS recorded_decisions
-        FROM invmgmt.import_batches batch
-        JOIN invmgmt.import_reviews review ON review.batch_id=batch.id
-        WHERE batch.id=$1::uuid
-        GROUP BY batch.id
-      `, [batchId]);
-      expect(reviewLedger).toEqual({ current_acceptances: 2, recorded_decisions: 3 });
-
+      await setImportMode('DISABLED', 'CI verifies the emergency import switch.');
       const blockedApiCommit = await commitThroughApi(importer.page, batchId, commitContract);
       expect(blockedApiCommit).toEqual(expect.objectContaining({
         ok: false,
@@ -203,14 +167,14 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
         code: 'IMPORT_COMMITS_DISABLED',
       }));
 
-      await setImportMode('ENABLED', 'CI opens the lock only for the fully approved synthetic draft.');
+      await setImportMode('ENABLED', 'CI resumes the direct import after the safety check.');
       await importer.page.reload();
-      await expect(importer.page.getByText('Imports enabled', { exact: true })).toBeVisible();
-      const commitButton = importer.page.getByRole('button', { name: /Commit 1 New Assets/i });
-      await expect(commitButton).toBeEnabled();
+      await expect(importer.page.getByText('Imports temporarily unavailable', { exact: true })).toBeHidden();
+      const importButton = importer.page.getByRole('button', { name: /Import 1 Asset/i });
+      await expect(importButton).toBeEnabled();
       const commitStarted = Date.now();
       const concurrentCommit = commitThroughApi(importer.page, batchId, commitContract);
-      await commitButton.click();
+      await importButton.click();
       try {
         await expect(importer.page.getByRole('heading', { name: 'Import completed' })).toBeVisible();
       } catch (failure) {
@@ -293,7 +257,7 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
       await writeFile(resolve(evidenceRoot, 'csv-browser-journey.json'), `${JSON.stringify({
         source: { format: 'CSV', sha256: fileSha256, rows: 1 },
         batchReference: createHash('sha256').update(batchId).digest('hex'),
-        approvals: 2,
+        approvalsRequired: 0,
         timings,
         correctionRetention: {
           field: 'product_name',
@@ -301,24 +265,24 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
           revalidation: 'PASSED',
           filter: 'PASSED',
           navigation: 'PASSED',
-          priorApprovalInvalidation: 'PASSED',
+          directImportAfterCorrection: 'PASSED',
         },
-        governance: { disabledApiCommit: 'PASSED', concurrentIdempotentRetries: 'PASSED' },
+        safeguards: { disabledApiImport: 'PASSED', concurrentIdempotentRetries: 'PASSED' },
         reconciliation: { database: 'PASSED', api: 'PASSED', search: 'PASSED', export: 'PASSED' },
       }, null, 2)}\n`);
     } finally {
-      await setImportMode('DISABLED', 'CI journey finished; import commits returned to the safe default.');
+      await setImportMode('ENABLED', 'CI journey finished; direct imports remain enabled.');
       await Promise.all(contexts.map((context) => context.close()));
     }
   });
 
   test('prompts for an XLSX worksheet and rejects formula cells before staging', async ({ browser }) => {
-    await setImportMode('DISABLED', 'XLSX source-selection checks run with commits locked.');
+    await setImportMode('ENABLED', 'XLSX source-selection checks use the normal workflow.');
     const { context, page } = await signedInPage(browser, 'Gaurav Mehta');
     try {
       await page.goto('/import');
       await page.locator('input[type="file"]').setInputFiles(resolve(generatedFixtureRoot, 'inventory-multi-sheet.xlsx'));
-      await page.getByRole('button', { name: 'Analyze file' }).click();
+      await page.getByRole('button', { name: 'Preview file' }).click();
       await expect(page.getByRole('heading', { name: 'Choose the worksheet to import' })).toBeVisible();
       await expect(page.getByLabel(/Worksheet/).locator('option')).toHaveCount(2);
       await page.getByLabel(/Worksheet/).selectOption('Building B');
@@ -330,7 +294,7 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
 
       await page.goto('/import');
       await page.locator('input[type="file"]').setInputFiles(resolve(generatedFixtureRoot, 'inventory-formula.xlsx'));
-      await page.getByRole('button', { name: 'Analyze file' }).click();
+      await page.getByRole('button', { name: 'Preview file' }).click();
       await expect(page.getByRole('alert')).toContainText(/Formula cell .* must be converted to a literal value/i);
       await page.screenshot({ path: resolve(screenshotRoot, 'xlsx-formula-rejected.png'), fullPage: true });
     } finally {
@@ -339,20 +303,20 @@ test.describe.serial('governed CSV and XLSX import journeys', () => {
   });
 
   test('accepts exactly 1,000 inventory rows and rejects row 1,001 clearly', async ({ browser }) => {
-    await setImportMode('DISABLED', 'Row-boundary checks run with commits locked.');
+    await setImportMode('ENABLED', 'Row-boundary checks use the normal workflow.');
     const { context, page } = await signedInPage(browser, 'Gaurav Mehta');
     try {
       await page.goto('/import');
       await page.locator('input[type="file"]').setInputFiles(resolve(generatedFixtureRoot, 'inventory-limit-1000.csv'));
       const analysisStarted = Date.now();
-      await page.getByRole('button', { name: 'Analyze file' }).click();
+      await page.getByRole('button', { name: 'Preview file' }).click();
       await expect(page.getByRole('heading', { name: /1,000 source rows, 1,000 included/i })).toBeVisible({ timeout: 60_000 });
       const analysisMs = Date.now() - analysisStarted;
       expect(analysisMs).toBeLessThan(60_000);
 
       await page.goto('/import');
       await page.locator('input[type="file"]').setInputFiles(resolve(generatedFixtureRoot, 'inventory-limit-1001.csv'));
-      await page.getByRole('button', { name: 'Analyze file' }).click();
+      await page.getByRole('button', { name: 'Preview file' }).click();
       await expect(page.getByRole('alert')).toContainText(/at most 1,000 inventory rows/i);
       await writeFile(resolve(evidenceRoot, 'row-boundary.json'), `${JSON.stringify({
         acceptedRows: 1000,

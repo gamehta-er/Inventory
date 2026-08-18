@@ -887,7 +887,7 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
     );
   }
 
-  const status: SessionStatus = counts.invalid > 0 ? 'NEEDS_ATTENTION' : 'AWAITING_APPROVAL';
+  const status: SessionStatus = counts.invalid > 0 ? 'NEEDS_ATTENTION' : 'READY';
   await client.query(
     `UPDATE import_batches
      SET status=$2,profile_version=$3,contract_fingerprint=$4,total_rows=$5,valid_rows=$6,warning_rows=$7,invalid_rows=$8,
@@ -901,7 +901,7 @@ async function validateSession(client: DbClient, batchId: string): Promise<void>
   await recordImportStage(client, {
     batchId,
     stage: 'VALIDATION',
-    eventKey: counts.invalid > 0 ? 'VALIDATION_BLOCKED' : 'DRAFT_READY_FOR_REVIEW',
+    eventKey: counts.invalid > 0 ? 'VALIDATION_BLOCKED' : 'IMPORT_READY',
     draftRevision: Number(batch.draft_revision),
     durationMs: Date.now() - startedAt,
     rowCount: rows.rowCount,
@@ -1363,9 +1363,6 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     return withTransaction(async (client) => {
       const current = await loadSessionContext(client, batchId, true);
       requireSessionOwner(user, current);
-      if (['AWAITING_APPROVAL', 'APPROVED', 'DECLINED'].includes(current.status)) {
-        throw new AppError(409, 'IMPORT_REOPEN_REQUIRED', 'Reopen this reviewed draft before revalidating it. Previous decisions must not carry into a new revision.');
-      }
       await validateSession(client, batchId);
       const batch = await loadSessionContext(client, batchId);
       await recordActivity(client, { user, actionKey: 'IMPORT_VALIDATED', source: 'inventory-import', reason: 'Import session fully revalidated.', recordType: 'import', recordId: batchId, recordLabel: batch.file_name ?? 'Import session', routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { status: batch.status, draftRevision: Number(batch.draft_revision) } });
@@ -1645,7 +1642,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     const requestedHash = cleanText(body.draftHash);
     const requestedIdempotencyKey = cleanText(body.idempotencyKey);
     if (!Number.isInteger(requestedRevision) || !/^[0-9a-f]{64}$/.test(requestedHash) || !requestedIdempotencyKey) {
-      throw new AppError(422, 'IMPORT_COMMIT_CONTRACT_REQUIRED', 'Refresh the approved import before committing it.');
+      throw new AppError(422, 'IMPORT_COMMIT_CONTRACT_REQUIRED', 'Refresh the import preview before importing it.');
     }
     const commitStartedAt = Date.now();
     try {
@@ -1657,24 +1654,14 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
           return { session: await sessionDetail(client, batchId), idempotent: true, refresh: importRefreshTargets };
         }
         const stale = await markStaleIfNeeded(client, batchId);
-        if (stale) throw new AppError(409, 'IMPORT_CONTRACT_CHANGED', 'The import contract changed. Revalidate the new draft and obtain two new approvals.');
+        if (stale) throw new AppError(409, 'IMPORT_CONTRACT_CHANGED', 'The import rules changed. Revalidate and preview the file again.');
         const batch = await loadSessionContext(client, batchId, true);
         requireModePermission(user, batch.mode as ImportMode);
         if (Number(batch.draft_revision) !== requestedRevision || batch.draft_hash !== requestedHash) {
-          throw new AppError(409, 'IMPORT_DRAFT_CHANGED', 'The import changed after it was approved. Refresh and obtain two new approvals.');
+          throw new AppError(409, 'IMPORT_DRAFT_CHANGED', 'The import changed after you opened the preview. Refresh and review the latest rows.');
         }
-        const reviews = await client.query(
-          `SELECT count(*) FILTER(WHERE decision='ACCEPT')::int accepted,
-                  count(*) FILTER(WHERE decision='DECLINE')::int declined,
-                  count(DISTINCT reviewer_user_id) FILTER(WHERE decision='ACCEPT')::int distinct_reviewers
-             FROM import_reviews WHERE batch_id=$1 AND draft_revision=$2 AND draft_hash=$3`,
-          [batchId, requestedRevision, requestedHash],
-        );
-        if (Number(reviews.rows[0]?.accepted ?? 0) < 2
-            || Number(reviews.rows[0]?.distinct_reviewers ?? 0) < 2
-            || Number(reviews.rows[0]?.declined ?? 0) > 0
-            || batch.status !== 'APPROVED') {
-          throw new AppError(409, 'IMPORT_APPROVALS_REQUIRED', 'Two distinct Privileged Administrators must accept this exact draft before the importer can commit it.');
+        if (batch.status !== 'READY' || Number(batch.invalid_rows) > 0) {
+          throw new AppError(409, 'IMPORT_NOT_READY', 'Fix the highlighted rows and revalidate before importing.');
         }
         await client.query("SELECT control_key FROM import_runtime_control WHERE control_key='GLOBAL' FOR UPDATE");
         const importControl = await loadImportControl(client);
@@ -1685,7 +1672,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
              FROM import_batch_rows WHERE batch_id=$1 AND included AND status IN ('VALID','WARNING') ORDER BY row_number FOR UPDATE`,
           [batchId],
         );
-        if (!rows.rowCount) throw new AppError(422, 'IMPORT_NO_INCLUDED_ROWS', 'Include at least one valid row before commit.');
+        if (!rows.rowCount) throw new AppError(422, 'IMPORT_NO_INCLUDED_ROWS', 'Include at least one valid row before importing.');
         const commitFields = (await loadProfileFields(Number(batch.profile_id), client)).filter((field) => field.surfaces.import);
         const parentEventId = await recordActivity(client, { user, actionKey: 'IMPORT_COMMIT_STARTED', source: 'inventory-import', reason: `${batch.mode === 'CREATE' ? 'Create Assets' : 'Update Existing'} batch commit.`, recordType: 'import', recordId: batchId, recordLabel: batch.file_name, routePath: `/import?session=${batchId}`, parentImportBatchId: batchId, metadata: { rows: rows.rowCount, mode: batch.mode, idempotencyKey: batch.idempotency_key, draftRevision: requestedRevision } });
         for (const row of rows.rows) {

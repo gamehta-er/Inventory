@@ -42,7 +42,10 @@ function Test-BaselineOnlyPath([string]$Path) {
     return $Normalized -in @(
         'Install-InventoryProject.ps1',
         'Reset-InventoryProject.ps1',
+        'Payload/Database/001-production-baseline.sql',
         'Payload/Database/Test-DatabaseContract.sql',
+        'Payload/IMPORT-WORKFLOW.md',
+        'Payload/SUPPORT.md',
         'Payload/RELEASES.md'
     )
 }
@@ -245,13 +248,14 @@ $Manifest = [ordered]@{
         web = $ToVersion
         api = $ToVersion
     }
-    requiredImportContractVersion = '009-governed-import-reliability'
+    requiredImportContractVersion = '010-simplified-import-workflow'
     requiredSchemaMigrations = @(
         '005-complete-import-workflow',
         '006-invmgmt-schema',
         '007-gpu-model-reference-data',
         '008-separate-lifecycle-from-categories',
-        '009-governed-import-reliability'
+        '009-governed-import-reliability',
+        '010-simplified-import-workflow'
     )
     conformance = [ordered]@{
         frameworkVersion = [string]$ReleaseEvidence.frameworkVersion

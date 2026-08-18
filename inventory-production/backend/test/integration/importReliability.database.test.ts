@@ -14,7 +14,7 @@ if (integrationDatabaseUrl) {
 let database: typeof import('../../src/db.js');
 let assets: typeof import('../../src/assets.js');
 
-describe('governed import PostgreSQL 18 boundary', { skip: integrationDatabaseUrl ? false : 'INTEGRATION_DATABASE_URL is not configured' }, () => {
+describe('simple and reliable import PostgreSQL 18 boundary', { skip: integrationDatabaseUrl ? false : 'INTEGRATION_DATABASE_URL is not configured' }, () => {
   before(async () => {
     database = await import('../../src/db.js');
     assets = await import('../../src/assets.js');
@@ -25,7 +25,7 @@ describe('governed import PostgreSQL 18 boundary', { skip: integrationDatabaseUr
     await database.pool.end();
   });
 
-  it('loads the complete migration ledger and keeps commits disabled by default', async () => {
+  it('loads the complete migration ledger and enables the direct import workflow', async () => {
     const migrations = await database.pool.query<{ migration_key: string }>(
       'SELECT migration_key FROM schema_migrations ORDER BY migration_key',
     );
@@ -39,11 +39,19 @@ describe('governed import PostgreSQL 18 boundary', { skip: integrationDatabaseUr
       '007-gpu-model-reference-data',
       '008-separate-lifecycle-from-categories',
       '009-governed-import-reliability',
+      '010-simplified-import-workflow',
     ]);
     const control = await database.pool.query<{ mode: string }>(
       "SELECT mode FROM import_runtime_control WHERE control_key='GLOBAL'",
     );
-    assert.equal(control.rows[0]?.mode, 'DISABLED');
+    assert.equal(control.rows[0]?.mode, 'ENABLED');
+    const legacyReviewAssignments = await database.pool.query<{ count: string }>(`
+      SELECT count(*)::text AS count
+      FROM role_permissions role_permission
+      JOIN permissions permission ON permission.id=role_permission.permission_id
+      WHERE permission.permission_key='import.review'
+    `);
+    assert.equal(legacyReviewAssignments.rows[0]?.count, '0');
   });
 
   it('returns PostgreSQL DATE values as the same canonical day used by imports', async () => {
@@ -55,13 +63,21 @@ describe('governed import PostgreSQL 18 boundary', { skip: integrationDatabaseUr
     assert.equal(canonicalDateText(new Date(2026, 7, 13)), '2026-08-13');
   });
 
-  it('enforces exact-revision, independent, immutable administrator reviews in PostgreSQL', async () => {
+  it('keeps legacy review evidence immutable without requiring it for new imports', async () => {
     const client = await database.pool.connect();
     const draftHash = 'a'.repeat(64);
     const contractHash = 'b'.repeat(64);
     const idempotencyKey = '22222222-2222-4222-8222-222222222222';
     try {
       await client.query('BEGIN');
+      await client.query(`
+        INSERT INTO role_permissions(role_id,permission_id)
+        SELECT role.id,permission.id
+        FROM roles role
+        JOIN permissions permission ON permission.permission_key='import.review'
+        WHERE role.role_key='privileged_administrator'
+        ON CONFLICT DO NOTHING
+      `);
       const created = await client.query<{ id: string; importer_id: string }>(`
         INSERT INTO import_batches(
           import_profile_id,mode,profile_version,contract_fingerprint,status,

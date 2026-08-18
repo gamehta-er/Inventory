@@ -1,5 +1,11 @@
 # Inventory Project Releases
 
+## 1.4.1 simple import release
+
+Release 1.4.1 replaces the two-administrator approval workflow with three visible steps: **Upload**, **Preview & fix**, and **Results**. A clean preview can be imported directly by its owner. CSV/XLSX parsing, row correction, internal revision/hash protection, idempotency, one-transaction storage, field-aware database readback, and automatic rollback remain in place.
+
+Migration `010-simplified-import-workflow` converts clean open review drafts to `READY`, removes active role assignment for the legacy review permission, and enables normal imports. The emergency import switch remains available and a persistence mismatch still disables imports automatically.
+
 ## 1.4.0 import reliability release
 
 Release 1.4.0 adds migration `009-governed-import-reliability`, canonical CSV/XLSX parsing, field-aware PostgreSQL readback verification, redacted mismatch telemetry, immutable revision-bound reviews, and a server-enforced import safety mode. It requires Node.js 24 and the `inventory-production` GitHub reliability check against PostgreSQL 18.

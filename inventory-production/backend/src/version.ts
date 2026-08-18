@@ -1,3 +1,3 @@
-export const releaseVersion = '1.4.0';
-export const requiredImportContract = '009-governed-import-reliability';
-export const requiredSchemaContract = '009-governed-import-reliability';
+export const releaseVersion = '1.4.1';
+export const requiredImportContract = '010-simplified-import-workflow';
+export const requiredSchemaContract = '010-simplified-import-workflow';

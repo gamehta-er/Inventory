@@ -63,7 +63,8 @@ foreach ($RequiredMigration in @(
     '006-invmgmt-schema',
     '007-gpu-model-reference-data',
     '008-separate-lifecycle-from-categories',
-    '009-governed-import-reliability'
+    '009-governed-import-reliability',
+    '010-simplified-import-workflow'
 )) {
     if (@($Manifest.requiredSchemaMigrations) -notcontains $RequiredMigration) {
         throw "Delta manifest is missing required schema migration: $RequiredMigration"

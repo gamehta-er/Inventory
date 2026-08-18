@@ -119,7 +119,7 @@ export async function disableImportsAfterVerificationFailure(input: {
     await client.query(
       `UPDATE import_batches
        SET status='VERIFICATION_FAILED',verification_status='FAILED',
-           verification_details=$2::jsonb,failure_message='Stored values did not match the approved draft.',updated_at=now()
+            verification_details=$2::jsonb,failure_message='Stored values did not match the import preview.',updated_at=now()
       WHERE id=$1 AND status<>'COMPLETED'`,
       [input.batchId, JSON.stringify({ rowNumber: input.rowNumber, mismatchFields: input.mismatches })],
     );

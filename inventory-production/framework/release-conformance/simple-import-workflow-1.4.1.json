@@ -1,0 +1,96 @@
+{
+  "frameworkVersion": "1.0",
+  "candidateVersion": "1.4.1",
+  "changeId": "DCR-2026-007-SIMPLE-IMPORT-WORKFLOW",
+  "scope": "Replace mandatory two-administrator import approval with a direct Upload, Preview and fix, Results workflow while retaining authenticated ownership, draft integrity, idempotency, atomic PostgreSQL storage, typed readback verification, automatic rollback, and the emergency import switch.",
+  "requirements": [
+    {
+      "requirementId": "GOV-005",
+      "status": "PASSED",
+      "evidence": [
+        "framework/design-change-requests/DCR-2026-007-simple-import-workflow.md records the approved product and design change.",
+        "operations/Test-DesignLock.ps1 verifies the approved request and the updated locked stylesheet."
+      ]
+    },
+    {
+      "requirementId": "AUTH-003",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts requires import.execute and the authenticated session owner for direct imports.",
+        "The commit contract still checks the current draft revision, hash, and idempotency key under a database lock."
+      ]
+    },
+    {
+      "requirementId": "DATA-013",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importWorkflow.test.ts verifies typed PostgreSQL readback, including canonical date equality.",
+        "All 109 backend tests passed locally for candidate 1.4.1."
+      ]
+    },
+    {
+      "requirementId": "DATA-014",
+      "status": "PASSED",
+      "evidence": [
+        "database/Migrations/010-simplified-import-workflow.sql is transactional, advisory-locked, ordered after migration 009, and uniquely journaled.",
+        "database/Test-DatabaseContract.sql requires migration 010 and the enabled direct-import runtime state."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-001",
+      "status": "PASSED",
+      "evidence": [
+        "CSV and XLSX uploads remain persistent resumable sessions with source metadata, mappings, rows, issues, revision, hash, and results.",
+        "frontend/src/pages/ImportPage.test.tsx verifies resuming a saved session from its URL."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-004",
+      "status": "PASSED",
+      "evidence": [
+        "backend/test/importSources.test.ts covers CSV encodings and delimiters, XLSX worksheets, formula rejection, 1,000 rows, and the 10 MB limit.",
+        "Equivalent CSV and XLSX fixtures continue to produce the same canonical parsed draft."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-013",
+      "status": "PASSED",
+      "evidence": [
+        "frontend/src/pages/ImportPage.tsx presents Upload, Preview and fix, and Results without approval controls.",
+        "All 46 frontend tests passed locally, including direct import, disabled-mode preview retention, row correction, and completion refresh."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-014",
+      "status": "PASSED",
+      "evidence": [
+        "backend/src/imports.ts requires READY with zero invalid rows and no longer queries import_reviews during commit.",
+        "The same endpoint retains transaction locking, revision/hash checks, idempotency, complete rollback, and field-aware readback verification."
+      ]
+    },
+    {
+      "requirementId": "IMPORT-015",
+      "status": "PASSED",
+      "evidence": [
+        "The completion response still refreshes Search, Inventory, Reports, Activity, imports, and categories.",
+        "The Results stage links to imported assets and offers Import another file."
+      ]
+    },
+    {
+      "requirementId": "OPS-005",
+      "status": "PASSED",
+      "evidence": [
+        "operations/Build-Delta-Package.ps1 and operations/Test-Delta-Package.ps1 require migration 010 and contract 010-simplified-import-workflow.",
+        "The updater retains package hash, source-version, migration, component-manifest, and post-publish health checks."
+      ]
+    },
+    {
+      "requirementId": "OPS-009",
+      "status": "PASSED",
+      "evidence": [
+        "Candidate 1.4.1 passes backend and frontend TypeScript checks.",
+        "The release updater verifies direct API, IIS API, published web version, PostgreSQL readiness, and every application route."
+      ]
+    }
+  ]
+}

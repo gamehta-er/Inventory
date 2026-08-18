@@ -9,6 +9,7 @@ const baseline = await readFile(projectFile('database/001-production-baseline.sq
 const schemaMigration = await readFile(projectFile('database/Migrations/006-invmgmt-schema.sql'), 'utf8');
 const lifecycleCategoryMigration = await readFile(projectFile('database/Migrations/008-separate-lifecycle-from-categories.sql'), 'utf8');
 const importReliabilityMigration = await readFile(projectFile('database/Migrations/009-governed-import-reliability.sql'), 'utf8');
+const simplifiedImportMigration = await readFile(projectFile('database/Migrations/010-simplified-import-workflow.sql'), 'utf8');
 const databaseContract = await readFile(projectFile('database/Test-DatabaseContract.sql'), 'utf8');
 const dbSource = await readFile(projectFile('backend/src/db.ts'), 'utf8');
 const appSource = await readFile(projectFile('backend/src/app.ts'), 'utf8');
@@ -59,7 +60,7 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
     }
     assert.match(lifecycleCategoryMigration, /SET active=false/);
     assert.match(lifecycleCategoryMigration, /COMMIT;/);
-    assert.match(versionSource, /requiredSchemaContract = '009-governed-import-reliability'/);
+    assert.match(versionSource, /requiredSchemaContract = '010-simplified-import-workflow'/);
   });
 
   it('DATA-015 separates owner and runtime privileges', () => {
@@ -125,13 +126,23 @@ describe('Framework v1.0 PostgreSQL boundary', () => {
     assert.match(baseline, /CREATE INDEX import_batches_resume_idx ON import_batches\(created_by_user_id, status, updated_at DESC\)/);
   });
 
-  it('IMPORT-014 adds a locked, revisioned, two-administrator reliability boundary', () => {
+  it('IMPORT-014 retains the atomic verification and immutable evidence boundary', () => {
     assert.match(importReliabilityMigration, /'DISABLED','Reliability release requires verified gates/);
     assert.match(importReliabilityMigration, /CREATE TABLE IF NOT EXISTS import_reviews/);
     assert.match(importReliabilityMigration, /reviewer_user_id/);
     assert.match(importReliabilityMigration, /reject_import_evidence_mutation/);
     assert.match(importReliabilityMigration, /'009-governed-import-reliability'/);
-    assert.match(versionSource, /requiredImportContract = '009-governed-import-reliability'/);
+  });
+
+  it('IMPORT-015 enables direct preview-and-import without administrator approvals', () => {
+    assert.match(simplifiedImportMigration, /status IN \('AWAITING_APPROVAL','APPROVED','DECLINED'\)/);
+    assert.match(simplifiedImportMigration, /permission\.permission_key = 'import\.review'/);
+    assert.match(simplifiedImportMigration, /'GLOBAL','ENABLED','Simple preview, fix, and import workflow is enabled\.'/);
+    assert.match(simplifiedImportMigration, /'010-simplified-import-workflow'/);
+    assert.match(importsSource, /counts\.invalid > 0 \? 'NEEDS_ATTENTION' : 'READY'/);
+    assert.match(importsSource, /batch\.status !== 'READY'/);
+    assert.doesNotMatch(importsSource, /IMPORT_APPROVALS_REQUIRED/);
+    assert.match(versionSource, /requiredImportContract = '010-simplified-import-workflow'/);
   });
 
   it('OPS-003 packages and installs the complete ordered migration chain', () => {
